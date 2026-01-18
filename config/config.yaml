@@ -1,0 +1,263 @@
+# Конфигурация Code Agent
+
+# Настройки проекта
+project:
+  # Базовая директория проекта (переопределяется через PROJECT_DIR в .env)
+  base_dir: ${PROJECT_DIR}
+  
+  # Пути относительно base_dir
+  docs_dir: docs                    # Директория с документацией
+  status_file: codeAgentProjectStatus.md  # Файл статусов проекта
+  
+  # Формат todo-листа (txt, yaml, md)
+  todo_format: txt
+
+# Настройки агента
+agent:
+  # Базовая роль агента
+  role: "Project Executor Agent"
+  
+  # Цель агента
+  goal: "Execute todo items for the project, following documentation and best practices"
+  
+  # История/контекст агента
+  backstory: |
+    You are an automated code agent working on software projects.
+    You read project documentation, understand requirements, and execute tasks
+    from the todo list systematically. You update project status and ensure
+    code quality and best practices are followed.
+  
+  # Разрешить выполнение кода
+  allow_code_execution: true
+  
+  # Используемые инструменты
+  tools:
+    - CodeInterpreterTool
+    - FileReadTool
+    - FileWriteTool
+
+# Настройки сервера
+server:
+  # Интервал проверки задач в секундах
+  check_interval: 60
+  
+  # Максимальное количество итераций (null для бесконечного цикла)
+  max_iterations: null
+  
+  # Задержка между выполнением задач в секундах
+  task_delay: 5
+
+# Настройки работы с документацией
+docs:
+  # Расширения файлов для чтения документации
+  supported_extensions: [".md", ".txt", ".rst"]
+  
+  # Максимальный размер файла для чтения (в символах)
+  max_file_size: 1000000
+
+# Настройки логирования
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: logs/code_agent.log
+  console: true
+  color: true
+  cursor_interactions: true  # Логировать все взаимодействия с Cursor
+  screenshot_on_error: true  # Сохранять скриншоты при ошибках
+
+# Настройки взаимодействия с Cursor IDE
+cursor:
+  # Тип интерфейса взаимодействия
+  interface_type: "screenshot"  # "screenshot", "api", "file"
+  
+  # Настройки для screenshot-интерфейса
+  screenshot:
+    path: "temp/cursor_screenshot.png"
+    format: "PNG"
+    quality: 95
+    
+  # Настройки окна Cursor
+  window:
+    title: "Cursor"  # Название окна для поиска
+    class_name: "Chrome_WidgetWin_1"  # Для Windows
+    
+  # Настройки OCR
+  ocr:
+    engine: "tesseract"  # "tesseract" или "easyocr"
+    tesseract_path: "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+    language: "eng+rus"  # Языки для распознавания
+    
+  # Настройки управления интерфейсом
+  ui:
+    new_chat_hotkey: ["ctrl", "shift", "p"]  # Горячие клавиши для нового чата
+    send_message_hotkey: ["ctrl", "enter"]   # Горячие клавиши для отправки
+    click_delay: 0.5  # Задержка между кликами (секунды)
+    type_delay: 0.05  # Задержка между символами при вводе
+    
+  # Настройки ожидания репортов
+  reports:
+    check_interval: 10  # Интервал проверки файлов (секунды)
+    file_creation_timeout: 300  # Таймаут создания файла (секунды)
+    control_phrase_timeout: 120  # Таймаут контрольной фразы (секунды)
+    max_check_attempts: 30  # Максимальное количество попыток
+    
+  # Контрольные фразы для синхронизации
+  control_phrases:
+    - "Отчет завершен!"
+    - "Тестирование завершено!"
+    - "Отчет готов!"
+    - "План готов!"
+    - "Коммит выполнен!"
+    
+  # Настройки обработки ошибок
+  error_handling:
+    max_retries: 3  # Максимальное количество повторов при ошибке
+    retry_delay: 5  # Задержка перед повтором (секунды)
+    screenshot_on_error: true  # Делать скриншот при ошибке
+
+# Директории для репортов (добавляется к docs_dir)
+docs:
+  results_dir: docs/results
+  reviews_dir: docs/reviews
+
+# Шаблоны инструкций для Cursor
+instructions:
+  default:
+    - instruction_id: 1
+      name: "Создание плана"
+      for_cursor: true
+      template: |
+        Переходим к выполнению задачи "{task_name}"
+        
+        Изучи связанную документацию по проекту.
+        Создай план выполнения текущей задачи в файле 
+        docs/results/current_plan_{task_id}.md
+        Создай краткий отчет в docs/results/last_result.md
+        В конце отчета напиши "Отчет завершен!"
+      wait_for_file: "docs/results/last_result.md"
+      control_phrase: "Отчет завершен!"
+      timeout: 300
+      
+    - instruction_id: 2
+      name: "Выполнение плана"
+      for_cursor: true
+      template: |
+        Выполни пункт {plan_item_number} из плана current_plan_{task_id}.md:
+        {plan_item_text}
+        
+        Сохрани промежуточный отчет в docs/results/plan_result_{task_id}.md
+        В конце отчета напиши "Отчет завершен!"
+      wait_for_file: "docs/results/plan_result_{task_id}.md"
+      control_phrase: "Отчет завершен!"
+      timeout: 600
+      
+    - instruction_id: 3
+      name: "Тестирование"
+      for_cursor: true
+      template: |
+        Покрой тестами новую функциональность:
+        - Статические тесты
+        - Дымовые тесты
+        - Интеграционные тесты
+        
+        1. Напиши тесты в src/test/
+        2. Запусти тесты
+        3. Отчет в docs/results/test_{task_id}.md
+        4. В конце напиши "Тестирование завершено!"
+      wait_for_file: "docs/results/test_{task_id}.md"
+      control_phrase: "Тестирование завершено!"
+      timeout: 600
+      
+    - instruction_id: 4
+      name: "Обновление документации"
+      for_cursor: true
+      template: |
+        Создай/обнови текущую документацию с учетом всех последних доработок.
+        
+        Модифицированные файлы можно увидеть через git:
+        - git status
+        - git diff
+        
+        Обнови соответствующие файлы документации и отчитайся о выполненных действиях.
+        Отчет в docs/results/last_result.md, в конце "Отчет завершен!"
+      wait_for_file: "docs/results/last_result.md"
+      control_phrase: "Отчет завершен!"
+      timeout: 300
+      
+    - instruction_id: 5
+      name: "Ревью Скептика"
+      for_cursor: true
+      template: |
+        Выступи в роли Скептика.
+        
+        Проанализируй текущие доработки и документацию в рамках текущей задачи.
+        
+        Напиши ревью в файле docs/reviews/skeptic_{task_id}_{date}.md
+        
+        Интересуют:
+        - Любые недоработки
+        - Отклонения от плана
+        - Проблемы в коде или документах
+        - Сомнительный код или документы
+        - Все что тебя смущает или противоречит
+        
+        Опиши все в подробном репорте.
+        В конце напиши фразу с новой строки: "Отчет готов!"
+      wait_for_file: "docs/reviews/skeptic_{task_id}_{date}.md"
+      control_phrase: "Отчет готов!"
+      timeout: 600
+      
+    - instruction_id: 6
+      name: "Исправление по ревью"
+      for_cursor: true
+      template: |
+        Проанализируй репорт от Скептика из файла docs/reviews/skeptic_{task_id}_{date}.md
+        
+        Составь новый план реализации/исправления выявленных проблем.
+        
+        Приступаем к реализации доработок по пункту {task_id} после отчета скептика.
+      wait_for_file: "docs/results/last_result.md"
+      control_phrase: "Отчет завершен!"
+      timeout: 600
+      
+    - instruction_id: 7
+      name: "Полное тестирование"
+      for_cursor: true
+      template: |
+        Запусти все тесты из каталога src/test
+        
+        Агент курсора должен:
+        1. Выполнить требуемые команды для запуска тестов
+        2. Создать репорты об ошибках по результатам полного тестирования
+        3. Отчет в docs/results/test_full_{task_id}.md
+        4. В конце "Тестирование завершено!"
+      wait_for_file: "docs/results/test_full_{task_id}.md"
+      control_phrase: "Тестирование завершено!"
+      timeout: 600
+      
+    - instruction_id: 8
+      name: "Коммит и отправка"
+      for_cursor: true
+      template: |
+        Создай новый коммит и зафиксируй коммит с подробным текстом.
+        
+        Включи в коммит все модифицированные файлы.
+        
+        Отправь коммит в удаленный репозиторий!
+        
+        В конце напиши "Коммит выполнен!"
+      wait_for_file: "docs/results/last_result.md"
+      control_phrase: "Коммит выполнен!"
+      timeout: 300
+
+# Настройки Git
+git:
+  auto_commit: false  # Автоматические коммиты (рекомендуется false)
+  commit_message_template: |
+    feat: {task_name} (задача {task_id})
+    
+    {task_description}
+    
+    Выполнено через Code Agent
+  branch: main
+  remote: origin

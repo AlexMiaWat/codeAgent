@@ -1,0 +1,62 @@
+[project]
+name = "code-agent"
+version = "0.1.0"
+description = "Code Agent на базе CrewAI для автоматизации работы с проектами"
+authors = [
+    {name = "Code Agent Team"}
+]
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "crewai>=0.1.0",
+    "crewai-tools>=0.1.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
+    # Для работы с Cursor IDE
+    "pyautogui>=0.9.54",
+    "pytesseract>=0.3.10",
+    "Pillow>=10.0.0",
+    "opencv-python>=4.8.0",
+    "mss>=9.0.1",
+    "pygetwindow>=0.0.9",
+    # Для работы с файлами и репортами
+    "watchdog>=3.0.0",
+    "aiofiles>=23.2.0",
+    # Для работы с Git
+    "GitPython>=3.1.40",
+    # Для улучшенного логирования
+    "colorlog>=6.8.0",
+    "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 100
+target-version = ['py38']
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
