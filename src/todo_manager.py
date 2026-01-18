@@ -66,10 +66,27 @@ class TodoManager:
             "todo.md",
         ]
         
+        # Сначала ищем в корне проекта
         for name in possible_names:
             file_path = self.project_dir / name
             if file_path.exists():
                 return file_path
+        
+        # Затем ищем в поддиректории todo/
+        todo_dir = self.project_dir / "todo"
+        if todo_dir.exists() and todo_dir.is_dir():
+            # Ищем файлы в todo/ директории
+            for name in possible_names:
+                file_path = todo_dir / name
+                if file_path.exists():
+                    return file_path
+            
+            # Ищем CURRENT.md, DEBT.md, ROADMAP.md в todo/
+            common_todo_names = ["CURRENT.md", "DEBT.md", "ROADMAP.md"]
+            for name in common_todo_names:
+                file_path = todo_dir / name
+                if file_path.exists():
+                    return file_path
         
         return None
     

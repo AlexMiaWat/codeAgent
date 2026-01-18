@@ -1,0 +1,37 @@
+# Dockerfile для установки Cursor CLI (agent)
+# Основан на Ubuntu для поддержки официального установщика
+FROM ubuntu:22.04
+
+# Установка необходимых зависимостей
+RUN apt-get update && apt-get install -y \
+    curl \
+    bash \
+    git \
+    ca-certificates \
+    util-linux \
+    && rm -rf /var/lib/apt/lists/*
+
+# util-linux содержит утилиту 'script' для создания pseudo-TTY
+# Необходима для обхода проблемы Ink в Cursor CLI (требует TTY)
+
+# Создание рабочей директории
+WORKDIR /workspace
+
+# Установка Cursor CLI (agent) через официальный скрипт
+RUN curl https://cursor.com/install -fsS | bash
+
+# Добавление ~/.local/bin в PATH
+ENV PATH="${PATH}:/root/.local/bin"
+
+# Проверка установки
+RUN agent --version || echo "Agent installation check"
+
+# Установка переменных окружения
+ENV AGENT_WORKING_DIR=/workspace
+ENV AGENT_HOME=/root
+
+# Примечание: CURSOR_API_KEY должен быть передан через docker-compose.agent.yml
+# или через переменные окружения при запуске контейнера
+
+# Создание точки входа (переопределяется в docker-compose.agent.yml)
+ENTRYPOINT ["/root/.local/bin/agent"]

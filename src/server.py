@@ -114,10 +114,14 @@ class CodeAgentServer:
             timeout = cli_config.get('timeout', 300)
             headless = cli_config.get('headless', True)
             
+            # Передаем директорию проекта и роль агента для настройки контекста
+            agent_config = self.config.get('agent', {})
             cli_interface = create_cursor_cli_interface(
                 cli_path=cli_path,
                 timeout=timeout,
-                headless=headless
+                headless=headless,
+                project_dir=str(self.project_dir),
+                agent_role=agent_config.get('role')
             )
             
             if cli_interface and cli_interface.is_available():

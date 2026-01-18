@@ -1,0 +1,86 @@
+llm:
+  default_provider: openrouter
+  default_model: meta-llama/llama-3.2-1b-instruct
+  timeout: 200
+  retry_attempts: 1
+  strategy: best_of_two
+  model_roles:
+    primary:
+    - meta-llama/llama-3.2-1b-instruct
+    - mistralai/mistral-small-24b-instruct-2501
+    duplicate:
+    - meta-llama/llama-3.2-3b-instruct
+    - google/gemma-2-27b-it
+    reserve:
+    - microsoft/wizardlm-2-8x22b
+    - undi95/remm-slerp-l2-13b
+    fallback:
+    - microsoft/phi-3-mini-128k-instruct
+    - kwaipilot/kat-coder-pro:free
+  parallel:
+    enabled: true
+    models:
+    - meta-llama/llama-3.2-1b-instruct
+    - microsoft/phi-3-mini-128k-instruct
+    evaluator_model: meta-llama/llama-3.2-3b-instruct
+    selection_criteria:
+    - relevance
+    - completeness
+    - quality
+  _last_updated: '2026-01-18T18:26:38.460953'
+  _update_source: auto_test_results
+  _stats:
+    total_tested: 8
+    working_count: 6
+    fastest_model: meta-llama/llama-3.2-1b-instruct
+providers:
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    api_key: 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
+    models:
+      meta-llama:
+      - name: meta-llama/llama-3.2-1b-instruct
+        max_tokens: 4096
+        context_window: 60000
+        temperature: 0.7
+        top_p: 1.0
+      - name: meta-llama/llama-3.2-3b-instruct
+        max_tokens: 4096
+        context_window: 131072
+        temperature: 0.7
+        top_p: 1.0
+      microsoft:
+      - name: microsoft/phi-3-mini-128k-instruct
+        max_tokens: 4096
+        context_window: 128000
+        temperature: 0.7
+        top_p: 1.0
+      - name: microsoft/wizardlm-2-8x22b
+        max_tokens: 4096
+        context_window: 65536
+        temperature: 0.7
+        top_p: 1.0
+      google:
+      - name: google/gemma-2-27b-it
+        max_tokens: 2048
+        context_window: 8192
+        temperature: 0.7
+        top_p: 1.0
+      mistralai:
+      - name: mistralai/mistral-small-24b-instruct-2501
+        max_tokens: 4096
+        context_window: 32768
+        temperature: 0.7
+        top_p: 1.0
+      kwaipilot:
+      - name: kwaipilot/kat-coder-pro:free
+        max_tokens: 4096
+        context_window: 128000
+        temperature: 0.7
+        top_p: 1.0
+      undi95:
+      - name: undi95/remm-slerp-l2-13b
+        max_tokens: 1536
+        context_window: 6144
+        temperature: 0.7
+        top_p: 1.0

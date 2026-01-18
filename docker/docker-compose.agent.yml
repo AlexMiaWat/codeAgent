@@ -1,0 +1,42 @@
+# docker-compose.yml для Cursor CLI (agent)
+# Использование:
+#   Запуск постоянного контейнера: docker compose -f docker/docker-compose.agent.yml up -d
+#   Выполнение команды: docker compose -f docker/docker-compose.agent.yml exec agent -p "instruction"
+#   Остановка: docker compose -f docker/docker-compose.agent.yml down
+#
+# Переменные окружения загружаются из .env файла в корне проекта (d:\Space\codeAgent\.env)
+
+services:
+  agent:
+    build:
+      context: ..  # Контекст - корень проекта (D:\Space\codeAgent)
+      dockerfile: docker/Dockerfile.agent
+    image: cursor-agent:latest
+    container_name: cursor-agent-life  # Имя контейнера для целевого проекта
+    volumes:
+      # Монтируем целевую директорию проекта (D:\Space\life)
+      - ../../life:/workspace:rw
+      # Монтируем домашнюю директорию для сохранения конфигурации agent
+      - agent-home:/root
+    working_dir: /workspace
+    environment:
+      - AGENT_WORKING_DIR=/workspace
+      - AGENT_HOME=/root
+      # API ключ для аутентификации (передается из хост-системы, если установлен)
+      # Можно установить через: export CURSOR_API_KEY=key или в .env файле
+      - CURSOR_API_KEY=${CURSOR_API_KEY:-}
+      # Установка UTF-8 локали для поддержки кириллицы
+      - LANG=C.utf8
+      - LC_ALL=C.utf8
+    # Убираем entrypoint, чтобы можно было выполнять команды через exec
+    # Запускаем в режиме ожидания команд (sleep infinity для постоянной работы)
+    command: ["sleep", "infinity"]
+    # Убираем stdin для non-interactive режима
+    stdin_open: false
+    tty: false
+    # Автоматический перезапуск при падении
+    restart: unless-stopped
+
+volumes:
+  agent-home:
+    driver: local

@@ -2,7 +2,7 @@
 
 # Настройки проекта
 project:
-  # Базовая директория проекта (переопределяется через PROJECT_DIR в .env)
+  # Базовая директория проекта (устанавливается через PROJECT_DIR в .env или переменные окружения)
   base_dir: ${PROJECT_DIR}
   
   # Пути относительно base_dir
@@ -10,7 +10,7 @@ project:
   status_file: codeAgentProjectStatus.md  # Файл статусов проекта
   
   # Формат todo-листа (txt, yaml, md)
-  todo_format: txt
+  todo_format: md
 
 # Настройки агента
 agent:
@@ -30,11 +30,24 @@ agent:
   # Разрешить выполнение кода
   allow_code_execution: true
   
+  # Подробный вывод
+  verbose: true
+  
   # Используемые инструменты
   tools:
     - CodeInterpreterTool
     - FileReadTool
     - FileWriteTool
+  
+  # Модель LLM (слабая модель для простых задач)
+  model: "gpt-3.5-turbo"  # или "claude-haiku", "llama2"
+  
+  # Валидация модели
+  allowed_models:
+    - "gpt-3.5-turbo"
+    - "claude-haiku"
+    - "llama2"
+    - "mistral"
 
 # Настройки сервера
 server:
@@ -54,6 +67,10 @@ docs:
   
   # Максимальный размер файла для чтения (в символах)
   max_file_size: 1000000
+  
+  # Директории для репортов
+  results_dir: docs/results
+  reviews_dir: docs/reviews
 
 # Настройки логирования
 logging:
@@ -68,7 +85,23 @@ logging:
 # Настройки взаимодействия с Cursor IDE
 cursor:
   # Тип интерфейса взаимодействия
-  interface_type: "screenshot"  # "screenshot", "api", "file"
+  # "cli" - Cursor CLI (рекомендуется, если доступен)
+  # "file" - файловый интерфейс (fallback)
+  # "api" - Background Agents API
+  # "screenshot" - UI автоматизация (в последнюю очередь)
+  interface_type: "cli"  # "screenshot", "api", "file", "cli"
+  
+  # Настройки для CLI-интерфейса
+  cli:
+    # Путь к исполняемому файлу Cursor CLI (если None - поиск в PATH)
+    # "docker-compose-agent" - использовать Docker контейнер
+    cli_path: "docker-compose-agent"  # Используем Docker для целевого проекта
+    # Таймаут выполнения команд (секунды)
+    timeout: 1000  # Увеличен для выполнения сложных задач
+    # Использовать headless режим
+    headless: true
+    # Приоритет использования CLI (если доступен)
+    prefer_cli: true
   
   # Настройки для screenshot-интерфейса
   screenshot:
@@ -114,11 +147,6 @@ cursor:
     max_retries: 3  # Максимальное количество повторов при ошибке
     retry_delay: 5  # Задержка перед повтором (секунды)
     screenshot_on_error: true  # Делать скриншот при ошибке
-
-# Директории для репортов (добавляется к docs_dir)
-docs:
-  results_dir: docs/results
-  reviews_dir: docs/reviews
 
 # Шаблоны инструкций для Cursor
 instructions:
@@ -249,6 +277,48 @@ instructions:
       wait_for_file: "docs/results/last_result.md"
       control_phrase: "Коммит выполнен!"
       timeout: 300
+      
+  # Специфичные шаблоны для разных типов задач
+  frontend-task:
+    - instruction_id: 1
+      name: "Создание плана (Frontend)"
+      template: |
+        Переходим к выполнению фронтенд задачи "{task_name}"
+        
+        Изучи документацию по фронтенд архитектуре проекта.
+        Создай план выполнения в docs/results/current_plan_{task_id}.md
+        Учти:
+        - Структуру компонентов
+        - Стилизацию
+        - Роутинг
+        - Интеграцию с API
+        
+        Отчет в docs/results/last_result.md
+        В конце "Отчет завершен!"
+        
+  backend-task:
+    - instruction_id: 1
+      name: "Создание плана (Backend)"
+      template: |
+        Переходим к выполнению бэкенд задачи "{task_name}"
+        
+        Изучи документацию по бэкенд архитектуре проекта.
+        Создай план выполнения в docs/results/current_plan_{task_id}.md
+        Учти:
+        - API endpoints
+        - База данных
+        - Бизнес-логика
+        - Безопасность
+        
+        Отчет в docs/results/last_result.md
+        В конце "Отчет завершен!"
+
+# Настройки тестирования
+testing:
+  enabled: false
+  mock_cursor: true  # Использовать мок вместо реального Cursor
+  screenshot_dir: "tests/screenshots"
+  save_all_screenshots: true
 
 # Настройки Git
 git:
@@ -261,3 +331,13 @@ git:
     Выполнено через Code Agent
   branch: main
   remote: origin
+
+# В config/config.yaml добавить:
+mcp_servers:
+  playwright:
+    enabled: true
+    docker_image: "mcp-playwright:latest"
+    capabilities:
+      - web_testing
+      - screenshot
+      - browser_automation

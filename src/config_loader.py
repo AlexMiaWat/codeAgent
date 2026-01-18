@@ -35,7 +35,7 @@ class ConfigLoader:
             self.config = yaml.safe_load(f) or {}
         
         # Подстановка переменных окружения
-        self._substitute_env_vars(self.config)
+        self.config = self._substitute_env_vars(self.config)
     
     def _substitute_env_vars(self, obj: Any) -> Any:
         """

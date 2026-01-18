@@ -7,6 +7,14 @@ from typing import Optional, List
 from crewai import Agent
 from crewai_tools import CodeInterpreterTool
 
+# Импортируем LLM обертку для использования LLMManager
+try:
+    from ..llm.crewai_llm_wrapper import create_llm_for_crewai
+    LLM_WRAPPER_AVAILABLE = True
+except ImportError:
+    LLM_WRAPPER_AVAILABLE = False
+    create_llm_for_crewai = None
+
 
 def create_executor_agent(
     project_dir: Path,
@@ -15,7 +23,10 @@ def create_executor_agent(
     goal: str = "Execute todo items for the project, following documentation and best practices",
     backstory: Optional[str] = None,
     allow_code_execution: bool = True,
-    verbose: bool = True
+    verbose: bool = True,
+    use_llm_manager: bool = True,
+    llm_config_path: str = "config/llm_settings.yaml",
+    use_parallel: bool = False
 ) -> Agent:
     """
     Создание агента-исполнителя для работы с проектом
@@ -54,6 +65,22 @@ When working with the project, you have access to:
     # - FileWriteTool для записи файлов
     # - CustomTool для специфических задач проекта
     
+    # Настройка LLM
+    llm_kwargs = {}
+    if use_llm_manager and LLM_WRAPPER_AVAILABLE:
+        try:
+            custom_llm = create_llm_for_crewai(
+                config_path=llm_config_path,
+                use_fastest=True,
+                use_parallel=use_parallel
+            )
+            llm_kwargs['llm'] = custom_llm
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to create LLM wrapper, using default LLM: {e}")
+            # Используем стандартный LLM CrewAI при ошибке
+    
     agent = Agent(
         role=role,
         goal=goal,
@@ -61,6 +88,7 @@ When working with the project, you have access to:
         allow_code_execution=allow_code_execution,
         verbose=verbose,
         tools=tools,
+        **llm_kwargs,
         # max_iter - можно ограничить количество итераций агента
         # memory - можно включить память агента для запоминания контекста
     )
