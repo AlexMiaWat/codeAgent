@@ -18,6 +18,8 @@ from .todo_manager import TodoManager, TodoItem
 from .agents.executor_agent import create_executor_agent
 from .cursor_cli_interface import CursorCLIInterface, create_cursor_cli_interface
 from .cursor_file_interface import CursorFileInterface
+from .task_logger import TaskLogger, ServerLogger, TaskPhase
+from .session_tracker import SessionTracker
 
 
 # Настройка логирования
@@ -90,6 +92,25 @@ class CodeAgentServer:
             self.cursor_cli.is_available()
         )
         
+        # Инициализация логгера сервера
+        self.server_logger = ServerLogger()
+        
+        # Инициализация трекера сессий для автоматической генерации TODO
+        auto_todo_config = server_config.get('auto_todo_generation', {})
+        self.auto_todo_enabled = auto_todo_config.get('enabled', True)
+        self.max_todo_generations = auto_todo_config.get('max_generations_per_session', 5)
+        tracker_file = auto_todo_config.get('session_tracker_file', '.codeagent_sessions.json')
+        self.session_tracker = SessionTracker(self.project_dir, tracker_file)
+        
+        # Логируем инициализацию
+        self.server_logger.log_initialization({
+            'project_dir': str(self.project_dir),
+            'docs_dir': str(self.docs_dir),
+            'cursor_cli_available': self.use_cursor_cli,
+            'auto_todo_enabled': self.auto_todo_enabled,
+            'max_todo_generations': self.max_todo_generations
+        })
+        
         logger.info(f"Code Agent Server инициализирован")
         logger.info(f"Проект: {self.project_dir}")
         logger.info(f"Документация: {self.docs_dir}")
@@ -98,6 +119,8 @@ class CodeAgentServer:
             logger.info("Cursor CLI интерфейс доступен (приоритетный)")
         else:
             logger.info("Cursor CLI недоступен, будет использоваться файловый интерфейс")
+        if self.auto_todo_enabled:
+            logger.info(f"Автоматическая генерация TODO включена (макс. {self.max_todo_generations} раз за сессию)")
     
     def _init_cursor_cli(self) -> Optional[CursorCLIInterface]:
         """
@@ -424,24 +447,39 @@ class CodeAgentServer:
         
         return task
     
-    def _execute_task(self, todo_item: TodoItem) -> bool:
+    def _execute_task(self, todo_item: TodoItem, task_number: int = 1, total_tasks: int = 1) -> bool:
         """
         Выполнение одной задачи через Cursor или CrewAI
         
         Args:
             todo_item: Элемент todo-листа для выполнения
+            task_number: Номер задачи в текущей итерации
+            total_tasks: Общее количество задач
         
         Returns:
             True если задача выполнена успешно
         """
+        # Логируем начало задачи
+        self.server_logger.log_task_start(task_number, total_tasks, todo_item.text)
         logger.info(f"Выполнение задачи: {todo_item.text}")
         
+        # Генерируем ID задачи
+        task_id = f"task_{int(time.time())}"
+        
+        # Создаем логгер для задачи
+        task_logger = TaskLogger(task_id, todo_item.text)
+        
         try:
+            # Фаза: Анализ задачи
+            task_logger.set_phase(TaskPhase.TASK_ANALYSIS)
+            
             # Определяем тип задачи
             task_type = self._determine_task_type(todo_item)
+            task_logger.log_debug(f"Тип задачи определен: {task_type}")
             
             # Определяем, использовать ли Cursor
             use_cursor = self._should_use_cursor(todo_item)
+            task_logger.log_debug(f"Интерфейс: {'Cursor' if use_cursor else 'CrewAI'}")
             
             # Обновляем статус: задача начата
             self.status_manager.update_task_status(
@@ -452,13 +490,24 @@ class CodeAgentServer:
             
             if use_cursor:
                 # Выполнение через Cursor
-                return self._execute_task_via_cursor(todo_item, task_type)
+                result = self._execute_task_via_cursor(todo_item, task_type, task_logger)
+                task_logger.log_completion(result, "Задача выполнена через Cursor")
+                task_logger.close()
+                return result
             else:
                 # Выполнение через CrewAI (старый способ)
-                return self._execute_task_via_crewai(todo_item)
+                result = self._execute_task_via_crewai(todo_item, task_logger)
+                task_logger.log_completion(result, "Задача выполнена через CrewAI")
+                task_logger.close()
+                return result
             
         except Exception as e:
             logger.error(f"Ошибка выполнения задачи '{todo_item.text}': {e}", exc_info=True)
+            
+            # Логируем ошибку
+            task_logger.log_error(f"Критическая ошибка при выполнении задачи", e)
+            task_logger.log_completion(False, f"Ошибка: {str(e)}")
+            task_logger.close()
             
             # Обновляем статус: ошибка
             self.status_manager.update_task_status(
@@ -468,25 +517,30 @@ class CodeAgentServer:
             )
             return False
     
-    def _execute_task_via_cursor(self, todo_item: TodoItem, task_type: str) -> bool:
+    def _execute_task_via_cursor(self, todo_item: TodoItem, task_type: str, task_logger: TaskLogger) -> bool:
         """
         Выполнение задачи через Cursor (CLI или файловый интерфейс)
         
         Args:
             todo_item: Элемент todo-листа
             task_type: Тип задачи
+            task_logger: Логгер задачи
         
         Returns:
             True если задача выполнена успешно
         """
         # Генерируем ID задачи
-        task_id = f"task_{int(time.time())}"
+        task_id = task_logger.task_id
+        
+        # Фаза: Генерация инструкции
+        task_logger.set_phase(TaskPhase.INSTRUCTION_GENERATION)
         
         # Получаем шаблон инструкции
         template = self._get_instruction_template(task_type, instruction_id=1)
         
         if not template:
             logger.warning(f"Шаблон инструкции для типа '{task_type}' не найден, используется базовый")
+            task_logger.log_debug("Шаблон не найден, используется базовый")
             # Используем базовый шаблон
             instruction_text = f"Выполни задачу: {todo_item.text}\n\nСоздай отчет в docs/results/last_result.md, в конце напиши 'Отчет завершен!'"
             wait_for_file = "docs/results/last_result.md"
@@ -499,10 +553,18 @@ class CodeAgentServer:
             control_phrase = template.get('control_phrase')
             timeout = template.get('timeout', 600)
         
+        # Логируем инструкцию
+        task_logger.log_instruction(1, instruction_text, task_type)
         logger.info(f"Инструкция для Cursor: {instruction_text[:200]}...")
+        
+        # Фаза: Выполнение через Cursor
+        task_logger.set_phase(TaskPhase.CURSOR_EXECUTION, stage=1, instruction_num=1)
         
         # Выполняем через CLI или файловый интерфейс
         if self.use_cursor_cli:
+            # Логируем создание нового диалога
+            task_logger.log_new_chat()
+            
             # Используем Cursor CLI
             result = self.execute_cursor_instruction(
                 instruction=instruction_text,
@@ -510,11 +572,17 @@ class CodeAgentServer:
                 timeout=timeout
             )
             
+            # Логируем ответ от Cursor
+            task_logger.log_cursor_response(result, brief=True)
+            
             if result.get("success"):
                 logger.info(f"Задача {task_id} выполнена через Cursor CLI")
                 
-                # Ожидаем файл результата (если указан)
+                # Фаза: Ожидание результата
                 if wait_for_file:
+                    task_logger.set_phase(TaskPhase.WAITING_RESULT)
+                    task_logger.log_waiting_result(wait_for_file, timeout)
+                    
                     wait_result = self._wait_for_result_file(
                         task_id=task_id,
                         wait_for_file=wait_for_file,
@@ -524,9 +592,18 @@ class CodeAgentServer:
                     
                     if wait_result["success"]:
                         result_content = wait_result.get("content", "")
+                        task_logger.log_result_received(
+                            wait_result['file_path'],
+                            wait_result['wait_time'],
+                            result_content[:500]
+                        )
                         logger.info(f"Файл результата получен: {wait_result['file_path']}")
                     else:
+                        task_logger.log_error(f"Файл результата не получен: {wait_result.get('error')}")
                         logger.warning(f"Файл результата не получен: {wait_result.get('error')}")
+                
+                # Фаза: Завершение
+                task_logger.set_phase(TaskPhase.COMPLETION)
                 
                 # Отмечаем задачу как выполненную
                 self.todo_manager.mark_task_done(todo_item.text)
@@ -540,11 +617,17 @@ class CodeAgentServer:
                 return True
             else:
                 logger.warning(f"Cursor CLI вернул ошибку: {result.get('error_message')}")
+                task_logger.log_error(f"Cursor CLI вернул ошибку: {result.get('error_message')}")
                 # Fallback на файловый интерфейс
                 logger.info("Переключение на файловый интерфейс")
+                task_logger.log_info("Переключение на файловый интерфейс")
         
         # Используем файловый интерфейс (fallback или если CLI недоступен)
         logger.info(f"Использование файлового интерфейса для задачи {task_id}")
+        task_logger.log_info("Использование файлового интерфейса")
+        
+        # Логируем создание нового диалога
+        task_logger.log_new_chat()
         
         # Записываем инструкцию в файл (с маркером для нового чата)
         self.cursor_file.write_instruction(
@@ -558,6 +641,10 @@ class CodeAgentServer:
             new_chat=True  # Всегда создаем новый чат для новой задачи
         )
         
+        # Фаза: Ожидание результата
+        task_logger.set_phase(TaskPhase.WAITING_RESULT)
+        task_logger.log_waiting_result(wait_for_file or "результата", timeout)
+        
         # Ожидаем результат
         wait_result = self.cursor_file.wait_for_result(
             task_id=task_id,
@@ -568,10 +655,19 @@ class CodeAgentServer:
         if wait_result["success"]:
             logger.info(f"Задача {task_id} выполнена через файловый интерфейс")
             
+            result_content = wait_result.get("content", "")
+            task_logger.log_result_received(
+                wait_result.get('file_path', 'N/A'),
+                wait_result.get('wait_time', 0),
+                result_content[:500]
+            )
+            
+            # Фаза: Завершение
+            task_logger.set_phase(TaskPhase.COMPLETION)
+            
             # Отмечаем задачу как выполненную
             self.todo_manager.mark_task_done(todo_item.text)
             
-            result_content = wait_result.get("content", "")
             self.status_manager.update_task_status(
                 task_name=todo_item.text,
                 status="Выполнено",
@@ -581,6 +677,8 @@ class CodeAgentServer:
             return True
         else:
             logger.warning(f"Таймаут ожидания результата для задачи {task_id}: {wait_result.get('error')}")
+            task_logger.log_error(f"Таймаут ожидания результата: {wait_result.get('error')}")
+            
             self.status_manager.update_task_status(
                 task_name=todo_item.text,
                 status="Ошибка",
@@ -588,27 +686,39 @@ class CodeAgentServer:
             )
             return False
     
-    def _execute_task_via_crewai(self, todo_item: TodoItem) -> bool:
+    def _execute_task_via_crewai(self, todo_item: TodoItem, task_logger: TaskLogger) -> bool:
         """
         Выполнение задачи через CrewAI (старый способ, fallback)
         
         Args:
             todo_item: Элемент todo-листа для выполнения
+            task_logger: Логгер задачи
         
         Returns:
             True если задача выполнена успешно
         """
         logger.info(f"Выполнение задачи через CrewAI: {todo_item.text}")
+        task_logger.log_info("Выполнение через CrewAI")
         
         # Загружаем документацию
+        task_logger.set_phase(TaskPhase.TASK_ANALYSIS)
         documentation = self._load_documentation()
         
         # Создаем задачу для агента
+        task_logger.set_phase(TaskPhase.INSTRUCTION_GENERATION)
         task = self._create_task_for_agent(todo_item, documentation)
         
         # Создаем crew и выполняем задачу
+        task_logger.set_phase(TaskPhase.CURSOR_EXECUTION)
         crew = Crew(agents=[self.agent], tasks=[task])
         result = crew.kickoff()
+        
+        # Логируем результат
+        task_logger.log_cursor_response({
+            'success': True,
+            'stdout': str(result),
+            'return_code': 0
+        }, brief=True)
         
         # Обновляем статус: задача выполнена
         result_summary = str(result)[:500]  # Ограничиваем размер
@@ -621,11 +731,257 @@ class CodeAgentServer:
         # Отмечаем задачу как выполненную
         self.todo_manager.mark_task_done(todo_item.text)
         
+        task_logger.set_phase(TaskPhase.COMPLETION)
         logger.info(f"Задача выполнена через CrewAI: {todo_item.text}")
         return True
     
-    def run_iteration(self):
-        """Выполнение одной итерации цикла"""
+    def _generate_new_todo_list(self) -> bool:
+        """
+        Генерация нового TODO листа через Cursor при пустом списке задач
+        
+        Returns:
+            True если генерация успешна, False иначе
+        """
+        # Проверяем, можно ли генерировать
+        if not self.auto_todo_enabled:
+            logger.info("Автоматическая генерация TODO отключена")
+            return False
+        
+        if not self.session_tracker.can_generate_todo(self.max_todo_generations):
+            logger.warning(
+                f"Достигнут лимит генераций TODO для текущей сессии "
+                f"({self.max_todo_generations})"
+            )
+            return False
+        
+        logger.info("Начало генерации нового TODO листа")
+        session_id = self.session_tracker.current_session_id
+        date_str = datetime.now().strftime('%Y%m%d')
+        
+        # Получаем инструкции для empty_todo сценария
+        instructions = self.config.get('instructions', {})
+        empty_todo_instructions = instructions.get('empty_todo', [])
+        
+        if not empty_todo_instructions:
+            logger.error("Инструкции для empty_todo не найдены в конфигурации")
+            return False
+        
+        # Выполняем инструкцию 1: Создание TODO листа
+        logger.info("Шаг 1: Архитектурный анализ и создание TODO листа")
+        instruction_1 = empty_todo_instructions[0]
+        
+        instruction_text = instruction_1.get('template', '')
+        instruction_text = instruction_text.replace('{date}', date_str)
+        instruction_text = instruction_text.replace('{session_id}', session_id)
+        
+        wait_for_file = instruction_1.get('wait_for_file', '').replace('{session_id}', session_id)
+        control_phrase = instruction_1.get('control_phrase', '')
+        timeout = instruction_1.get('timeout', 600)
+        
+        # Выполняем через Cursor
+        result = self._execute_cursor_instruction_direct(
+            instruction_text,
+            wait_for_file,
+            control_phrase,
+            timeout,
+            f"todo_gen_{session_id}_step1"
+        )
+        
+        if not result:
+            logger.error("Ошибка при создании TODO листа")
+            return False
+        
+        # Парсим созданный TODO файл для получения списка задач
+        todo_file = self.project_dir / f"todo/GENERATED_{date_str}_{session_id}.md"
+        if not todo_file.exists():
+            logger.warning(f"Сгенерированный TODO файл не найден: {todo_file}")
+            # Пробуем найти в других местах
+            possible_locations = [
+                self.project_dir / "todo" / "CURRENT.md",
+                self.project_dir / f"GENERATED_{date_str}_{session_id}.md"
+            ]
+            for loc in possible_locations:
+                if loc.exists():
+                    todo_file = loc
+                    logger.info(f"TODO файл найден: {todo_file}")
+                    break
+        
+        # Читаем задачи из сгенерированного TODO
+        try:
+            content = todo_file.read_text(encoding='utf-8')
+            # Простой подсчет задач (строки с - [ ])
+            task_count = content.count('- [ ]')
+            logger.info(f"Сгенерировано задач: {task_count}")
+        except Exception as e:
+            logger.warning(f"Не удалось прочитать сгенерированный TODO: {e}")
+            task_count = 0
+        
+        # Если задач мало, используем значение по умолчанию
+        if task_count == 0:
+            task_count = 5  # Предполагаем минимум 5 задач
+        
+        # Выполняем инструкцию 2: Создание документации для каждой задачи
+        # (Упрощенная версия - создаем документацию для первых 3 задач)
+        logger.info("Шаг 2: Создание документации для задач")
+        max_docs = min(3, task_count)  # Ограничиваем количество для экономии времени
+        
+        for task_num in range(1, max_docs + 1):
+            logger.info(f"Создание документации для задачи {task_num}/{max_docs}")
+            
+            if len(empty_todo_instructions) < 2:
+                logger.warning("Инструкция для создания документации не найдена")
+                break
+            
+            instruction_2 = empty_todo_instructions[1]
+            instruction_text = instruction_2.get('template', '')
+            instruction_text = instruction_text.replace('{task_num}', str(task_num))
+            instruction_text = instruction_text.replace('{session_id}', session_id)
+            instruction_text = instruction_text.replace('{task_text}', f'Задача #{task_num} из TODO')
+            
+            wait_for_file = instruction_2.get('wait_for_file', '').replace('{task_num}', str(task_num)).replace('{session_id}', session_id)
+            control_phrase = instruction_2.get('control_phrase', '').replace('{task_num}', str(task_num))
+            
+            result = self._execute_cursor_instruction_direct(
+                instruction_text,
+                wait_for_file,
+                control_phrase,
+                timeout,
+                f"todo_gen_{session_id}_step2_{task_num}"
+            )
+            
+            if not result:
+                logger.warning(f"Ошибка при создании документации для задачи {task_num}")
+        
+        # Выполняем инструкцию 3: Финализация TODO листа
+        logger.info("Шаг 3: Финализация TODO листа")
+        if len(empty_todo_instructions) >= 3:
+            instruction_3 = empty_todo_instructions[2]
+            instruction_text = instruction_3.get('template', '')
+            instruction_text = instruction_text.replace('{date}', date_str)
+            instruction_text = instruction_text.replace('{session_id}', session_id)
+            
+            wait_for_file = instruction_3.get('wait_for_file', '').replace('{session_id}', session_id)
+            control_phrase = instruction_3.get('control_phrase', '')
+            
+            result = self._execute_cursor_instruction_direct(
+                instruction_text,
+                wait_for_file,
+                control_phrase,
+                timeout,
+                f"todo_gen_{session_id}_step3"
+            )
+        
+        # Выполняем инструкцию 4: Коммит
+        logger.info("Шаг 4: Коммит нового TODO листа")
+        if len(empty_todo_instructions) >= 4:
+            instruction_4 = empty_todo_instructions[3]
+            instruction_text = instruction_4.get('template', '')
+            instruction_text = instruction_text.replace('{date}', date_str)
+            instruction_text = instruction_text.replace('{session_id}', session_id)
+            instruction_text = instruction_text.replace('{task_count}', str(task_count))
+            
+            wait_for_file = instruction_4.get('wait_for_file', '')
+            control_phrase = instruction_4.get('control_phrase', '')
+            
+            result = self._execute_cursor_instruction_direct(
+                instruction_text,
+                wait_for_file,
+                control_phrase,
+                300,
+                f"todo_gen_{session_id}_step4"
+            )
+        
+        # Записываем информацию о генерации
+        self.session_tracker.record_generation(
+            str(todo_file),
+            task_count,
+            {
+                "date": date_str,
+                "session_id": session_id,
+                "docs_created": max_docs
+            }
+        )
+        
+        logger.info(f"Генерация TODO листа завершена: {todo_file}, задач: {task_count}")
+        
+        # Перезагружаем TODO менеджер для чтения новых задач
+        self.todo_manager = TodoManager(
+            self.project_dir,
+            todo_format=self.config.get('project.todo_format', 'txt')
+        )
+        
+        return True
+    
+    def _execute_cursor_instruction_direct(
+        self,
+        instruction: str,
+        wait_for_file: str,
+        control_phrase: str,
+        timeout: int,
+        task_id: str
+    ) -> bool:
+        """
+        Прямое выполнение инструкции через Cursor (упрощенная версия)
+        
+        Args:
+            instruction: Текст инструкции
+            wait_for_file: Файл для ожидания
+            control_phrase: Контрольная фраза
+            timeout: Таймаут
+            task_id: ID задачи
+        
+        Returns:
+            True если успешно
+        """
+        logger.info(f"Выполнение инструкции: {task_id}")
+        
+        if self.use_cursor_cli:
+            result = self.execute_cursor_instruction(
+                instruction=instruction,
+                task_id=task_id,
+                timeout=timeout
+            )
+            
+            if result.get("success"):
+                # Ожидаем файл результата
+                if wait_for_file:
+                    wait_result = self._wait_for_result_file(
+                        task_id=task_id,
+                        wait_for_file=wait_for_file,
+                        control_phrase=control_phrase,
+                        timeout=timeout
+                    )
+                    return wait_result.get("success", False)
+                return True
+            else:
+                logger.warning(f"Ошибка выполнения через CLI: {result.get('error_message')}")
+        
+        # Fallback на файловый интерфейс
+        self.cursor_file.write_instruction(
+            instruction=instruction,
+            task_id=task_id,
+            metadata={
+                "wait_for_file": wait_for_file,
+                "control_phrase": control_phrase
+            },
+            new_chat=True
+        )
+        
+        wait_result = self.cursor_file.wait_for_result(
+            task_id=task_id,
+            timeout=timeout,
+            control_phrase=control_phrase
+        )
+        
+        return wait_result.get("success", False)
+    
+    def run_iteration(self, iteration: int = 1):
+        """
+        Выполнение одной итерации цикла
+        
+        Args:
+            iteration: Номер итерации
+        """
         logger.info("Начало итерации")
         
         # Получаем непройденные задачи
@@ -637,14 +993,38 @@ class CodeAgentServer:
                 f"Все задачи выполнены. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                 level=2
             )
-            return False  # Нет задач для выполнения
+            
+            # Пытаемся сгенерировать новый TODO лист
+            if self.auto_todo_enabled:
+                logger.info("Попытка генерации нового TODO листа...")
+                generation_success = self._generate_new_todo_list()
+                
+                if generation_success:
+                    logger.info("Новый TODO лист успешно сгенерирован, перезагрузка задач")
+                    # Перезагружаем задачи
+                    pending_tasks = self.todo_manager.get_pending_tasks()
+                    
+                    if pending_tasks:
+                        logger.info(f"Загружено {len(pending_tasks)} новых задач")
+                        # Продолжаем выполнение с новыми задачами
+                    else:
+                        logger.warning("После генерации TODO задачи не найдены")
+                        return False
+                else:
+                    logger.info("Генерация TODO не выполнена (лимит или отключена)")
+                    return False
+            else:
+                return False  # Нет задач для выполнения
         
+        # Логируем начало итерации
+        self.server_logger.log_iteration_start(iteration, len(pending_tasks))
         logger.info(f"Найдено непройденных задач: {len(pending_tasks)}")
         
         # Выполняем каждую задачу в отдельной сессии
-        for todo_item in pending_tasks:
+        total_tasks = len(pending_tasks)
+        for idx, todo_item in enumerate(pending_tasks, start=1):
             self.status_manager.add_separator()
-            self._execute_task(todo_item)
+            self._execute_task(todo_item, task_number=idx, total_tasks=total_tasks)
             
             # Задержка между задачами
             if self.task_delay > 0:
@@ -668,11 +1048,12 @@ class CodeAgentServer:
                 logger.info(f"Итерация {iteration}")
                 
                 # Выполняем итерацию
-                has_tasks = self.run_iteration()
+                has_tasks = self.run_iteration(iteration)
                 
                 # Проверяем ограничение итераций
                 if self.max_iterations and iteration >= self.max_iterations:
                     logger.info(f"Достигнуто максимальное количество итераций: {self.max_iterations}")
+                    self.server_logger.log_server_shutdown(f"Достигнуто максимальное количество итераций: {self.max_iterations}")
                     break
                 
                 # Если нет задач, проверяем снова через интервал
@@ -685,12 +1066,14 @@ class CodeAgentServer:
                     
         except KeyboardInterrupt:
             logger.info("Получен сигнал остановки")
+            self.server_logger.log_server_shutdown("Остановка пользователем (Ctrl+C)")
             self.status_manager.append_status(
                 f"Code Agent Server остановлен. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                 level=2
             )
         except Exception as e:
             logger.error(f"Критическая ошибка: {e}", exc_info=True)
+            self.server_logger.log_server_shutdown(f"Критическая ошибка: {str(e)}")
             self.status_manager.append_status(
                 f"Критическая ошибка: {str(e)}. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                 level=2
