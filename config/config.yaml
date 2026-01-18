@@ -102,6 +102,70 @@ cursor:
     headless: true
     # Приоритет использования CLI (если доступен)
     prefer_cli: true
+    # Автоматическое одобрение всех действий без запросов разрешений
+    auto_approve: true
+    # Принудительное применение изменений без подтверждения
+    force_mode: true
+    # Автоматическое одобрение MCP серверов/инструментов
+    approve_mcps: true
+  
+  # Настройки разрешений для полного доступа
+  permissions:
+    enabled: true
+    # Путь к файлу конфигурации разрешений (относительно корня проекта)
+    config_file: ".cursor/cli-config.json"
+    # Путь к файлу одобрения MCP серверов
+    mcp_approvals_file: ".cursor/mcp-approvals.json"
+    # Список разрешенных команд Shell
+    allow_shell:
+      - "git"
+      - "npm"
+      - "python"
+      - "pytest"
+      - "pip"
+      - "uv"
+      - "docker"
+      - "docker-compose"
+      - "make"
+      - "bash"
+      - "sh"
+    # Список запрещенных команд Shell (для безопасности)
+    deny_shell:
+      - "rm -rf /"
+      - "rm -rf /*"
+      - "dd"
+      - "mkfs"
+      - "format"
+    # Паттерны для чтения файлов
+    allow_read:
+      - "src/**"
+      - "docs/**"
+      - "test/**"
+      - "config/**"
+      - "*.md"
+      - "*.py"
+      - "*.json"
+      - "*.yaml"
+      - "*.yml"
+    # Паттерны для записи файлов
+    allow_write:
+      - "src/**"
+      - "docs/**"
+      - "test/**"
+      - "config/**"
+      - "*.md"
+      - "*.py"
+      - "*.json"
+      - "*.yaml"
+      - "*.yml"
+    # Паттерны запрещенных для записи файлов
+    deny_write:
+      - "**/*.env"
+      - "**/.env*"
+      - "**/credentials*"
+      - "**/secrets*"
+      - "**/*_key*"
+      - "**/*_secret*"
   
   # Настройки для screenshot-интерфейса
   screenshot:

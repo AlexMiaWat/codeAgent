@@ -603,7 +603,8 @@ This agent role is used for automated project tasks execution.
             # Экранируем normalized_prompt для безопасной передачи в printf
             # printf понимает escape-последовательности, поэтому экранируем только кавычки и спецсимволы
             escaped_for_printf = normalized_prompt.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
-            bash_pipe_cmd = f'printf "%s\\n" "{escaped_for_printf}" | {agent_base_cmd} -p'
+            # Добавляем флаги --force и --approve-mcps для полного доступа без запросов разрешений
+            bash_pipe_cmd = f'printf "%s\\n" "{escaped_for_printf}" | {agent_base_cmd} -p --force --approve-mcps'
             script_cmd = f'script -q -c "{bash_pipe_cmd}" /dev/null'
             
             # Docker команда: prompt уже включен в bash команду через printf
@@ -629,8 +630,8 @@ This agent role is used for automated project tasks execution.
             if resume_chat_id:
                 cmd.extend(["--resume", resume_chat_id])
             
-            # Добавляем -p для non-interactive режима
-            cmd.extend(["-p", prompt])
+            # Добавляем -p для non-interactive режима с флагами полного доступа
+            cmd.extend(["-p", prompt, "--force", "--approve-mcps"])
             
             exec_cwd = None
             if effective_working_dir and os.name == 'nt':
@@ -647,8 +648,8 @@ This agent role is used for automated project tasks execution.
             if resume_chat_id:
                 cmd.extend(["--resume", resume_chat_id])
             
-            # Добавляем -p для non-interactive режима
-            cmd.extend(["-p", prompt])
+            # Добавляем -p для non-interactive режима с флагами полного доступа
+            cmd.extend(["-p", prompt, "--force", "--approve-mcps"])
             
             # Устанавливаем рабочую директорию
             exec_cwd = None
