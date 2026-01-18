@@ -70,6 +70,17 @@ server:
     output_dir: "todo"
     # Файл для отслеживания сессий генерации
     session_tracker_file: ".codeagent_sessions.json"
+  
+  # Настройки системы контрольных точек (checkpoint) для восстановления после сбоев
+  checkpoint:
+    # Включить систему checkpoint
+    enabled: true
+    # Файл для хранения контрольных точек
+    checkpoint_file: ".codeagent_checkpoint.json"
+    # Максимальное количество попыток выполнения задачи
+    max_task_attempts: 3
+    # Количество завершенных задач для хранения в checkpoint
+    keep_completed_tasks: 100
 
 # Настройки работы с документацией
 docs:
@@ -100,7 +111,7 @@ cursor:
   # "file" - файловый интерфейс (fallback)
   # "api" - Background Agents API
   # "screenshot" - UI автоматизация (в последнюю очередь)
-  interface_type: "cli"  # "screenshot", "api", "file", "cli"
+  interface_type: "cli"  # "screenshot", "api", "file", "cli" - используем cli с автоматическим перезапуском Docker
   
   # Настройки для CLI-интерфейса
   cli:

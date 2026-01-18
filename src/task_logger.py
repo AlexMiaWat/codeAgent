@@ -4,10 +4,28 @@
 
 import logging
 import sys
+import platform
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
+
+# Определяем, нужно ли использовать эмодзи (отключаем на Windows из-за проблем с кодировкой cp1251)
+USE_EMOJI = platform.system() != 'Windows'
+
+
+def emoji(emoji_char: str, fallback: str = '') -> str:
+    """
+    Возвращает эмодзи или текстовую альтернативу в зависимости от платформы
+    
+    Args:
+        emoji_char: Символ эмодзи
+        fallback: Текстовая альтернатива (если пустая, возвращается пустая строка)
+    
+    Returns:
+        Эмодзи или альтернативный текст
+    """
+    return emoji_char if USE_EMOJI else fallback
 
 
 # ANSI цветовые коды
@@ -228,11 +246,11 @@ ID: {self.task_id}
         # Краткий вывод в консоль с цветом (ответ)
         if brief:
             if success:
-                status_icon = "✅"
+                status_icon = emoji("✅", "[OK]")
                 status_text = "УСПЕШНО"
                 color = Colors.BRIGHT_GREEN
             else:
-                status_icon = "❌"
+                status_icon = emoji("❌", "[ERROR]")
                 status_text = "ОШИБКА"
                 color = Colors.BRIGHT_RED
             
@@ -330,7 +348,7 @@ ID: {self.task_id}
             timeout: Таймаут ожидания
         """
         # Ожидание - желтый цвет
-        self.logger.info(Colors.colorize(f"⏳ Ожидание результата...", Colors.BRIGHT_YELLOW))
+        self.logger.info(Colors.colorize(f"{emoji('⏳', '[WAIT]')} Ожидание результата...", Colors.BRIGHT_YELLOW))
         self.logger.info(f"   Файл: {file_path}")
         self.logger.info(f"   Таймаут: {timeout}с")
         
@@ -346,7 +364,7 @@ ID: {self.task_id}
             content_preview: Превью содержимого (опционально)
         """
         # Результат получен - зеленый цвет
-        self.logger.info(Colors.colorize(f"✅ Результат получен (за {wait_time:.1f}с)", Colors.BRIGHT_GREEN))
+        self.logger.info(Colors.colorize(f"{emoji('✅', '[OK]')} Результат получен (за {wait_time:.1f}с)", Colors.BRIGHT_GREEN))
         self.logger.info(f"   Файл: {file_path}")
         
         if content_preview:
@@ -367,7 +385,7 @@ ID: {self.task_id}
             exception: Объект исключения (опционально)
         """
         # Ошибка - красный цвет
-        self.logger.error(Colors.colorize(f"❌ ОШИБКА: {error_msg}", Colors.BRIGHT_RED))
+        self.logger.error(Colors.colorize(f"{emoji('❌', '[ERROR]')} ОШИБКА: {error_msg}", Colors.BRIGHT_RED))
         
         if exception:
             self.logger.error(Colors.colorize(f"   Тип: {type(exception).__name__}", Colors.RED))
@@ -385,7 +403,7 @@ ID: {self.task_id}
         end_time = datetime.now()
         duration = (end_time - self.start_time).total_seconds()
         
-        status_icon = "✅" if success else "❌"
+        status_icon = emoji("✅", "[OK]") if success else emoji("❌", "[ERROR]")
         status_text = "УСПЕШНО ЗАВЕРШЕНА" if success else "ЗАВЕРШЕНА С ОШИБКОЙ"
         color = Colors.BRIGHT_GREEN if success else Colors.BRIGHT_RED
         
@@ -449,13 +467,13 @@ class ServerLogger:
             config: Конфигурация сервера
         """
         separator = '=' * 80
-        cli_status = '✅ Доступен' if config.get('cursor_cli_available') else '❌ Недоступен'
+        cli_status = (emoji('✅', '[OK]') + ' Доступен') if config.get('cursor_cli_available') else (emoji('❌', '[X]') + ' Недоступен')
         
         header_lines = [
             Colors.colorize(separator, Colors.BRIGHT_BLACK),
             Colors.colorize("CODE AGENT SERVER", Colors.BOLD + Colors.BRIGHT_CYAN),
             Colors.colorize(separator, Colors.BRIGHT_BLACK),
-            Colors.colorize("🚀 ИНИЦИАЛИЗАЦИЯ", Colors.BRIGHT_GREEN),
+            Colors.colorize(emoji("🚀", ">>>") + " ИНИЦИАЛИЗАЦИЯ", Colors.BRIGHT_GREEN),
             f"Проект: {config.get('project_dir', 'N/A')}",
             f"Документация: {config.get('docs_dir', 'N/A')}",
             f"Cursor CLI: {cli_status}",
@@ -476,7 +494,7 @@ class ServerLogger:
         separator = '-' * 80
         msg_lines = [
             Colors.colorize(separator, Colors.BRIGHT_BLACK),
-            Colors.colorize(f"🔄 ИТЕРАЦИЯ {iteration}", Colors.BRIGHT_CYAN),
+            Colors.colorize(f"{emoji('🔄', '[ITER]')} ИТЕРАЦИЯ {iteration}", Colors.BRIGHT_CYAN),
             f"Ожидающих задач: {pending_tasks}",
             Colors.colorize(separator, Colors.BRIGHT_BLACK)
         ]

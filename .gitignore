@@ -132,6 +132,13 @@ log.txt
 codeAgentProjectStatus.md
 *ProjectStatus.md
 
+# Checkpoint files (session state, should not be committed)
+.codeagent_checkpoint.json
+.codeagent_checkpoint.json.backup
+.codeagent_sessions.json
+.test_checkpoint.json
+.test_checkpoint.json.backup
+
 # Backup files
 *.backup
 *.bak

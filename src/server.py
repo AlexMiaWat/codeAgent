@@ -20,7 +20,18 @@ from .cursor_cli_interface import CursorCLIInterface, create_cursor_cli_interfac
 from .cursor_file_interface import CursorFileInterface
 from .task_logger import TaskLogger, ServerLogger, TaskPhase
 from .session_tracker import SessionTracker
+from .checkpoint_manager import CheckpointManager
 
+
+# Настройка кодировки для Windows консоли
+if sys.platform == 'win32':
+    # Устанавливаем UTF-8 для stdout
+    import codecs
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    else:
+        # Для старых версий Python
+        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, errors='replace')
 
 # Настройка логирования
 logging.basicConfig(
@@ -96,11 +107,22 @@ class CodeAgentServer:
         self.server_logger = ServerLogger()
         
         # Инициализация трекера сессий для автоматической генерации TODO
+        # Session файлы хранятся в каталоге codeAgent, а не в целевом проекте
         auto_todo_config = server_config.get('auto_todo_generation', {})
         self.auto_todo_enabled = auto_todo_config.get('enabled', True)
         self.max_todo_generations = auto_todo_config.get('max_generations_per_session', 5)
         tracker_file = auto_todo_config.get('session_tracker_file', '.codeagent_sessions.json')
-        self.session_tracker = SessionTracker(self.project_dir, tracker_file)
+        codeagent_dir = Path(__file__).parent.parent  # Директория codeAgent
+        self.session_tracker = SessionTracker(codeagent_dir, tracker_file)
+        
+        # Инициализация менеджера контрольных точек для восстановления после сбоев
+        # Checkpoint файлы хранятся в каталоге codeAgent, а не в целевом проекте
+        checkpoint_file = server_config.get('checkpoint_file', '.codeagent_checkpoint.json')
+        codeagent_dir = Path(__file__).parent.parent  # Директория codeAgent
+        self.checkpoint_manager = CheckpointManager(codeagent_dir, checkpoint_file)
+        
+        # Проверяем, нужно ли восстановление после сбоя
+        self._check_recovery_needed()
         
         # Логируем инициализацию
         self.server_logger.log_initialization({
@@ -108,7 +130,8 @@ class CodeAgentServer:
             'docs_dir': str(self.docs_dir),
             'cursor_cli_available': self.use_cursor_cli,
             'auto_todo_enabled': self.auto_todo_enabled,
-            'max_todo_generations': self.max_todo_generations
+            'max_todo_generations': self.max_todo_generations,
+            'checkpoint_enabled': True
         })
         
         logger.info(f"Code Agent Server инициализирован")
@@ -121,6 +144,67 @@ class CodeAgentServer:
             logger.info("Cursor CLI недоступен, будет использоваться файловый интерфейс")
         if self.auto_todo_enabled:
             logger.info(f"Автоматическая генерация TODO включена (макс. {self.max_todo_generations} раз за сессию)")
+        logger.info(f"Checkpoint система активирована для защиты от сбоев")
+    
+    def _check_recovery_needed(self):
+        """
+        Проверка необходимости восстановления после сбоя
+        """
+        recovery_info = self.checkpoint_manager.get_recovery_info()
+        
+        if not recovery_info["was_clean_shutdown"]:
+            logger.warning("=" * 80)
+            logger.warning("ОБНАРУЖЕН НЕКОРРЕКТНЫЙ ОСТАНОВ СЕРВЕРА")
+            logger.warning("=" * 80)
+            logger.warning(f"Последний запуск: {recovery_info['last_start_time']}")
+            logger.warning(f"Последний останов: {recovery_info['last_stop_time']}")
+            logger.warning(f"Сессия: {recovery_info['session_id']}")
+            logger.warning(f"Итераций выполнено: {recovery_info['iteration_count']}")
+            
+            # Проверяем прерванную задачу
+            current_task = recovery_info.get("current_task")
+            if current_task:
+                logger.warning(f"Прерванная задача: {current_task['task_text']}")
+                logger.warning(f"  - ID: {current_task['task_id']}")
+                logger.warning(f"  - Попыток: {current_task['attempts']}")
+                logger.warning(f"  - Начало: {current_task['start_time']}")
+                
+                # Сбрасываем прерванную задачу для повторного выполнения
+                self.checkpoint_manager.reset_interrupted_task()
+                logger.info("Прерванная задача сброшена для повторного выполнения")
+            
+            # Показываем незавершенные задачи
+            incomplete_count = recovery_info["incomplete_tasks_count"]
+            if incomplete_count > 0:
+                logger.warning(f"Незавершенных задач: {incomplete_count}")
+                for task in recovery_info["incomplete_tasks"][:5]:  # Показываем первые 5
+                    logger.warning(f"  - {task['task_text']} (состояние: {task['state']})")
+            
+            # Показываем задачи с ошибками
+            failed_count = recovery_info["failed_tasks_count"]
+            if failed_count > 0:
+                logger.warning(f"Задач с ошибками: {failed_count}")
+                for task in recovery_info["failed_tasks"][:3]:  # Показываем первые 3
+                    logger.warning(f"  - {task['task_text']}")
+                    logger.warning(f"    Ошибка: {task.get('error_message', 'N/A')}")
+            
+            logger.warning("=" * 80)
+            logger.info("Сервер продолжит работу с последней контрольной точки")
+            logger.warning("=" * 80)
+            
+            # Обновляем статус
+            self.status_manager.append_status(
+                f"Восстановление после сбоя. Незавершенных задач: {incomplete_count}, "
+                f"с ошибками: {failed_count}",
+                level=2
+            )
+        else:
+            logger.info("Предыдущий останов был корректным. Восстановление не требуется.")
+            
+            # Показываем статистику
+            stats = self.checkpoint_manager.get_statistics()
+            logger.info(f"Статистика: выполнено {stats['completed']} задач, "
+                       f"ошибок {stats['failed']}, итераций {stats['iteration_count']}")
     
     def _init_cursor_cli(self) -> Optional[CursorCLIInterface]:
         """
@@ -459,12 +543,30 @@ class CodeAgentServer:
         Returns:
             True если задача выполнена успешно
         """
+        # Проверяем, не была ли задача уже выполнена
+        if self.checkpoint_manager.is_task_completed(todo_item.text):
+            logger.info(f"Задача уже выполнена (пропуск): {todo_item.text}")
+            return True
+        
         # Логируем начало задачи
         self.server_logger.log_task_start(task_number, total_tasks, todo_item.text)
         logger.info(f"Выполнение задачи: {todo_item.text}")
         
         # Генерируем ID задачи
         task_id = f"task_{int(time.time())}"
+        
+        # Добавляем задачу в checkpoint
+        self.checkpoint_manager.add_task(
+            task_id=task_id,
+            task_text=todo_item.text,
+            metadata={
+                "task_number": task_number,
+                "total_tasks": total_tasks
+            }
+        )
+        
+        # Отмечаем начало выполнения
+        self.checkpoint_manager.mark_task_start(task_id)
         
         # Создаем логгер для задачи
         task_logger = TaskLogger(task_id, todo_item.text)
@@ -493,12 +595,26 @@ class CodeAgentServer:
                 result = self._execute_task_via_cursor(todo_item, task_type, task_logger)
                 task_logger.log_completion(result, "Задача выполнена через Cursor")
                 task_logger.close()
+                
+                # Отмечаем в checkpoint
+                if result:
+                    self.checkpoint_manager.mark_task_completed(task_id)
+                else:
+                    self.checkpoint_manager.mark_task_failed(task_id, "Задача не выполнена через Cursor")
+                
                 return result
             else:
                 # Выполнение через CrewAI (старый способ)
                 result = self._execute_task_via_crewai(todo_item, task_logger)
                 task_logger.log_completion(result, "Задача выполнена через CrewAI")
                 task_logger.close()
+                
+                # Отмечаем в checkpoint
+                if result:
+                    self.checkpoint_manager.mark_task_completed(task_id)
+                else:
+                    self.checkpoint_manager.mark_task_failed(task_id, "Задача не выполнена через CrewAI")
+                
                 return result
             
         except Exception as e:
@@ -508,6 +624,9 @@ class CodeAgentServer:
             task_logger.log_error(f"Критическая ошибка при выполнении задачи", e)
             task_logger.log_completion(False, f"Ошибка: {str(e)}")
             task_logger.close()
+            
+            # Отмечаем ошибку в checkpoint
+            self.checkpoint_manager.mark_task_failed(task_id, str(e))
             
             # Обновляем статус: ошибка
             self.status_manager.update_task_status(
@@ -618,73 +737,29 @@ class CodeAgentServer:
             else:
                 logger.warning(f"Cursor CLI вернул ошибку: {result.get('error_message')}")
                 task_logger.log_error(f"Cursor CLI вернул ошибку: {result.get('error_message')}")
-                # Fallback на файловый интерфейс
-                logger.info("Переключение на файловый интерфейс")
-                task_logger.log_info("Переключение на файловый интерфейс")
+                
+                # НЕ используем fallback на файловый интерфейс - только автоматическое выполнение!
+                # Помечаем задачу как неуспешную и возвращаем False
+                self.status_manager.update_task_status(
+                    task_name=todo_item.text,
+                    status="Ошибка",
+                    details=f"Ошибка выполнения через Cursor CLI: {result.get('error_message')}"
+                )
+                return False
         
-        # Используем файловый интерфейс (fallback или если CLI недоступен)
-        logger.info(f"Использование файлового интерфейса для задачи {task_id}")
-        task_logger.log_info("Использование файлового интерфейса")
+        # Если CLI недоступен - возвращаем ошибку (НЕ используем файловый интерфейс)
+        logger.error(f"Cursor CLI недоступен для задачи {task_id}")
+        task_logger.log_error("Cursor CLI недоступен")
         
-        # Логируем создание нового диалога
-        task_logger.log_new_chat()
-        
-        # Записываем инструкцию в файл (с маркером для нового чата)
-        self.cursor_file.write_instruction(
-            instruction=instruction_text,
-            task_id=task_id,
-            metadata={
-                "task_type": task_type,
-                "wait_for_file": wait_for_file,
-                "control_phrase": control_phrase
-            },
-            new_chat=True  # Всегда создаем новый чат для новой задачи
+        self.status_manager.update_task_status(
+            task_name=todo_item.text,
+            status="Ошибка",
+            details="Cursor CLI недоступен"
         )
+        return False
         
-        # Фаза: Ожидание результата
-        task_logger.set_phase(TaskPhase.WAITING_RESULT)
-        task_logger.log_waiting_result(wait_for_file or "результата", timeout)
-        
-        # Ожидаем результат
-        wait_result = self.cursor_file.wait_for_result(
-            task_id=task_id,
-            timeout=timeout,
-            control_phrase=control_phrase
-        )
-        
-        if wait_result["success"]:
-            logger.info(f"Задача {task_id} выполнена через файловый интерфейс")
-            
-            result_content = wait_result.get("content", "")
-            task_logger.log_result_received(
-                wait_result.get('file_path', 'N/A'),
-                wait_result.get('wait_time', 0),
-                result_content[:500]
-            )
-            
-            # Фаза: Завершение
-            task_logger.set_phase(TaskPhase.COMPLETION)
-            
-            # Отмечаем задачу как выполненную
-            self.todo_manager.mark_task_done(todo_item.text)
-            
-            self.status_manager.update_task_status(
-                task_name=todo_item.text,
-                status="Выполнено",
-                details=f"Выполнено через файловый интерфейс. Результат: {result_content[:300]}..."
-            )
-            
-            return True
-        else:
-            logger.warning(f"Таймаут ожидания результата для задачи {task_id}: {wait_result.get('error')}")
-            task_logger.log_error(f"Таймаут ожидания результата: {wait_result.get('error')}")
-            
-            self.status_manager.update_task_status(
-                task_name=todo_item.text,
-                status="Ошибка",
-                details=f"Таймаут ожидания результата: {wait_result.get('error')}"
-            )
-            return False
+        # УДАЛЕНО: Код файлового интерфейса (fallback отключен)
+        # Файловый интерфейс требует ручного выполнения, что не допускается при автоматической работе
     
     def _execute_task_via_crewai(self, todo_item: TodoItem, task_logger: TaskLogger) -> bool:
         """
@@ -982,7 +1057,10 @@ class CodeAgentServer:
         Args:
             iteration: Номер итерации
         """
-        logger.info("Начало итерации")
+        logger.info(f"Начало итерации {iteration}")
+        
+        # Увеличиваем счетчик итераций в checkpoint
+        self.checkpoint_manager.increment_iteration()
         
         # Получаем непройденные задачи
         pending_tasks = self.todo_manager.get_pending_tasks()
@@ -1035,12 +1113,18 @@ class CodeAgentServer:
     def start(self):
         """Запуск сервера агента в бесконечном цикле"""
         logger.info("Запуск Code Agent Server")
+        
+        # Отмечаем запуск в checkpoint
+        session_id = self.session_tracker.current_session_id
+        self.checkpoint_manager.mark_server_start(session_id)
+        
         self.status_manager.append_status(
             f"Code Agent Server запущен. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             level=1
         )
         
-        iteration = 0
+        # Получаем начальную итерацию из checkpoint (для восстановления)
+        iteration = self.checkpoint_manager.get_iteration_count()
         
         try:
             while True:
@@ -1056,6 +1140,10 @@ class CodeAgentServer:
                     self.server_logger.log_server_shutdown(f"Достигнуто максимальное количество итераций: {self.max_iterations}")
                     break
                 
+                # Периодически очищаем старые задачи из checkpoint
+                if iteration % 10 == 0:
+                    self.checkpoint_manager.clear_old_tasks(keep_last_n=100)
+                
                 # Если нет задач, проверяем снова через интервал
                 if not has_tasks:
                     logger.info(f"Ожидание {self.check_interval} секунд перед следующей проверкой")
@@ -1067,6 +1155,10 @@ class CodeAgentServer:
         except KeyboardInterrupt:
             logger.info("Получен сигнал остановки")
             self.server_logger.log_server_shutdown("Остановка пользователем (Ctrl+C)")
+            
+            # Отмечаем корректный останов
+            self.checkpoint_manager.mark_server_stop(clean=True)
+            
             self.status_manager.append_status(
                 f"Code Agent Server остановлен. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                 level=2
@@ -1074,11 +1166,22 @@ class CodeAgentServer:
         except Exception as e:
             logger.error(f"Критическая ошибка: {e}", exc_info=True)
             self.server_logger.log_server_shutdown(f"Критическая ошибка: {str(e)}")
+            
+            # Отмечаем некорректный останов
+            self.checkpoint_manager.mark_server_stop(clean=False)
+            
             self.status_manager.append_status(
                 f"Критическая ошибка: {str(e)}. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                 level=2
             )
             raise
+        finally:
+            # Гарантируем сохранение checkpoint при любом выходе
+            try:
+                if not self.checkpoint_manager.was_clean_shutdown():
+                    self.checkpoint_manager.mark_server_stop(clean=False)
+            except:
+                pass
 
 
 def main():

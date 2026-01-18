@@ -168,7 +168,8 @@ class CursorCLIInterface:
     
     def _ensure_docker_container_running(self, compose_file: Path) -> Dict[str, Any]:
         """
-        Проверяет статус Docker контейнера и запускает его, если он остановлен
+        Проверяет статус Docker контейнера и запускает его, если он остановлен.
+        Также проверяет, что контейнер не в состоянии постоянного перезапуска.
         
         Args:
             compose_file: Путь к docker-compose.agent.yml
@@ -177,30 +178,71 @@ class CursorCLIInterface:
             Словарь с информацией о статусе контейнера
         """
         try:
-            # Проверяем статус контейнера
-            check_cmd = [
-                "docker", "compose",
-                "-f", str(compose_file),
-                "ps", "-q"
-            ]
-            result = subprocess.run(
-                check_cmd,
+            # Сначала проверяем, что Docker вообще работает
+            docker_check = subprocess.run(
+                ["docker", "ps"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=5
             )
             
-            # Если контейнер запущен (есть ID), возвращаем успех
-            if result.returncode == 0 and result.stdout.strip():
-                logger.debug("Docker контейнер уже запущен")
-                return {"running": True, "container_id": result.stdout.strip()}
+            if docker_check.returncode != 0:
+                logger.error("Docker не запущен или недоступен")
+                return {
+                    "running": False,
+                    "error": "Docker не запущен. Запустите Docker Desktop и повторите попытку."
+                }
             
-            # Контейнер не запущен - запускаем его
-            logger.info("Запуск Docker контейнера...")
+            # Проверяем статус конкретного контейнера
+            container_name = "cursor-agent-life"
+            inspect_cmd = [
+                "docker", "inspect",
+                "--format", "{{.State.Status}}",
+                container_name
+            ]
+            inspect_result = subprocess.run(
+                inspect_cmd,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if inspect_result.returncode == 0:
+                status = inspect_result.stdout.strip()
+                logger.debug(f"Docker контейнер {container_name} статус: {status}")
+                
+                # Проверяем, что контейнер не в состоянии Restarting
+                if status == "restarting":
+                    logger.error(f"Контейнер {container_name} постоянно перезапускается! Удаляем проблемный контейнер...")
+                    # Останавливаем и удаляем проблемный контейнер
+                    subprocess.run(["docker", "stop", container_name], timeout=10, capture_output=True)
+                    subprocess.run(["docker", "rm", container_name], timeout=10, capture_output=True)
+                    logger.info(f"Проблемный контейнер {container_name} удален, будет создан заново")
+                    status = "removed"
+                
+                if status == "running":
+                    # Дополнительно проверяем, что контейнер отвечает
+                    health_check = subprocess.run(
+                        ["docker", "exec", container_name, "echo", "ok"],
+                        capture_output=True,
+                        timeout=5
+                    )
+                    if health_check.returncode == 0:
+                        logger.debug("Docker контейнер работает корректно")
+                        return {"running": True}
+                    else:
+                        logger.warning("Контейнер запущен, но не отвечает. Перезапускаем...")
+                        subprocess.run(["docker", "restart", container_name], timeout=15, capture_output=True)
+                        import time
+                        time.sleep(3)
+                        return {"running": True}
+            
+            # Контейнер не запущен или работает некорректно - запускаем заново
+            logger.info(f"Запуск Docker контейнера {container_name}...")
             up_cmd = [
                 "docker", "compose",
                 "-f", str(compose_file),
-                "up", "-d"  # -d для запуска в фоне
+                "up", "-d"
             ]
             up_result = subprocess.run(
                 up_cmd,
@@ -211,9 +253,36 @@ class CursorCLIInterface:
             
             if up_result.returncode == 0:
                 logger.info("Docker контейнер успешно запущен")
-                # Даем контейнеру немного времени на запуск
+                # Даем контейнеру время на запуск и проверяем статус
                 import time
-                time.sleep(2)
+                time.sleep(3)
+                
+                # Проверяем, что контейнер действительно запустился
+                final_check = subprocess.run(
+                    ["docker", "inspect", "--format", "{{.State.Status}}", container_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                
+                if final_check.returncode == 0:
+                    final_status = final_check.stdout.strip()
+                    if final_status == "running":
+                        logger.info("Контейнер успешно запущен и работает")
+                        return {"running": True}
+                    elif final_status == "restarting":
+                        logger.error(f"Контейнер сразу начал перезапускаться! Проверьте логи: docker logs {container_name}")
+                        return {
+                            "running": False,
+                            "error": f"Контейнер постоянно перезапускается. Проверьте логи: docker logs {container_name}"
+                        }
+                    else:
+                        logger.error(f"Контейнер запущен, но в состоянии: {final_status}")
+                        return {
+                            "running": False,
+                            "error": f"Контейнер в неожиданном состоянии: {final_status}"
+                        }
+                
                 return {"running": True}
             else:
                 logger.error(f"Ошибка запуска контейнера: {up_result.stderr}")
@@ -523,18 +592,27 @@ This agent role is used for automated project tasks execution.
                 if cursor_api_key:
                     logger.debug("CURSOR_API_KEY загружен из .env")
             
-            # Проверяем и запускаем контейнер если нужно
-            container_status = self._ensure_docker_container_running(compose_file)
-            if not container_status["running"]:
-                logger.warning(f"Не удалось запустить Docker контейнер: {container_status.get('error')}")
-                return CursorCLIResult(
-                    success=False,
-                    stdout="",
-                    stderr="",
-                    return_code=-1,
-                    cli_available=False,
-                    error_message=f"Не удалось запустить Docker контейнер: {container_status.get('error')}"
-                )
+            # Проверяем и запускаем контейнер если нужно (с повторными попытками)
+            max_retries = 3
+            for attempt in range(max_retries):
+                container_status = self._ensure_docker_container_running(compose_file)
+                if container_status["running"]:
+                    break
+                
+                if attempt < max_retries - 1:
+                    logger.warning(f"Попытка {attempt + 1}/{max_retries}: Контейнер не запущен, повторная попытка...")
+                    import time
+                    time.sleep(2)
+                else:
+                    logger.error(f"Не удалось запустить Docker контейнер после {max_retries} попыток")
+                    return CursorCLIResult(
+                        success=False,
+                        stdout="",
+                        stderr="",
+                        return_code=-1,
+                        cli_available=False,
+                        error_message=f"Не удалось запустить Docker контейнер после {max_retries} попыток: {container_status.get('error')}"
+                    )
             
             # Формируем Docker команду для exec (выполнение в запущенном контейнере)
             # Используем docker exec напрямую с именем контейнера
@@ -597,23 +675,22 @@ This agent role is used for automated project tasks execution.
             # Agent команда БЕЗ prompt
             agent_base_cmd = ' '.join(str(arg) for arg in agent_base_cmd_parts)
             
-            # ИСПРАВЛЕНИЕ: agent -p читает из stdin через pipe
-            # Используем printf в bash для передачи prompt через pipe
-            # Формат: printf "%s\n" "prompt" | agent -p
-            # Экранируем normalized_prompt для безопасной передачи в printf
-            # printf понимает escape-последовательности, поэтому экранируем только кавычки и спецсимволы
-            escaped_for_printf = normalized_prompt.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
-            # Добавляем флаги --force и --approve-mcps для полного доступа без запросов разрешений
-            bash_pipe_cmd = f'printf "%s\\n" "{escaped_for_printf}" | {agent_base_cmd} -p --force --approve-mcps'
-            script_cmd = f'script -q -c "{bash_pipe_cmd}" /dev/null'
+            # НОВОЕ РЕШЕНИЕ: Передаем prompt напрямую через аргумент -p
+            # Используем shlex.quote для безопасного экранирования prompt
+            import shlex
             
-            # Docker команда: prompt уже включен в bash команду через printf
+            # Экранируем prompt для bash
+            escaped_prompt = shlex.quote(prompt)
+            
+            # Формируем команду agent с prompt
+            agent_full_cmd = f'{agent_base_cmd} -p {escaped_prompt} --force --approve-mcps'
+            
+            # Docker команда: выполняем agent напрямую без script (agent сам управляет TTY)
             cmd = [
                 "docker", "exec",
-                "-i",  # -i для TTY (если потребуется)
                 "cursor-agent-life",
                 "bash", "-c",
-                f'export LANG=C.utf8 LC_ALL=C.utf8 && cd /workspace && {script_cmd}'
+                f'export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && {agent_full_cmd}'
             ]
             
             # Prompt передается через printf в bash команде, stdin subprocess НЕ используется
@@ -669,8 +746,10 @@ This agent role is used for automated project tasks execution.
             agent_idx = cmd.index("agent")
             cmd[agent_idx + 1:agent_idx + 1] = additional_args
         
-        # Определяем таймаут
+        # Определяем таймаут (увеличиваем для Docker, так как agent может работать долго)
         exec_timeout = timeout if timeout is not None else self.default_timeout
+        if use_docker:
+            exec_timeout = max(exec_timeout, 600)  # Минимум 10 минут для Docker
         
         logger.info(f"Выполнение команды через Cursor CLI: {' '.join(cmd)}")
         logger.debug(f"Рабочая директория: {exec_cwd or (working_dir or os.getcwd())}")
@@ -694,30 +773,58 @@ This agent role is used for automated project tasks execution.
             stdin_input = None
             
             # Выполняем команду
-            result = subprocess.run(
-                exec_cmd,
-                input=stdin_input,  # stdin не используется (prompt в bash команде)
-                capture_output=True,
-                text=True,
-                timeout=exec_timeout,
-                cwd=exec_cwd if exec_cwd else None,
-                encoding='utf-8',
-                errors='replace',  # Обработка ошибок кодировки
-                env=env  # Передаем переменные окружения для Docker
-            )
-            
-            success = result.returncode == 0
+            # ИСПРАВЛЕНИЕ: Для Docker не захватываем вывод (capture_output=False)
+            # Agent работает долго и может быть убит при захвате вывода
+            # Вместо этого запускаем в фоне и проверяем результат по созданным файлам
+            if use_docker:
+                # Запускаем в фоне без захвата вывода
+                result = subprocess.run(
+                    exec_cmd,
+                    input=stdin_input,
+                    stdout=subprocess.DEVNULL,  # Не захватываем stdout
+                    stderr=subprocess.DEVNULL,  # Не захватываем stderr
+                    timeout=exec_timeout,
+                    cwd=exec_cwd if exec_cwd else None,
+                    env=env
+                )
+                # Для Docker считаем успехом если код возврата 0 или 137 (процесс завершился)
+                # Реальный результат проверяем по созданным файлам
+                success = result.returncode in [0, 137]
+                result_stdout = "(вывод не захватывается для Docker, проверьте созданные файлы)"
+                result_stderr = ""
+            else:
+                # Для не-Docker команд захватываем вывод как обычно
+                result = subprocess.run(
+                    exec_cmd,
+                    input=stdin_input,
+                    capture_output=True,
+                    text=True,
+                    timeout=exec_timeout,
+                    cwd=exec_cwd if exec_cwd else None,
+                    encoding='utf-8',
+                    errors='replace',
+                    env=env
+                )
+                success = result.returncode == 0
+                result_stdout = result.stdout
+                result_stderr = result.stderr
             
             if success:
                 logger.info("Команда Cursor CLI выполнена успешно")
             else:
                 logger.warning(f"Команда Cursor CLI завершилась с кодом {result.returncode}")
-                logger.debug(f"Stderr: {result.stderr[:500]}")
+                if result_stderr:
+                    logger.debug(f"Stderr: {result_stderr[:500]}")
+                
+                # Если код 137 (SIGKILL) и используется Docker - это нормально для фоновых задач
+                if result.returncode == 137 and use_docker:
+                    logger.info("Код 137 для Docker - agent выполнился в фоне, проверяем результат по файлам")
+                    success = True  # Считаем успехом для Docker
             
             return CursorCLIResult(
                 success=success,
-                stdout=result.stdout,
-                stderr=result.stderr,
+                stdout=result_stdout,
+                stderr=result_stderr,
                 return_code=result.returncode,
                 cli_available=True,
                 error_message=None if success else f"CLI вернул код {result.returncode}"

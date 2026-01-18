@@ -66,20 +66,29 @@ When working with the project, you have access to:
     # - CustomTool для специфических задач проекта
     
     # Настройка LLM
+    import os
+    import logging
+    logger = logging.getLogger(__name__)
+    
     llm_kwargs = {}
-    if use_llm_manager and LLM_WRAPPER_AVAILABLE:
+    
+    # Пытаемся использовать OpenRouter через CrewAI LLM
+    if os.getenv('OPENROUTER_API_KEY'):
         try:
-            custom_llm = create_llm_for_crewai(
-                config_path=llm_config_path,
-                use_fastest=True,
-                use_parallel=use_parallel
+            from crewai.llm import LLM
+            # Создаем LLM объект с параметрами OpenRouter
+            llm_kwargs['llm'] = LLM(
+                model="google/gemini-2.0-flash-exp:free",
+                api_key=os.getenv('OPENROUTER_API_KEY'),
+                base_url="https://openrouter.ai/api/v1"
             )
-            llm_kwargs['llm'] = custom_llm
+            logger.info("Using OpenRouter with gemini-2.0-flash-exp:free model")
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Failed to create LLM wrapper, using default LLM: {e}")
-            # Используем стандартный LLM CrewAI при ошибке
+            logger.warning(f"Failed to create OpenRouter LLM: {e}")
+            # Fallback: устанавливаем фиктивный OPENAI_API_KEY для использования по умолчанию
+            if not os.getenv('OPENAI_API_KEY'):
+                os.environ['OPENAI_API_KEY'] = 'sk-dummy'
+                logger.info("Using dummy OpenAI key (agent will not work without proper LLM)")
     
     agent = Agent(
         role=role,
