@@ -18,6 +18,10 @@ services:
       - ../../life:/workspace:rw
       # Монтируем домашнюю директорию для сохранения конфигурации agent
       - agent-home:/root
+      # Монтируем SSH-ключи для доступа к GitHub (git push на этапе 8)
+      # Windows путь: C:\Users\<username>\.ssh -> /root/.ssh в контейнере
+      # Используем rw вместо ro, чтобы скрипт мог исправить права доступа
+      - ${HOME}/.ssh:/root/.ssh:rw
     working_dir: /workspace
     environment:
       - AGENT_WORKING_DIR=/workspace
@@ -28,6 +32,7 @@ services:
       # Установка UTF-8 локали для поддержки кириллицы
       - LANG=C.utf8
       - LC_ALL=C.utf8
+      # GIT_SSH_COMMAND будет установлен скриптом /start.sh при запуске контейнера
     # Используем скрипт запуска с логированием из Dockerfile
     # Скрипт /start.sh выводит логи в stdout/stderr для docker logs
     entrypoint: ["/bin/bash", "/start.sh"]

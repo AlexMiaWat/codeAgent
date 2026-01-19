@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     util-linux \
     procps \
+    openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 # util-linux содержит утилиту 'script' для создания pseudo-TTY
@@ -35,6 +36,15 @@ ENV AGENT_HOME=/root
 # Примечание: CURSOR_API_KEY должен быть передан через docker-compose.agent.yml
 # или через переменные окружения при запуске контейнера
 
+# Настройка SSH для GitHub (если SSH-ключи монтируются из хоста)
+RUN mkdir -p /root/.ssh && \
+    chmod 700 /root/.ssh && \
+    touch /root/.ssh/config && \
+    chmod 600 /root/.ssh/config && \
+    echo "Host github.com" >> /root/.ssh/config && \
+    echo "  StrictHostKeyChecking no" >> /root/.ssh/config && \
+    echo "  UserKnownHostsFile=/dev/null" >> /root/.ssh/config
+
 # Создание скрипта запуска с логированием
 RUN cat > /start.sh << 'EOF'
 #!/usr/bin/env bash
@@ -44,6 +54,53 @@ set -e
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
 }
+
+# Настройка SSH-ключей (исправление прав доступа при монтировании из Windows)
+# При монтировании из Windows права теряются, поэтому копируем ключи в /root/.ssh-local
+if [ -d /root/.ssh ]; then
+    log "SSH directory found: /root/.ssh"
+    # Создаем локальную директорию для SSH с правильными правами
+    mkdir -p /root/.ssh-local
+    chmod 700 /root/.ssh-local
+    
+    # Копируем и настраиваем ключи
+    if [ -f /root/.ssh/id_ed25519 ]; then
+        cat /root/.ssh/id_ed25519 > /root/.ssh-local/id_ed25519
+        cat /root/.ssh/id_ed25519.pub > /root/.ssh-local/id_ed25519.pub 2>/dev/null || true
+        chmod 600 /root/.ssh-local/id_ed25519
+        chmod 644 /root/.ssh-local/id_ed25519.pub 2>/dev/null || true
+        # Копируем config если есть
+        [ -f /root/.ssh/config ] && cat /root/.ssh/config > /root/.ssh-local/config && chmod 600 /root/.ssh-local/config || true
+        # Используем локальную директорию
+        export GIT_SSH_COMMAND="ssh -i /root/.ssh-local/id_ed25519 -o IdentitiesOnly=yes"
+        log "SSH key configured in /root/.ssh-local - git push should work"
+    elif [ -f /root/.ssh/id_rsa ]; then
+        cat /root/.ssh/id_rsa > /root/.ssh-local/id_rsa
+        cat /root/.ssh/id_rsa.pub > /root/.ssh-local/id_rsa.pub 2>/dev/null || true
+        chmod 600 /root/.ssh-local/id_rsa
+        chmod 644 /root/.ssh-local/id_rsa.pub 2>/dev/null || true
+        [ -f /root/.ssh/config ] && cat /root/.ssh/config > /root/.ssh-local/config && chmod 600 /root/.ssh-local/config || true
+        export GIT_SSH_COMMAND="ssh -i /root/.ssh-local/id_rsa -o IdentitiesOnly=yes"
+        log "SSH key configured in /root/.ssh-local - git push should work"
+    else
+        log "Warning: No SSH key found in /root/.ssh"
+    fi
+    
+    # Настраиваем SSH для использования локальной директории
+    if [ -d /root/.ssh-local ]; then
+        # Устанавливаем GIT_SSH_COMMAND глобально для всех git команд
+        if [ -f /root/.ssh-local/id_ed25519 ]; then
+            export GIT_SSH_COMMAND="ssh -i /root/.ssh-local/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+            echo 'export GIT_SSH_COMMAND="ssh -i /root/.ssh-local/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"' >> /root/.bashrc
+        elif [ -f /root/.ssh-local/id_rsa ]; then
+            export GIT_SSH_COMMAND="ssh -i /root/.ssh-local/id_rsa -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+            echo 'export GIT_SSH_COMMAND="ssh -i /root/.ssh-local/id_rsa -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"' >> /root/.bashrc
+        fi
+        # Также добавляем в /etc/environment для всех процессов
+        [ -f /root/.ssh-local/id_ed25519 ] && echo 'GIT_SSH_COMMAND="ssh -i /root/.ssh-local/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"' >> /etc/environment || true
+        [ -f /root/.ssh-local/id_rsa ] && echo 'GIT_SSH_COMMAND="ssh -i /root/.ssh-local/id_rsa -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"' >> /etc/environment || true
+    fi
+fi
 
 log "=== Cursor Agent Container Started ==="
 log "Container ID: $(hostname)"
