@@ -1,9 +1,0 @@
-model,prompt_type,flags,command,success,return_code,duration,stdout,stderr,billing_error,timeout,error
-claude-haiku,simple,-p,"cd /workspace && /root/.local/bin/agent -m claude-haiku -p ""Создай файл test.txt с текстом 'Hello'""",False,1,1.4634099006652832,,"error: unknown option '-m'
-",False,False,
-claude-haiku,simple,-p --force,"cd /workspace && /root/.local/bin/agent -m claude-haiku -p --force ""Создай файл test.txt с текстом 'Hello'""",False,1,1.455639123916626,,"error: unknown option '-m'
-",False,False,
-claude-haiku,simple,-p --force --approve-mcps,"cd /workspace && /root/.local/bin/agent -m claude-haiku -p --force --approve-mcps ""Создай файл test.txt с текстом 'Hello'""",False,1,1.4266576766967773,,"error: unknown option '-m'
-",False,False,
-claude-haiku,simple,-p --force --approve-mcps --verbose,"cd /workspace && /root/.local/bin/agent -m claude-haiku -p --force --approve-mcps --verbose ""Создай файл test.txt с текстом 'Hello'""",False,1,1.622087001800537,,"error: unknown option '-m'
-",False,False,

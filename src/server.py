@@ -451,6 +451,26 @@ class CodeAgentServer:
             logger.error(f"Ошибка при синхронизации TODO с checkpoint: {e}", exc_info=True)
             # Не прерываем инициализацию из-за ошибки синхронизации
     
+    def _filter_completed_tasks(self, tasks: List[TodoItem]) -> List[TodoItem]:
+        """
+        Фильтрация задач: исключает задачи, которые уже выполнены в checkpoint
+        
+        Args:
+            tasks: Список задач для фильтрации
+            
+        Returns:
+            Отфильтрованный список задач (только невыполненные)
+        """
+        filtered_tasks = []
+        for task in tasks:
+            if not self.checkpoint_manager.is_task_completed(task.text):
+                filtered_tasks.append(task)
+            else:
+                logger.debug(f"Задача '{task.text}' уже выполнена в checkpoint, пропускаем")
+                # Помечаем задачу как done в TODO для синхронизации
+                self.todo_manager.mark_task_done(task.text)
+        return filtered_tasks
+    
     def _init_cursor_cli(self) -> Optional[CursorCLIInterface]:
         """
         Инициализация Cursor CLI интерфейса
@@ -1565,21 +1585,59 @@ class CodeAgentServer:
         with self._task_in_progress_lock:
             self._task_in_progress = True
         
-        # Генерируем ID задачи
-        task_id = f"task_{int(time.time())}"
+        # ВАЖНО: Проверяем, есть ли незавершенная задача с тем же текстом
+        # Если есть, используем ее task_id для продолжения выполнения
+        existing_task = None
+        matching_tasks = [
+            task for task in self.checkpoint_manager.checkpoint_data.get("tasks", [])
+            if task.get("task_text") == todo_item.text 
+            and task.get("state") in ["pending", "in_progress"]
+        ]
         
-        # Добавляем задачу в checkpoint
-        self.checkpoint_manager.add_task(
-            task_id=task_id,
-            task_text=todo_item.text,
-            metadata={
-                "task_number": task_number,
-                "total_tasks": total_tasks
-            }
-        )
+        if matching_tasks:
+            # Находим последнюю незавершенную задачу по времени начала
+            last_time = None
+            for task in matching_tasks:
+                start_time_str = task.get("start_time")
+                if start_time_str:
+                    try:
+                        start_time = datetime.fromisoformat(start_time_str)
+                        if last_time is None or start_time > last_time:
+                            last_time = start_time
+                            existing_task = task
+                    except (ValueError, TypeError):
+                        pass
+            
+            # Если не нашли задачу с start_time, берем последнюю в списке
+            if existing_task is None and matching_tasks:
+                existing_task = matching_tasks[-1]
         
-        # Отмечаем начало выполнения
-        self.checkpoint_manager.mark_task_start(task_id)
+        # Используем существующую задачу или создаем новую
+        if existing_task:
+            task_id = existing_task.get("task_id")
+            existing_progress = existing_task.get("instruction_progress", {})
+            last_completed = existing_progress.get("last_completed_instruction", 0) if existing_progress else 0
+            logger.info(f"✓ Используем существующую незавершенную задачу: {task_id} (state: {existing_task.get('state')}, последняя инструкция: {last_completed})")
+            
+            # Если задача в состоянии PENDING, отмечаем начало выполнения
+            if existing_task.get("state") == "pending":
+                self.checkpoint_manager.mark_task_start(task_id)
+        else:
+            # Генерируем новый ID задачи
+            task_id = f"task_{int(time.time())}"
+            
+            # Добавляем задачу в checkpoint
+            self.checkpoint_manager.add_task(
+                task_id=task_id,
+                task_text=todo_item.text,
+                metadata={
+                    "task_number": task_number,
+                    "total_tasks": total_tasks
+                }
+            )
+            
+            # Отмечаем начало выполнения
+            self.checkpoint_manager.mark_task_start(task_id)
         
         # Создаем логгер для задачи
         task_logger = TaskLogger(task_id, todo_item.text)
@@ -1620,6 +1678,12 @@ class CodeAgentServer:
                 # Отмечаем в checkpoint
                 if result:
                     self.checkpoint_manager.mark_task_completed(task_id)
+                    # ВАЖНО: Отмечаем задачу как done в TODO файле
+                    # mark_task_done() уже вызывает _save_todos() внутри
+                    if self.todo_manager.mark_task_done(todo_item.text):
+                        logger.info(f"✓ Задача '{todo_item.text}' отмечена как выполненная в TODO файле")
+                    else:
+                        logger.warning(f"Не удалось отметить задачу '{todo_item.text}' как выполненную в TODO файле")
                 else:
                     self.checkpoint_manager.mark_task_failed(task_id, "Задача не выполнена через Cursor")
                 
@@ -1633,6 +1697,9 @@ class CodeAgentServer:
                 # Отмечаем в checkpoint
                 if result:
                     self.checkpoint_manager.mark_task_completed(task_id)
+                    # ВАЖНО: Отмечаем задачу как done в TODO файле
+                    self.todo_manager.mark_task_done(todo_item.text)
+                    logger.debug(f"Задача '{todo_item.text}' отмечена как выполненная в TODO файле")
                 else:
                     self.checkpoint_manager.mark_task_failed(task_id, "Задача не выполнена через CrewAI")
                 
@@ -1775,6 +1842,13 @@ class CodeAgentServer:
                     if last_progress and last_completed > 0:
                         instruction_progress = last_progress
                         logger.info(f"✓ Найден прогресс из предыдущей попытки задачи (task_id: {last_task.get('task_id')}, state: {last_state}, последняя инструкция: {last_completed})")
+                        
+                        # ВАЖНО: Копируем прогресс в текущую задачу, чтобы он сохранялся при следующих перезапусках
+                        current_task = self.checkpoint_manager._find_task(task_id)
+                        if current_task:
+                            current_task["instruction_progress"] = last_progress.copy()
+                            self.checkpoint_manager._save_checkpoint(create_backup=False)
+                            logger.debug(f"Прогресс инструкций скопирован в текущую задачу {task_id}")
                     else:
                         logger.debug(f"У предыдущей попытки нет прогресса инструкций или прогресс пустой")
         
@@ -1821,20 +1895,26 @@ class CodeAgentServer:
                 task_logger.log_warning("Предупреждение: не удалось полностью очистить диалоги")
         
         # Логируем создание нового диалога (один раз для всей последовательности)
+        # Chat ID будет получен после выполнения первой инструкции
         task_logger.log_new_chat()
         
         # Отслеживаем успешно выполненные инструкции
         successful_instructions = 0
         failed_instructions = 0
         critical_instructions = min(3, len(all_templates))  # Минимум 3 инструкции для завершения задачи
+        first_instruction_executed = False  # Флаг для логирования chat_id после первой инструкции
         
         # Выполняем все инструкции последовательно (1, 2, 3, ...)
         # Начинаем с start_from_instruction если есть сохраненный прогресс
         for instruction_num, template in enumerate(all_templates, start=1):
+            # Получаем информацию об инструкции для логирования
+            instruction_id = template.get('instruction_id', instruction_num)
+            instruction_name = template.get('name', f'Инструкция {instruction_id}')
+            
             # Пропускаем уже выполненные инструкции
             if instruction_num < start_from_instruction:
-                logger.info(f"Пропуск инструкции {instruction_num}/{len(all_templates)} (уже выполнена)")
-                task_logger.log_info(f"Пропуск инструкции {instruction_num} (уже выполнена)")
+                logger.info(f"Пропуск инструкции {instruction_num}/{len(all_templates)}: {instruction_name} (уже выполнена)")
+                task_logger.log_info(f"Пропуск инструкции {instruction_num}: {instruction_name} (уже выполнена)")
                 successful_instructions += 1  # Учитываем уже выполненную инструкцию
                 continue
             # Проверяем запрос на остановку перед каждой инструкцией
@@ -1861,9 +1941,6 @@ class CodeAgentServer:
                 # Инициируем перезапуск
                 raise ServerReloadException("Перезапуск из-за изменения кода во время выполнения задачи")
             
-            instruction_id = template.get('instruction_id', instruction_num)
-            instruction_name = template.get('name', f'Инструкция {instruction_id}')
-            
             logger.info(f"[{instruction_num}/{len(all_templates)}] Выполнение инструкции: {instruction_name} (ID: {instruction_id})")
             task_logger.log_info(f"Инструкция {instruction_num}/{len(all_templates)}: {instruction_name}")
             
@@ -1887,6 +1964,27 @@ class CodeAgentServer:
             task_logger.log_instruction(instruction_num, instruction_text, task_type)
             logger.debug(f"Инструкция {instruction_num} для Cursor: {instruction_text[:200]}...")
             
+            # ВАЖНО: Перед инструкцией коммита (instruction_id 8) сохраняем TODO файл с отмеченными задачами
+            # Это нужно, чтобы изменения в TODO попали в коммит
+            if instruction_id == 8:
+                logger.info("Инструкция 8 (коммит) - сохраняем TODO файл с отмеченными задачами перед коммитом")
+                try:
+                    # Отмечаем текущую задачу как выполненную в TODO файле
+                    if not self.todo_manager.mark_task_done(todo_item.text):
+                        logger.warning(f"Не удалось отметить задачу '{todo_item.text}' как выполненную в TODO файле")
+                    else:
+                        logger.info(f"✓ Задача '{todo_item.text}' отмечена как выполненная в TODO файле")
+                    
+                    # Сохраняем TODO файл
+                    self.todo_manager._save_todos()
+                    logger.info(f"✓ TODO файл сохранен: {self.todo_manager.todo_file}")
+                    
+                    # Также синхронизируем с checkpoint для полноты
+                    self._sync_todos_with_checkpoint()
+                except Exception as e:
+                    logger.error(f"Ошибка при сохранении TODO файла перед коммитом: {e}", exc_info=True)
+                    # Не прерываем выполнение из-за ошибки сохранения TODO
+            
             # Фаза: Выполнение через Cursor
             task_logger.set_phase(TaskPhase.CURSOR_EXECUTION, stage=instruction_num, instruction_num=instruction_num)
             
@@ -1901,6 +1999,13 @@ class CodeAgentServer:
             
             # Логируем ответ от Cursor
             task_logger.log_cursor_response(result, brief=True)
+            
+            # Логируем chat_id после выполнения первой инструкции (если еще не залогирован)
+            if not first_instruction_executed and self.cursor_cli and self.cursor_cli.current_chat_id:
+                chat_id = self.cursor_cli.current_chat_id
+                logger.info(f"💬 ID диалога: {chat_id}")
+                task_logger.log_new_chat(chat_id)  # Обновляем лог с chat_id
+                first_instruction_executed = True
             
             # ДОПОЛНИТЕЛЬНОЕ ЛОГИРОВАНИЕ для диагностики
             logger.debug(f"Результат выполнения инструкции {instruction_num}: success={result.get('success')}, wait_for_file='{wait_for_file}', control_phrase='{control_phrase}'")
@@ -2172,7 +2277,11 @@ class CodeAgentServer:
             return False
         
         # Отмечаем задачу как выполненную только если выполнено достаточно инструкций
-        self.todo_manager.mark_task_done(todo_item.text)
+        # ВАЖНО: mark_task_done() уже вызывает _save_todos() внутри
+        if self.todo_manager.mark_task_done(todo_item.text):
+            logger.info(f"✓ Задача '{todo_item.text}' отмечена как выполненная в TODO файле (после выполнения всех инструкций)")
+        else:
+            logger.warning(f"Не удалось отметить задачу '{todo_item.text}' как выполненную в TODO файле")
         
         self.status_manager.update_task_status(
             task_name=todo_item.text,
@@ -2620,8 +2729,16 @@ class CodeAgentServer:
         # Увеличиваем счетчик итераций в checkpoint
         self.checkpoint_manager.increment_iteration()
         
+        # ВАЖНО: Синхронизируем TODO с checkpoint перед получением задач
+        # Это помечает задачи как done в TODO, если они уже выполнены в checkpoint
+        self._sync_todos_with_checkpoint()
+        
         # Получаем непройденные задачи
         pending_tasks = self.todo_manager.get_pending_tasks()
+        
+        # Дополнительная фильтрация: исключаем задачи, которые уже выполнены в checkpoint
+        # (на случай, если они не были синхронизированы)
+        pending_tasks = self._filter_completed_tasks(pending_tasks)
         
         if not pending_tasks:
             logger.info("Все задачи выполнены")
@@ -2653,7 +2770,11 @@ class CodeAgentServer:
                     
                     # После ревизии перезагружаем задачи (может появиться новый todo)
                     self.todo_manager = TodoManager(self.project_dir, todo_format=self.config.get('project.todo_format', 'txt'))
+                    # Синхронизируем TODO с checkpoint после перезагрузки
+                    self._sync_todos_with_checkpoint()
                     pending_tasks_after_revision = self.todo_manager.get_pending_tasks()
+                    # Фильтруем выполненные задачи
+                    pending_tasks_after_revision = self._filter_completed_tasks(pending_tasks_after_revision)
                     
                     if pending_tasks_after_revision:
                         logger.info(f"После ревизии найдено {len(pending_tasks_after_revision)} новых задач, продолжаем выполнение")
@@ -2666,12 +2787,20 @@ class CodeAgentServer:
                     # Продолжаем даже если ревизия не завершена полностью
                     # Перезагружаем задачи на всякий случай
                     self.todo_manager = TodoManager(self.project_dir, todo_format=self.config.get('project.todo_format', 'txt'))
+                    # Синхронизируем TODO с checkpoint после перезагрузки
+                    self._sync_todos_with_checkpoint()
                     pending_tasks_after_revision = self.todo_manager.get_pending_tasks()
+                    # Фильтруем выполненные задачи
+                    pending_tasks_after_revision = self._filter_completed_tasks(pending_tasks_after_revision)
             else:
                 logger.info("Ревизия уже выполнена в этой сессии, пропускаем")
                 # Перезагружаем задачи на всякий случай
                 self.todo_manager = TodoManager(self.project_dir, todo_format=self.config.get('project.todo_format', 'txt'))
+                # Синхронизируем TODO с checkpoint после перезагрузки
+                self._sync_todos_with_checkpoint()
                 pending_tasks_after_revision = self.todo_manager.get_pending_tasks()
+                # Фильтруем выполненные задачи
+                pending_tasks_after_revision = self._filter_completed_tasks(pending_tasks_after_revision)
             
             # Если после ревизии все еще нет задач, используем empty_todo для генерации нового TODO
             if not pending_tasks_after_revision:
@@ -2685,7 +2814,11 @@ class CodeAgentServer:
                         logger.info("Новый TODO лист успешно сгенерирован, перезагрузка задач")
                         # Перезагружаем задачи
                         self.todo_manager = TodoManager(self.project_dir, todo_format=self.config.get('project.todo_format', 'txt'))
+                        # Синхронизируем TODO с checkpoint после перезагрузки
+                        self._sync_todos_with_checkpoint()
                         pending_tasks_after_revision = self.todo_manager.get_pending_tasks()
+                        # Фильтруем выполненные задачи
+                        pending_tasks_after_revision = self._filter_completed_tasks(pending_tasks_after_revision)
                         
                         if pending_tasks_after_revision:
                             logger.info(f"Загружено {len(pending_tasks_after_revision)} новых задач")

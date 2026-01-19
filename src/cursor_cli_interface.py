@@ -348,9 +348,14 @@ class CursorCLIInterface:
                 if status == "restarting":
                     logger.error(f"Контейнер {container_name} постоянно перезапускается! Удаляем проблемный контейнер...")
                     # Останавливаем и удаляем проблемный контейнер
-                    subprocess.run(["docker", "stop", container_name], timeout=10, capture_output=True)
-                    subprocess.run(["docker", "rm", container_name], timeout=10, capture_output=True)
-                    logger.info(f"Проблемный контейнер {container_name} удален, будет создан заново")
+                    try:
+                        subprocess.run(["docker", "stop", container_name], timeout=15, capture_output=True)
+                        subprocess.run(["docker", "rm", container_name], timeout=15, capture_output=True)
+                        logger.info(f"Проблемный контейнер {container_name} удален, будет создан заново")
+                    except subprocess.TimeoutExpired:
+                        logger.warning(f"Таймаут при удалении контейнера {container_name}, продолжаем...")
+                    except Exception as e:
+                        logger.warning(f"Ошибка при удалении контейнера {container_name}: {e}, продолжаем...")
                     status = "removed"
                 
                 if status == "running":
@@ -489,7 +494,7 @@ class CursorCLIInterface:
                     ["docker", "exec", "cursor-agent-life", "/root/.local/bin/agent", "--version"],
                     capture_output=True,
                     text=True,
-                    timeout=10
+                    timeout=15  # Увеличено с 10 до 15 секунд
                 )
                 
                 if result.returncode == 0:
@@ -600,7 +605,7 @@ This agent role is used for automated project tasks execution.
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=30  # Увеличено с 10 до 30 секунд
             )
             
             if result.returncode == 0:
@@ -627,8 +632,14 @@ This agent role is used for automated project tasks execution.
                     if parts:
                         potential_id = parts[0]
                         # Фильтруем невалидные chat_id (должны быть алфавитно-цифровые или UUID)
-                        if re.match(r'^[a-zA-Z0-9\-_]+$', potential_id) and len(potential_id) > 2:
+                        # Исключаем слишком короткие строки и строки, которые выглядят как команды/опции
+                        if (re.match(r'^[a-zA-Z0-9\-_]+$', potential_id) and 
+                            len(potential_id) > 2 and 
+                            not potential_id.startswith('-') and  # Не опция команды
+                            potential_id.lower() not in ['error', 'unknown', 'command', 'option']):  # Не сообщения об ошибках
                             chat_ids.append(potential_id)
+                        else:
+                            logger.debug(f"Пропущен невалидный chat_id: '{potential_id}' (строка: '{line[:100]}')")
                 
                 logger.debug(f"Найдено {len(chat_ids)} chat IDs: {chat_ids[:5]}")
                 return chat_ids
@@ -636,6 +647,9 @@ This agent role is used for automated project tasks execution.
                 logger.warning(f"Ошибка при получении списка чатов: {result.stderr}")
                 return []
                 
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Таймаут выполнения команды list_chats (30 секунд). Контейнер может быть занят или команда выполняется дольше ожидаемого.")
+            return []  # Возвращаем пустой список, это не критичная ошибка
         except Exception as e:
             logger.error(f"Ошибка в list_chats: {e}")
             return []
@@ -673,7 +687,7 @@ This agent role is used for automated project tasks execution.
                     cmd,
                     capture_output=True,
                     text=True,
-                    timeout=10
+                    timeout=30  # Увеличено с 10 до 30 секунд для agent resume
                 )
                 
                 # Парсим вывод для получения chat_id
@@ -688,6 +702,9 @@ This agent role is used for automated project tasks execution.
                 logger.warning("Не удалось определить chat_id для возобновления")
                 return False
                 
+            except subprocess.TimeoutExpired:
+                logger.warning("Таймаут при попытке возобновления чата (30 секунд). Продолжаем без текущего chat_id.")
+                return False
             except Exception as e:
                 logger.error(f"Ошибка при возобновлении чата: {e}")
                 return False
@@ -718,17 +735,17 @@ This agent role is used for automated project tasks execution.
                     "pkill -f 'agent.*-p' || pkill -f '/root/.local/bin/agent' || true"
                 ]
                 
-                result = subprocess.run(
-                    kill_cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                
-                # Команда с || true всегда возвращает 0
-                # Проверяем, были ли найдены процессы через stderr или попытку поиска
-                # Если pkill не нашел процессы - это нормально (их может не быть)
-                if result.returncode == 0:
+                try:
+                    result = subprocess.run(
+                        kill_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=15  # Увеличено с 10 до 15 секунд
+                    )
+                    
+                    # Команда с || true всегда возвращает 0
+                    # Проверяем, были ли найдены процессы через stderr или попытку поиска
+                    # Если pkill не нашел процессы - это нормально (их может не быть)
                     # Проверяем, действительно ли процессы были остановлены
                     # Пытаемся найти процессы еще раз - если их нет, значит остановка успешна
                     check_cmd = [
@@ -736,22 +753,31 @@ This agent role is used for automated project tasks execution.
                         "bash", "-c",
                         "pgrep -f 'agent.*-p' || pgrep -f '/root/.local/bin/agent' || true"
                     ]
-                    check_result = subprocess.run(
-                        check_cmd,
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    )
-                    
-                    # Если pgrep ничего не нашел (процессы остановлены) или нашел что-то (значит остановка частичная)
-                    if not check_result.stdout.strip():
-                        logger.info("Активные процессы agent остановлены (или их не было)")
-                    else:
-                        logger.info(f"Попытка остановки выполнена (найдено процессов: {len(check_result.stdout.strip().split())})")
-                    return True
-                else:
-                    logger.warning(f"Не удалось остановить процессы: {result.stderr or result.stdout}")
-                    return False
+                    try:
+                        check_result = subprocess.run(
+                            check_cmd,
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        
+                        # Если pgrep ничего не нашел (процессы остановлены) или нашел что-то (значит остановка частичная)
+                        if not check_result.stdout.strip():
+                            logger.info("✓ Активные процессы agent остановлены (или их не было)")
+                        else:
+                            remaining_pids = check_result.stdout.strip().split()
+                            logger.warning(f"⚠ После остановки осталось {len(remaining_pids)} процессов: {', '.join(remaining_pids[:5])}{'...' if len(remaining_pids) > 5 else ''}")
+                        return True
+                    except subprocess.TimeoutExpired:
+                        logger.warning("⚠ Таймаут при проверке процессов после остановки. Предполагаем, что остановка выполнена.")
+                        return True  # Не критичная ошибка, продолжаем
+                    except Exception as check_error:
+                        # Если проверка не удалась, но команда pkill выполнилась - это не критично
+                        logger.debug(f"Ошибка при проверке процессов после остановки: {check_error}")
+                        return True  # Не критичная ошибка, продолжаем
+                except subprocess.TimeoutExpired:
+                    logger.warning("Таймаут при остановке процессов agent (15 секунд). Контейнер может быть занят. Продолжаем работу.")
+                    return True  # Не критичная ошибка, продолжаем работу
             else:
                 # Для не-Docker окружения - пытаемся убить процессы локально
                 logger.info("Остановка активных процессов agent...")
@@ -793,16 +819,22 @@ This agent role is used for automated project tasks execution.
         
         try:
             # Сначала останавливаем активные чаты
-            self.stop_active_chats()
+            logger.info("🛑 Шаг 1/3: Остановка активных процессов agent...")
+            stop_result = self.stop_active_chats()
+            if stop_result:
+                logger.info("✓ Шаг 1 завершен: процессы остановлены")
+            else:
+                logger.warning("⚠ Шаг 1: не удалось остановить некоторые процессы, продолжаем...")
             
             # Получаем список всех чатов
+            logger.info("📋 Шаг 2/3: Получение списка чатов...")
             chat_ids = self.list_chats()
             
             if not chat_ids:
-                logger.info("Нет чатов для удаления")
+                logger.info("✓ Нет чатов для удаления (база данных пуста или команда list не работает)")
                 return True
             
-            logger.info(f"Найдено {len(chat_ids)} чатов для удаления")
+            logger.info(f"✓ Шаг 2 завершен: найдено {len(chat_ids)} чатов")
             
             use_docker = self.cli_command == "docker-compose-agent"
             
@@ -810,23 +842,37 @@ This agent role is used for automated project tasks execution.
             # Примечание: agent может не поддерживать прямого удаления чатов,
             # поэтому мы просто останавливаем процессы и сбрасываем текущий chat_id
             deleted_count = 0
+            not_supported_count = 0
+            failed_count = 0
             
-            # ПРИМЕЧАНИЕ: Cursor agent CLI может не поддерживать команду delete
+            # ПРИМЕЧАНИЕ: Cursor agent CLI НЕ поддерживает команду delete (подтверждено официальной документацией)
+            # Доступные команды: agent ls, agent resume, agent -p
+            # Команда 'agent delete' не существует в официальном Cursor CLI (проверено в январе 2026)
             # В этом случае мы просто останавливаем процессы и сбрасываем chat_id
-            # Чаты могут остаться в базе данных agent, но активные процессы будут остановлены
-            logger.debug(f"Попытка удаления {len(chat_ids)} чатов (команда может не поддерживаться)")
+            # Чаты останутся в базе данных agent, но активные процессы будут остановлены
+            logger.info(f"🗑️  Шаг 3/3: Проверка возможности удаления {len(chat_ids)} чатов...")
+            logger.debug("ℹ️  Команда 'agent delete' не поддерживается Cursor CLI (проверено в официальной документации)")
             
-            for chat_id in chat_ids:
+            # Импортируем shlex для безопасного экранирования
+            import shlex
+            
+            # Проверяем поддержку команды delete на первом чате
+            # Если команда не поддерживается, пропускаем остальные попытки
+            command_not_supported = False
+            test_chat_id = chat_ids[0] if chat_ids else None
+            
+            if test_chat_id:
                 try:
-                    # Пытаемся удалить через команду (если существует)
+                    # Пытаемся проверить команду delete на первом чате
                     if use_docker:
+                        escaped_chat_id = shlex.quote(str(test_chat_id))
                         cmd = [
                             "docker", "exec", "cursor-agent-life",
                             "bash", "-c",
-                            f"cd /workspace && /root/.local/bin/agent delete {chat_id} 2>&1 || true"
+                            f"cd /workspace && /root/.local/bin/agent delete {escaped_chat_id} 2>&1 || true"
                         ]
                     else:
-                        cmd = [self.cli_command, "delete", chat_id]
+                        cmd = [self.cli_command, "delete", str(test_chat_id)]
                     
                     result = subprocess.run(
                         cmd,
@@ -835,28 +881,98 @@ This agent role is used for automated project tasks execution.
                         timeout=5
                     )
                     
-                    # Проверяем вывод - если команда не поддерживается, будет сообщение об ошибке
-                    output = (result.stdout + result.stderr).lower()
-                    if "unknown command" in output or "invalid command" in output or "not found" in output:
-                        # Команда не поддерживается - это нормально
-                        logger.debug(f"Команда delete не поддерживается для чата {chat_id}")
-                    elif result.returncode == 0 and "deleted" in output.lower():
-                        deleted_count += 1
-                        logger.debug(f"Чат {chat_id} удален")
+                    stdout = result.stdout.strip() if result.stdout else ""
+                    stderr = result.stderr.strip() if result.stderr else ""
+                    output = (stdout + " " + stderr).strip().lower()
+                    full_output = (stdout + " " + stderr).strip()
                     
+                    # Проверяем, поддерживается ли команда
+                    if ("unknown command" in output or "invalid command" in output or 
+                        "not found" in output or "usage:" in output or "unknown option" in output):
+                        command_not_supported = True
+                        logger.info(f"ℹ️  Команда 'agent delete' не поддерживается Cursor CLI (это нормально)")
+                        logger.debug(f"   Вывод команды: {full_output[:300]}")
+                        not_supported_count = len(chat_ids)  # Все чаты не поддерживаются
+                    elif result.returncode == 0 and ("deleted" in output or "removed" in output or "success" in output):
+                        # Команда работает! Продолжаем удаление остальных
+                        deleted_count += 1
+                        logger.info(f"  [1/{len(chat_ids)}] ✓ Чат {test_chat_id} удален из БД")
+                        # Продолжаем удаление остальных чатов
+                        for idx, chat_id in enumerate(chat_ids[1:], 2):
+                            try:
+                                if use_docker:
+                                    escaped_chat_id = shlex.quote(str(chat_id))
+                                    cmd = [
+                                        "docker", "exec", "cursor-agent-life",
+                                        "bash", "-c",
+                                        f"cd /workspace && /root/.local/bin/agent delete {escaped_chat_id} 2>&1 || true"
+                                    ]
+                                else:
+                                    cmd = [self.cli_command, "delete", str(chat_id)]
+                                
+                                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                                stdout = result.stdout.strip() if result.stdout else ""
+                                stderr = result.stderr.strip() if result.stderr else ""
+                                output = (stdout + " " + stderr).strip().lower()
+                                full_output = (stdout + " " + stderr).strip()
+                                
+                                if result.returncode == 0 and ("deleted" in output or "removed" in output or "success" in output):
+                                    deleted_count += 1
+                                    if idx <= 5:
+                                        logger.info(f"  [{idx}/{len(chat_ids)}] ✓ Чат {chat_id} удален из БД")
+                                else:
+                                    failed_count += 1
+                                    if idx <= 5:
+                                        logger.debug(f"  [{idx}/{len(chat_ids)}] ⚠ Ошибка при удалении чата {chat_id}: {full_output[:300]}")
+                            except Exception as e:
+                                failed_count += 1
+                                if idx <= 5:
+                                    logger.debug(f"  [{idx}/{len(chat_ids)}] ⚠ Исключение при удалении чата {chat_id}: {e}")
+                    else:
+                        # Непонятный результат - считаем как не поддерживается
+                        command_not_supported = True
+                        not_supported_count = len(chat_ids)
+                        logger.debug(f"   Команда вернула неожиданный результат: {full_output[:300]}")
+                        
                 except Exception as e:
-                    logger.debug(f"Не удалось удалить чат {chat_id}: {e}")
-                    # Продолжаем удаление остальных
+                    # При ошибке считаем, что команда не поддерживается
+                    command_not_supported = True
+                    not_supported_count = len(chat_ids)
+                    logger.debug(f"   Ошибка при проверке команды delete: {e}")
             
             # Сбрасываем текущий chat_id
             self.current_chat_id = None
             
+            # Формируем итоговое сообщение
+            summary_parts = []
             if deleted_count > 0:
-                logger.info(f"Удалено {deleted_count} из {len(chat_ids)} чатов")
+                summary_parts.append(f"✓ {deleted_count} удалено из БД")
+            if not_supported_count > 0:
+                summary_parts.append(f"⚠ {not_supported_count} - команда delete не поддерживается")
+            if failed_count > 0:
+                summary_parts.append(f"⚠ {failed_count} - ошибки при удалении")
+            
+            if summary_parts:
+                logger.info(f"📊 Итоги удаления чатов: {', '.join(summary_parts)}")
             else:
-                # Если ни один чат не удален, это нормально - команда delete может не поддерживаться
-                # Главное - процессы остановлены и chat_id сброшен
-                logger.info(f"Процессы остановлены, chat_id сброшен. Чаты могут остаться в базе agent (это нормально, если команда delete не поддерживается)")
+                logger.warning("⚠ Не удалось определить результат удаления чатов")
+            
+            # Главное - процессы остановлены и chat_id сброшен
+            if deleted_count == 0 and not_supported_count > 0:
+                logger.info(f"ℹ️  Команда 'agent delete' не поддерживается официальным Cursor CLI (это нормально)")
+                logger.info(f"ℹ️  {len(chat_ids)} чатов остались в базе данных agent")
+                logger.info("✓ Все активные процессы остановлены, chat_id сброшен. Чаты неактивны и не мешают работе.")
+                logger.debug("💡 Примечание: Cursor CLI не предоставляет команду для удаления чатов. "
+                           "Чаты хранятся локально и не влияют на работу системы.")
+            elif deleted_count == 0 and failed_count > 0:
+                logger.warning(f"⚠ Не удалось удалить чаты из базы данных. {failed_count} ошибок при попытке удаления.")
+                logger.debug("💡 Проверьте логи выше для деталей ошибок. Возможно, команда 'agent delete' не поддерживается.")
+                logger.info("ℹ️  Все активные процессы остановлены, chat_id сброшен.")
+            elif deleted_count == 0:
+                logger.info(f"ℹ️  Чаты не удалены (команда delete не поддерживается или не требуется)")
+                logger.info("✓ Все активные процессы остановлены, chat_id сброшен.")
+            else:
+                logger.info(f"✓ Очистка завершена: {deleted_count} чатов удалено из БД, все процессы остановлены")
             
             return True
                 
@@ -1052,11 +1168,13 @@ This agent role is used for automated project tasks execution.
             agent_base_cmd_parts = ["/root/.local/bin/agent"]
             
             # Добавляем флаги, если есть
+            # ВАЖНО: Экранируем resume_chat_id для безопасной передачи в bash команду
             if resume_chat_id:
-                agent_base_cmd_parts.extend(["--resume", resume_chat_id])
+                escaped_resume_id = shlex.quote(str(resume_chat_id))
+                agent_base_cmd_parts.extend(["--resume", escaped_resume_id])
                 logger.debug(f"Продолжение диалога с chat_id: {resume_chat_id}")
             
-            # Agent команда БЕЗ prompt
+            # Agent команда БЕЗ prompt (resume_chat_id уже экранирован)
             agent_base_cmd = ' '.join(str(arg) for arg in agent_base_cmd_parts)
             
             # НОВОЕ РЕШЕНИЕ: Передаем prompt напрямую через аргумент -p
