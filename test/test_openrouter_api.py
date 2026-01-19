@@ -15,8 +15,8 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 import yaml
 
-# Загружаем переменные окружения
-load_dotenv()
+# Загружаем переменные окружения (с перезаписью для обновления ключа)
+load_dotenv(override=True)
 
 # Добавляем текущую директорию в путь
 sys.path.insert(0, str(Path(__file__).parent.parent))

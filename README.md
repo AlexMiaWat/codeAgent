@@ -219,7 +219,7 @@ python examples/logging_demo.py
 - [Руководство по настройке](docs/guides/setup.md)
 - [API Reference](docs/core/api.md)
 - [HTTP API Endpoints](docs/core/api_endpoints.md) - HTTP API для мониторинга и управления
-- [Тестирование](docs/testing/TESTING.md) - 📋 Полное руководство по тестированию проекта
+- [**Тестирование**](docs/testing/TESTING_GUIDE.md) - ✅ **НОВОЕ**: Полное руководство по тестированию с запуском по блокам
 - [Структура проекта](docs/core/project_structure.md)
 
 ### Логирование
@@ -236,6 +236,7 @@ python examples/logging_demo.py
 - [Детальный рабочий процесс](docs/core/workflow_detailed.md) - Пошаговое описание выполнения задач
 - [**Полный доступ Cursor CLI**](docs/integration/full_access_setup.md) - ✅ **НОВОЕ**: Настройка автоматического выполнения без запросов разрешений
 - [Быстрый старт: Полный доступ](docs/integration/QUICK_START_FULL_ACCESS.md) - 🚀 Быстрая настройка полного доступа
+- [**Механизм создания отчетов**](docs/guides/CURSOR_RESULTS_MECHANISM.md) - ✅ **НОВОЕ**: Как создаются отчеты в cursor_results/
 
 ### LLM и модели
 - [Ограничения LLM](docs/integration/llm_limitations.md) - ⚠️ Важно: Ограничения слабых языковых моделей в Code Agent
@@ -313,6 +314,46 @@ codeAgent/
 
 ### Запуск тестов
 
+#### Единая точка входа (рекомендуется)
+
+Все тесты запускаются через единый скрипт `run_tests.py`:
+
+```bash
+# Просмотр всех доступных тестов
+python test/run_tests.py --list
+
+# Запуск всех тестов
+python test/run_tests.py
+
+# Запуск по блокам
+python test/run_tests.py --openrouter   # OpenRouter API тесты
+python test/run_tests.py --api          # HTTP API тесты
+python test/run_tests.py --cursor       # Cursor интеграция
+python test/run_tests.py --llm          # LLM тесты
+python test/run_tests.py --validation   # Валидация
+python test/run_tests.py --checkpoint   # Checkpoint тесты
+python test/run_tests.py --full         # Полный цикл
+
+# Комбинирование блоков
+python test/run_tests.py --openrouter --api --validation
+```
+
+#### Через Makefile
+
+```bash
+make test-all          # Все тесты
+make test-list         # Список тестов
+make test-openrouter   # OpenRouter тесты
+make test-api          # API тесты
+make test-cursor       # Cursor тесты
+make test-llm          # LLM тесты
+make test-validation   # Validation тесты
+make test-checkpoint   # Checkpoint тесты
+make test-full         # Full Cycle тесты
+```
+
+#### Через pytest (альтернатива)
+
 ```bash
 # Запуск всех тестов
 pytest test/ -v
@@ -329,8 +370,11 @@ make test-coverage
 ```
 
 📋 **Документация по тестированию:**
-- [docs/testing/TESTING.md](docs/testing/TESTING.md) - Полная документация по тестированию
-- [docs/guides/testing.md](docs/guides/testing.md) - Руководство по тестированию
+- [docs/testing/TESTING_GUIDE.md](docs/testing/TESTING_GUIDE.md) - ✅ **НОВОЕ**: Полное руководство по тестированию с запуском по блокам
+- [docs/testing/CURSOR_TESTS_DOCKER.md](docs/testing/CURSOR_TESTS_DOCKER.md) - ✅ **НОВОЕ**: Подробное логирование Docker контейнера в Cursor тестах
+- [test/README_RUN_TESTS.md](test/README_RUN_TESTS.md) - Документация по `run_tests.py`
+- [test/QUICK_START.md](test/QUICK_START.md) - Быстрый старт
+- [docs/testing/TESTING.md](docs/testing/TESTING.md) - Общее руководство по тестированию
 
 ## Лицензия
 

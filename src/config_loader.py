@@ -10,7 +10,7 @@ import logging
 from dotenv import load_dotenv
 
 # Загружаем переменные окружения из .env
-load_dotenv()
+load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
 

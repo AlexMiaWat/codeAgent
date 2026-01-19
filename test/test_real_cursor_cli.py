@@ -69,6 +69,41 @@ def test_real_cursor_cli():
         print(f"[OK] Cursor CLI доступен")
         print(f"  Версия: {version}")
         print(f"  Команда: {cli.cli_command}")
+        
+        # Проверяем статус Docker контейнера если используется Docker
+        if cli.cli_command == "docker-compose-agent":
+            print()
+            print("[INFO] Проверка Docker контейнера...")
+            try:
+                import subprocess
+                import json
+                
+                # Проверяем статус контейнера
+                inspect_result = subprocess.run(
+                    ["docker", "inspect", "--format", "{{json .State}}", "cursor-agent-life"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                
+                if inspect_result.returncode == 0:
+                    state = json.loads(inspect_result.stdout.strip())
+                    status = state.get("Status", "unknown")
+                    running = status == "running"
+                    
+                    if running:
+                        print(f"  [OK] Контейнер cursor-agent-life запущен (статус: {status})")
+                        if state.get("StartedAt"):
+                            print(f"  [INFO] Запущен: {state.get('StartedAt', '')[:19]}")
+                    else:
+                        print(f"  [WARNING] Контейнер cursor-agent-life не запущен (статус: {status})")
+                        if state.get("Error"):
+                            print(f"  [ERROR] Ошибка: {state.get('Error')}")
+                else:
+                    print(f"  [INFO] Контейнер cursor-agent-life не найден (будет создан автоматически)")
+            except Exception as e:
+                print(f"  [WARNING] Не удалось проверить статус контейнера: {e}")
+        
         print()
         
         # Шаг 3: Формирование простой задачи для целевого проекта
@@ -128,6 +163,45 @@ def test_real_cursor_cli():
         
         if result.error_message:
             print(f"  Error: {result.error_message}")
+        
+        # Проверяем статус контейнера после выполнения (если используется Docker)
+        if cli.cli_command == "docker-compose-agent":
+            print()
+            print("[INFO] Проверка Docker контейнера после выполнения...")
+            try:
+                import subprocess
+                import json
+                
+                inspect_result = subprocess.run(
+                    ["docker", "inspect", "--format", "{{json .State}}", "cursor-agent-life"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                
+                if inspect_result.returncode == 0:
+                    state = json.loads(inspect_result.stdout.strip())
+                    status = state.get("Status", "unknown")
+                    running = status == "running"
+                    
+                    if running:
+                        print(f"  [OK] Контейнер активен (статус: {status})")
+                    else:
+                        print(f"  [WARNING] Контейнер не активен (статус: {status})")
+                        # Показываем последние логи
+                        logs_result = subprocess.run(
+                            ["docker", "logs", "--tail", "10", "cursor-agent-life"],
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        if logs_result.returncode == 0 and logs_result.stdout.strip():
+                            print(f"  [INFO] Последние логи контейнера:")
+                            for line in logs_result.stdout.strip().split('\n')[-5:]:
+                                if line.strip():
+                                    print(f"    {line[:100]}")
+            except Exception as e:
+                print(f"  [WARNING] Не удалось проверить статус контейнера: {e}")
         
         print()
         

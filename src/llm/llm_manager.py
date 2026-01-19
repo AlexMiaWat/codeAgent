@@ -22,8 +22,8 @@ import yaml
 from openai import OpenAI, AsyncOpenAI
 from dotenv import load_dotenv
 
-# Загружаем переменные окружения
-load_dotenv()
+# Загружаем переменные окружения (с перезаписью для обновления ключа)
+load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +164,8 @@ class LLMManager:
         
         # API ключ должен быть в переменной окружения, а не в конфиге
         # Приоритет: переменная окружения > конфиг (для обратной совместимости)
+        # Перезагружаем переменные окружения для получения актуального ключа
+        load_dotenv(override=True)
         api_key = os.getenv('OPENROUTER_API_KEY')
         if not api_key:
             # Fallback на конфиг (для обратной совместимости, но не рекомендуется)
@@ -180,8 +182,11 @@ class LLMManager:
         timeout = llm_config.get('timeout', 200)
         
         # Создаем клиент для всех моделей провайдера
+        # Всегда создаем новый клиент с актуальным ключом
         client = AsyncOpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
         self.clients[default_provider] = client
+        
+        logger.debug(f"Initialized {default_provider} client with API key: {api_key[:20]}...{api_key[-10:]}")
         
         logger.info(f"Initialized client for provider: {default_provider}")
     

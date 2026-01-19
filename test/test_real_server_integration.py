@@ -44,11 +44,14 @@ class ServerTester:
         self.config = ConfigLoader("config/config.yaml")
         self.project_dir = self.config.get_project_dir()
     
-    def start_server(self, timeout: int = 30) -> bool:
+    def start_server(self, timeout: int = 45) -> bool:
         """Запуск сервера"""
         print(f"\n{'='*80}")
         print("ЗАПУСК РЕАЛЬНОГО СЕРВЕРА")
         print(f"{'='*80}")
+        
+        stderr_lines = []
+        stderr_thread = None
         
         try:
             main_py = project_root / "main.py"
@@ -71,6 +74,29 @@ class ServerTester:
                                     break
             
             print(f"[INFO] Проект: {self.project_dir}")
+            
+            # Проверяем, не занят ли порт другим процессом
+            import socket
+            port_in_use = False
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(1)
+                    result = s.connect_ex(('127.0.0.1', 3456))
+                    if result == 0:
+                        port_in_use = True
+                        print(f"[WARN] Порт 3456 уже занят другим процессом")
+                        # Проверяем, отвечает ли сервер на health check
+                        try:
+                            response = requests.get(f"{self.base_url}/health", timeout=2)
+                            if response.status_code == 200:
+                                print(f"[INFO] Сервер уже запущен и отвечает на запросы")
+                                print(f"[INFO] Используем существующий сервер")
+                                return True
+                        except:
+                            print(f"[WARN] Порт занят, но сервер не отвечает. Попытка запустить новый процесс...")
+            except Exception as e:
+                print(f"[DEBUG] Ошибка при проверке порта: {e}")
+            
             print(f"[INFO] Запуск сервера...")
             
             # Запуск сервера
@@ -80,30 +106,168 @@ class ServerTester:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                env=env
+                env=env,
+                bufsize=1  # Небуферизованный режим
             )
+            
+            stdout_lines = []
+            stderr_lines = []
+            
+            # Читаем stdout в фоне для диагностики (сервер выводит через logger в stdout)
+            def read_stdout():
+                try:
+                    for line in iter(self.server_process.stdout.readline, ''):
+                        if line:
+                            line_stripped = line.strip()
+                            stdout_lines.append(line_stripped)
+                            # Выводим важные сообщения о запуске
+                            if any(keyword in line_stripped.lower() for keyword in 
+                                   ['http сервер', 'запущен', 'порт 3456', 'доступен', 'ready', 'started']):
+                                print(f"[STDOUT] {line_stripped}")
+                except Exception:
+                    pass
+            
+            # Читаем stderr в фоне для диагностики
+            def read_stderr():
+                try:
+                    for line in iter(self.server_process.stderr.readline, ''):
+                        if line:
+                            line_stripped = line.strip()
+                            stderr_lines.append(line_stripped)
+                            # Выводим важные ошибки сразу
+                            if any(keyword in line_stripped.lower() for keyword in ['error', 'fail', 'exception', 'traceback']):
+                                print(f"[STDERR] {line_stripped}")
+                except Exception:
+                    pass
+            
+            stdout_thread = threading.Thread(target=read_stdout, daemon=True)
+            stdout_thread.start()
+            
+            stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+            stderr_thread.start()
             
             # Ожидание запуска сервера
             print(f"[INFO] Ожидание запуска сервера (макс. {timeout} сек)...")
-            for i in range(timeout):
+            print(f"[INFO] PID процесса: {self.server_process.pid}")
+            
+            # Сначала проверяем, что процесс не завершился сразу
+            time.sleep(2)
+            if self.server_process.poll() is not None:
+                print(f"[FAIL] Процесс завершился сразу с кодом: {self.server_process.returncode}")
+                if stderr_lines:
+                    print(f"[ERROR] Последние ошибки из stderr:")
+                    for line in stderr_lines[-10:]:
+                        print(f"  {line}")
+                # Пытаемся прочитать оставшийся stderr
                 try:
-                    response = requests.get(f"{self.base_url}/health", timeout=1)
+                    remaining_stderr = self.server_process.stderr.read()
+                    if remaining_stderr:
+                        print(f"[ERROR] Остаток stderr:")
+                        print(remaining_stderr[:500])
+                except:
+                    pass
+                return False
+            
+            # Проверяем доступность сервера
+            for i in range(timeout):
+                # Проверяем, что процесс еще работает
+                if self.server_process.poll() is not None:
+                    print(f"[FAIL] Процесс завершился с кодом: {self.server_process.returncode}")
+                    if stderr_lines:
+                        print(f"[ERROR] Ошибки из stderr:")
+                        for line in stderr_lines[-20:]:
+                            print(f"  {line}")
+                    # Пытаемся прочитать оставшийся stderr
+                    try:
+                        remaining_stderr = self.server_process.stderr.read()
+                        if remaining_stderr:
+                            print(f"[ERROR] Остаток stderr:")
+                            print(remaining_stderr[:500])
+                    except:
+                        pass
+                    return False
+                
+                # Проверяем доступность через /health
+                try:
+                    response = requests.get(f"{self.base_url}/health", timeout=2)
                     if response.status_code == 200:
                         print(f"[OK] Сервер запущен успешно (PID: {self.server_process.pid})")
+                        print(f"[INFO] Время запуска: {i+1} секунд")
+                        # Показываем последние сообщения из stdout для диагностики
+                        if stdout_lines:
+                            recent_messages = [line for line in stdout_lines[-5:] 
+                                             if any(kw in line.lower() for kw in ['http', 'сервер', 'порт', 'запущен'])]
+                            if recent_messages:
+                                print(f"[DEBUG] Последние сообщения сервера:")
+                                for msg in recent_messages:
+                                    print(f"  {msg}")
+                        # Дополнительное ожидание для полной готовности сервера
+                        print("[INFO] Ожидание полной готовности сервера (2 сек)...")
+                        time.sleep(2)
                         return True
-                except requests.exceptions.RequestException:
-                    pass
+                except requests.exceptions.ConnectionError as e:
+                    # Сервер еще не готов - это нормально
+                    if i > 10 and i % 5 == 0:  # Показываем диагностику после 10 секунд
+                        print(f"[DEBUG] ConnectionError при проверке /health (попытка {i+1}): {e}")
+                except requests.exceptions.Timeout:
+                    # Таймаут - сервер может быть перегружен
+                    if i > 10 and i % 5 == 0:
+                        print(f"[DEBUG] Timeout при проверке /health (попытка {i+1})")
+                except requests.exceptions.RequestException as e:
+                    # Другие ошибки - возможно сервер запускается
+                    if i > 10 and i % 5 == 0:
+                        print(f"[DEBUG] RequestException при проверке /health (попытка {i+1}): {e}")
+                
                 time.sleep(1)
-                if i % 5 == 0:
+                if i % 5 == 0 and i > 0:
                     print(f"   Ожидание... ({i}/{timeout})")
+                    # Показываем последние ошибки если есть
+                    if stderr_lines and i % 10 == 0:
+                        recent_errors = [line for line in stderr_lines[-5:] if any(kw in line.lower() for kw in ['error', 'fail', 'exception'])]
+                        if recent_errors:
+                            print(f"   Последние ошибки: {recent_errors[-1]}")
             
             print(f"[FAIL] Сервер не запустился за {timeout} секунд")
+            print(f"[INFO] Процесс все еще работает: {self.server_process.poll() is None}")
+            
+            # Показываем последние сообщения из stdout
+            if stdout_lines:
+                print(f"[DEBUG] Последние сообщения из stdout ({len(stdout_lines)} строк):")
+                for line in stdout_lines[-20:]:
+                    print(f"  {line}")
+            
+            if stderr_lines:
+                print(f"[ERROR] Последние ошибки из stderr ({len(stderr_lines)} строк):")
+                for line in stderr_lines[-20:]:
+                    print(f"  {line}")
+            
+            # Пытаемся прочитать оставшийся stderr
+            try:
+                remaining_stderr = self.server_process.stderr.read()
+                if remaining_stderr:
+                    print(f"[ERROR] Остаток stderr:")
+                    print(remaining_stderr[:1000])
+            except:
+                pass
+            
+            # Пытаемся прочитать оставшийся stdout
+            try:
+                remaining_stdout = self.server_process.stdout.read()
+                if remaining_stdout:
+                    print(f"[DEBUG] Остаток stdout:")
+                    print(remaining_stdout[:1000])
+            except:
+                pass
             return False
             
         except Exception as e:
             print(f"[FAIL] Ошибка запуска сервера: {e}")
             import traceback
             traceback.print_exc()
+            if stderr_lines:
+                print(f"[ERROR] Ошибки из stderr:")
+                for line in stderr_lines[-10:]:
+                    print(f"  {line}")
             return False
     
     def stop_server(self):
@@ -114,13 +278,26 @@ class ServerTester:
             print(f"{'='*80}")
             
             try:
-                # Пробуем остановить через API
+                # Пробуем остановить через API (graceful shutdown)
                 try:
-                    response = requests.post(f"{self.base_url}/stop", timeout=2)
+                    print(f"[INFO] Отправка запроса на остановку через API...")
+                    response = requests.post(f"{self.base_url}/stop", timeout=5)
                     print(f"[INFO] Запрос на остановку отправлен: {response.status_code}")
-                    time.sleep(2)
-                except:
-                    pass
+                    if response.status_code == 200:
+                        print(f"[INFO] Сервер получил запрос на остановку")
+                    
+                    # Даем время на graceful shutdown
+                    print(f"[INFO] Ожидание graceful shutdown (10 сек)...")
+                    for i in range(10):
+                        if self.server_process.poll() is not None:
+                            print(f"[OK] Процесс завершился gracefully (PID: {self.server_process.pid})")
+                            return
+                        time.sleep(1)
+                        if i % 3 == 0:
+                            print(f"   Ожидание завершения... ({i}/10)")
+                except requests.exceptions.RequestException as e:
+                    print(f"[WARN] Не удалось отправить запрос на остановку: {e}")
+                    print(f"[INFO] Продолжаем с принудительной остановкой...")
                 
                 # Принудительная остановка процесса
                 if self.server_process.poll() is None:
@@ -130,16 +307,30 @@ class ServerTester:
                     else:
                         self.server_process.send_signal(signal.SIGTERM)
                     
+                    # Ждем завершения с таймаутом
                     try:
-                        self.server_process.wait(timeout=5)
+                        self.server_process.wait(timeout=10)
                         print("[OK] Процесс остановлен")
                     except subprocess.TimeoutExpired:
-                        print("[WARN] Процесс не остановился, принудительное завершение...")
+                        print("[WARN] Процесс не остановился за 10 секунд, принудительное завершение...")
                         self.server_process.kill()
-                        self.server_process.wait()
-                        print("[OK] Процесс завершен принудительно")
+                        try:
+                            self.server_process.wait(timeout=5)
+                            print("[OK] Процесс завершен принудительно")
+                        except subprocess.TimeoutExpired:
+                            print("[ERROR] Не удалось завершить процесс даже после kill()")
+                else:
+                    print(f"[OK] Процесс уже завершен (код: {self.server_process.returncode})")
             except Exception as e:
                 print(f"[WARN] Ошибка при остановке сервера: {e}")
+                # Последняя попытка - kill
+                if self.server_process.poll() is None:
+                    try:
+                        self.server_process.kill()
+                        self.server_process.wait(timeout=3)
+                        print("[OK] Процесс завершен через kill()")
+                    except Exception:
+                        print("[ERROR] Критическая ошибка при завершении процесса")
     
     def test_health_endpoint(self) -> bool:
         """Тест health endpoint"""
@@ -252,7 +443,7 @@ class ServerTester:
         print(f"[DEBUG] Проверка доступности сервера на {self.base_url}...")
         
         try:
-            response = requests.get(f"{self.base_url}/health", timeout=2)
+            response = requests.get(f"{self.base_url}/health", timeout=3)
             if response.status_code == 200:
                 print("[INFO] Сервер уже запущен, используем существующий")
                 print(f"[DEBUG] Сервер отвечает на /health: {response.json()}")
@@ -280,7 +471,9 @@ class ServerTester:
                     print("  1. Порт 3456 занят другим процессом")
                     print("  2. Ошибка при запуске main.py")
                     print("  3. Недостаточно прав для запуска")
+                    print("  4. HTTP сервер не запустился (проверьте логи)")
                     print("[INFO] Запустите сервер вручную: python main.py")
+                    print("[INFO] Или проверьте логи в logs/codeagent.log")
                     return False
                 server_started = True
                 print("[OK] Сервер успешно запущен автоматически")
@@ -289,6 +482,18 @@ class ServerTester:
                 print(f"[INFO] Ошибка подключения: {e}")
                 print("[INFO] Запустите сервер вручную: python main.py")
                 print("[INFO] Или запустите тест без флага --no-start для автоматического запуска")
+                return False
+        except requests.exceptions.Timeout as e:
+            # Таймаут - сервер может быть перегружен
+            print(f"[WARN] Таймаут при проверке сервера: {e}")
+            if start_server_flag:
+                print("[INFO] Попытка запустить сервер...")
+                if not self.start_server():
+                    print("[FAIL] Не удалось запустить сервер автоматически")
+                    return False
+                server_started = True
+            else:
+                print("[FAIL] Сервер недоступен (таймаут) и start_server_flag=False")
                 return False
         except requests.exceptions.RequestException as e:
             # Другие ошибки запросов
@@ -331,7 +536,8 @@ class ServerTester:
             
             print(f"\n[OK] Пройдено: {passed}/{total}")
             
-            return passed == total
+            success = passed == total
+            return success
             
         except Exception as e:
             print(f"[FAIL] Критическая ошибка при выполнении тестов: {e}")

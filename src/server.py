@@ -344,24 +344,39 @@ class CodeAgentServer:
                 self.checkpoint_manager.reset_interrupted_task()
                 logger.info("Прерванная задача сброшена для повторного выполнения")
             
-            # Показываем незавершенные задачи
+            # Показываем незавершенные задачи (ограничиваем вывод для избежания блокировки)
             incomplete_count = recovery_info["incomplete_tasks_count"]
             if incomplete_count > 0:
                 logger.warning(f"Незавершенных задач: {incomplete_count}")
-                for task in recovery_info["incomplete_tasks"][:5]:  # Показываем первые 5
-                    logger.warning(f"  - {task['task_text']} (состояние: {task['state']})")
+                # Показываем только первые 3 задачи, чтобы не блокировать вывод
+                for task in recovery_info["incomplete_tasks"][:3]:
+                    try:
+                        task_text = str(task.get('task_text', 'N/A'))[:100]  # Ограничиваем длину
+                        task_state = str(task.get('state', 'unknown'))
+                        logger.warning(f"  - {task_text} (состояние: {task_state})")
+                    except Exception as e:
+                        # Защита от ошибок при выводе
+                        logger.warning(f"  - [Ошибка при выводе задачи: {e}]")
             
-            # Показываем задачи с ошибками
+            # Показываем задачи с ошибками (ограничиваем вывод)
             failed_count = recovery_info["failed_tasks_count"]
             if failed_count > 0:
                 logger.warning(f"Задач с ошибками: {failed_count}")
-                for task in recovery_info["failed_tasks"][:3]:  # Показываем первые 3
-                    logger.warning(f"  - {task['task_text']}")
-                    logger.warning(f"    Ошибка: {task.get('error_message', 'N/A')}")
+                # Показываем только первые 2 задачи, чтобы не блокировать вывод
+                for task in recovery_info["failed_tasks"][:2]:
+                    try:
+                        task_text = str(task.get('task_text', 'N/A'))[:100]  # Ограничиваем длину
+                        error_msg = str(task.get('error_message', 'N/A'))[:200]  # Ограничиваем длину
+                        logger.warning(f"  - {task_text}")
+                        logger.warning(f"    Ошибка: {error_msg}")
+                    except Exception as e:
+                        # Защита от ошибок при выводе
+                        logger.warning(f"  - [Ошибка при выводе задачи с ошибкой: {e}]")
             
             logger.warning("=" * 80)
             logger.info("Сервер продолжит работу с последней контрольной точки")
             logger.warning("=" * 80)
+            logger.info("Восстановление завершено, продолжаем инициализацию сервера...")
             
             # Обновляем статус
             self.status_manager.append_status(
@@ -565,16 +580,16 @@ class CodeAgentServer:
                 critical_msg += f"Последняя ошибка: {error_message}\n"
                 critical_msg += "=" * 80
                 
-                print("\n" + critical_msg + "\n", flush=True)
+                self._safe_print("\n" + critical_msg + "\n")
                 logger.error(critical_msg)
                 
                 task_logger.log_error(f"Критическая ошибка: повтор {self._cursor_error_count} раз", Exception(error_message))
                 
                 # Перезапускаем Docker контейнер и очищаем диалоги
-                print("Попытка перезапуска Docker контейнера и очистки диалогов...", flush=True)
+                self._safe_print("Попытка перезапуска Docker контейнера и очистки диалогов...")
                 if self._restart_cursor_environment():
                     success_msg = "Docker контейнер и диалоги перезапущены. Сбрасываем счетчик ошибок."
-                    print(success_msg, flush=True)
+                    self._safe_print(success_msg)
                     logger.info(success_msg)
                     task_logger.log_info("Docker контейнер перезапущен после критической ошибки")
                     # Сбрасываем счетчик после перезапуска
@@ -584,7 +599,7 @@ class CodeAgentServer:
                     return True
                 else:
                     # Перезапуск не помог - останавливаем сервер
-                    print("Перезапуск не помог. Останавливаем сервер...", flush=True)
+                    self._safe_print("Перезапуск не помог. Останавливаем сервер...")
                     task_logger.log_error("Критическая ошибка: перезапуск не помог, сервер остановлен", Exception(error_message))
                     
                     # Останавливаем сервер
@@ -690,6 +705,26 @@ class CodeAgentServer:
             logger.error(f"Ошибка при перезапуске Cursor environment: {e}", exc_info=True)
             return False
     
+    def _safe_print(self, message: str, end: str = "\n") -> None:
+        """
+        Безопасный вывод в консоль с защитой от ошибок потока
+        
+        Args:
+            message: Сообщение для вывода
+            end: Символ окончания строки (по умолчанию \n)
+        """
+        try:
+            print(message, end=end, flush=True)
+        except (OSError, IOError, ValueError) as e:
+            # Если stdout недоступен (закрыт или обернут), используем stderr
+            try:
+                sys.stderr.write(message + (end if end else ""))
+                sys.stderr.flush()
+            except (OSError, IOError, ValueError):
+                # Если и stderr недоступен, просто пропускаем вывод в консоль
+                # Логирование все равно произойдет через logger
+                pass
+    
     def _stop_server_due_to_cursor_errors(self, error_message: str):
         """
         Остановить сервер из-за критических ошибок Cursor
@@ -712,8 +747,8 @@ class CodeAgentServer:
         error_msg += "4. Перезапустите сервер вручную после устранения проблемы\n"
         error_msg += "=" * 80
         
-        # Выводим в консоль
-        print("\n" + error_msg + "\n", flush=True)
+        # Выводим в консоль (с защитой от ошибок потока)
+        self._safe_print("\n" + error_msg + "\n")
         
         # Логируем
         logger.error(error_msg)
@@ -2150,12 +2185,19 @@ class CodeAgentServer:
         @self.flask_app.route('/')
         def index():
             """Главная страница с информацией о сервере"""
-            stats = self.checkpoint_manager.get_statistics()
+            try:
+                stats = self.checkpoint_manager.get_statistics()
+                iteration = self.checkpoint_manager.get_iteration_count()
+            except Exception as e:
+                logger.warning(f"Ошибка при получении статистики для /: {e}")
+                stats = {'completed': 0, 'failed': 0, 'pending': 0, 'in_progress': 0, 'total_tasks': 0, 'iteration_count': 0}
+                iteration = 0
+            
             return jsonify({
                 'status': 'running',
                 'port': self.http_port,
                 'session_id': self.session_tracker.current_session_id,
-                'iteration': self.checkpoint_manager.get_iteration_count(),
+                'iteration': iteration,
                 'statistics': stats,
                 'project_dir': str(self.project_dir),
                 'cursor_cli_available': self.use_cursor_cli,
@@ -2165,12 +2207,36 @@ class CodeAgentServer:
         @self.flask_app.route('/status')
         def status():
             """Статус сервера с подробной информацией"""
-            recovery_info = self.checkpoint_manager.get_recovery_info()
-            stats = self.checkpoint_manager.get_statistics()
-            current_task = self.checkpoint_manager.get_current_task()
+            try:
+                recovery_info = self.checkpoint_manager.get_recovery_info()
+            except Exception as e:
+                logger.warning(f"Ошибка при получении recovery_info для /status: {e}")
+                recovery_info = {
+                    'was_clean_shutdown': True,
+                    'last_start_time': None,
+                    'last_stop_time': None,
+                    'session_id': self.session_tracker.current_session_id,
+                    'iteration_count': 0
+                }
+            
+            try:
+                stats = self.checkpoint_manager.get_statistics()
+            except Exception as e:
+                logger.warning(f"Ошибка при получении статистики для /status: {e}")
+                stats = {'completed': 0, 'failed': 0, 'pending': 0, 'in_progress': 0, 'total_tasks': 0, 'iteration_count': 0}
+            
+            try:
+                current_task = self.checkpoint_manager.get_current_task()
+            except Exception as e:
+                logger.warning(f"Ошибка при получении текущей задачи для /status: {e}")
+                current_task = None
             
             # Получаем текущие задачи из todo_manager
-            pending_tasks = self.todo_manager.get_pending_tasks()
+            try:
+                pending_tasks = self.todo_manager.get_pending_tasks()
+            except Exception as e:
+                logger.warning(f"Ошибка при получении pending_tasks для /status: {e}")
+                pending_tasks = []
             
             # Определяем, что делает сервер
             current_activity = "Ожидание"
@@ -2435,9 +2501,11 @@ class CodeAgentServer:
     def start(self):
         """Запуск сервера агента в бесконечном цикле"""
         logger.info("Запуск Code Agent Server")
+        logger.info("Инициализация завершена, начинаем запуск HTTP сервера...")
         
         # Запускаем HTTP сервер
         self._setup_http_server()
+        logger.info("HTTP сервер настроен, продолжаем запуск...")
         
         # Запускаем file watcher для автоперезапуска
         self._setup_file_watcher()

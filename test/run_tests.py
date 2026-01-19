@@ -21,6 +21,7 @@ import argparse
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any
 from datetime import datetime
+import json
 
 # Устанавливаем UTF-8 кодировку для вывода
 if sys.platform == 'win32':
@@ -65,12 +66,11 @@ if not sys.stdout.isatty():
 TEST_CATEGORIES = {
     'openrouter': {
         'name': 'OpenRouter API',
-        'description': 'Тестирование OpenRouter API, LLMManager, генерация инструкций',
+        'description': 'Тестирование OpenRouter API, обнаружение моделей, CrewAI сценарии',
         'tests': [
             ('test_openrouter_api.py', 'Базовый тест OpenRouter API', 60),
             ('test_openrouter_detailed.py', 'Детальное тестирование LLMManager', 120),
-            ('test_llm_real.py', 'Реальное тестирование LLM (генерация, fallback, параллельный режим)', 300),
-            ('test_model_discovery_and_update.py', 'Обнаружение и обновление моделей', 600),
+            ('test_model_discovery_and_update.py', 'Обнаружение и обновление моделей через OpenRouter API', 600),
             ('test_crewai_scenario.py', 'CrewAI сценарий с параллельными моделями', 300),
         ]
     },
@@ -78,26 +78,23 @@ TEST_CATEGORIES = {
         'name': 'HTTP API Server',
         'description': 'Тестирование HTTP API сервера и endpoints',
         'tests': [
-            ('test_server_api_only.py', 'Тестирование API endpoints (сервер должен быть запущен)', 60),
-            ('test_real_server_integration.py', 'Интеграционное тестирование сервера (автозапуск сервера)', 120),
+            ('test_server_api_only.py', 'Тестирование API endpoints (автозапуск сервера)', 360),
+            ('test_real_server_integration.py', 'Интеграционное тестирование сервера (автозапуск сервера)', 240),
         ]
     },
     'cursor': {
         'name': 'Cursor Integration',
-        'description': 'Тестирование интеграции с Cursor IDE',
+        'description': 'Тестирование интеграции с Cursor IDE (только автоматизированные тесты)',
         'tests': [
-            ('test_simple_cursor_task.py', 'Простая задача через Cursor', 300),
             ('test_real_cursor_cli.py', 'Реальное выполнение через Cursor CLI', 600),
-            ('test_cursor_integration_only.py', 'Интеграция с Cursor (только файловый интерфейс)', 300),
             ('test_hybrid_interface.py', 'Гибридный интерфейс (CLI + файловый)', 300),
         ]
     },
     'llm': {
         'name': 'LLM Core',
-        'description': 'Тестирование базовой функциональности LLM',
+        'description': 'Тестирование базовой функциональности LLM (LLMManager, генерация, fallback)',
         'tests': [
-            ('test_llm_real.py', 'Реальное тестирование LLMManager', 300),
-            ('test_model_discovery_and_update.py', 'Обнаружение и обновление моделей', 600),
+            ('test_llm_real.py', 'Реальное тестирование LLMManager (генерация, fallback, параллельный режим)', 300),
         ]
     },
     'validation': {
@@ -176,6 +173,12 @@ class TestRunner:
         self.print_info(f"Файл: {test_file}")
         self.print_info(f"Таймаут: {timeout}s")
         
+        # Для cursor тестов проверяем статус Docker контейнера
+        if category == 'cursor':
+            self.print_info("Проверка Docker контейнера перед тестом...")
+            self.print_docker_container_info("cursor-agent-life")
+            print()
+        
         start_time = time.time()
         
         try:
@@ -218,12 +221,44 @@ class TestRunner:
             
             success = result.returncode == 0
             
+            # Для cursor тестов проверяем статус контейнера после выполнения
+            if category == 'cursor':
+                print()
+                self.print_info("Проверка Docker контейнера после теста...")
+                container_status = self.check_docker_container_status("cursor-agent-life")
+                if container_status.get("available") and container_status.get("exists"):
+                    if container_status.get("running"):
+                        self.print_success(f"Контейнер активен (статус: {container_status.get('status', 'unknown')})")
+                    else:
+                        self.print_warning(f"Контейнер не активен (статус: {container_status.get('status', 'unknown')})")
+                        if container_status.get("error"):
+                            self.print_warning(f"Ошибка: {container_status.get('error')}")
+                        # Показываем логи при проблемах
+                        logs = self.get_docker_container_logs("cursor-agent-life", lines=10)
+                        if logs:
+                            self.print_info("Последние логи контейнера:")
+                            for line in logs.strip().split('\n')[-5:]:
+                                if line.strip():
+                                    self.print_info(f"  {line[:120]}")
+                print()
+            
             if success:
                 self.print_success(f"Тест пройден за {duration:.2f}s")
                 message = "OK"
             else:
                 self.print_fail(f"Тест провален (код: {result.returncode}) за {duration:.2f}s")
                 message = f"Exit code: {result.returncode}"
+                
+                # Для cursor тестов показываем дополнительную информацию при ошибке
+                if category == 'cursor':
+                    container_status = self.check_docker_container_status("cursor-agent-life")
+                    if container_status.get("available") and container_status.get("exists"):
+                        logs = self.get_docker_container_logs("cursor-agent-life", lines=30)
+                        if logs:
+                            self.print_info("Логи контейнера для диагностики:")
+                            print("-" * 80)
+                            print(logs[-1000:])  # Последние 1000 символов
+                            print("-" * 80)
             
             return success, message, duration
             
@@ -249,6 +284,146 @@ class TestRunner:
         except:
             return False
     
+    def check_docker_container_status(self, container_name: str = "cursor-agent-life") -> Dict[str, Any]:
+        """
+        Проверка статуса Docker контейнера
+        
+        Returns:
+            Словарь с информацией о статусе контейнера
+        """
+        try:
+            # Проверяем наличие Docker
+            docker_check = subprocess.run(
+                ["docker", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if docker_check.returncode != 0:
+                return {
+                    "available": False,
+                    "error": "Docker не установлен или недоступен"
+                }
+            
+            # Проверяем статус контейнера
+            inspect_cmd = [
+                "docker", "inspect",
+                "--format", "{{json .State}}",
+                container_name
+            ]
+            inspect_result = subprocess.run(
+                inspect_cmd,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if inspect_result.returncode == 0:
+                try:
+                    state = json.loads(inspect_result.stdout.strip())
+                    return {
+                        "available": True,
+                        "exists": True,
+                        "running": state.get("Status") == "running",
+                        "status": state.get("Status"),
+                        "started": state.get("StartedAt"),
+                        "finished": state.get("FinishedAt"),
+                        "restarting": state.get("Restarting", False),
+                        "error": state.get("Error", "")
+                    }
+                except json.JSONDecodeError:
+                    return {
+                        "available": True,
+                        "exists": True,
+                        "running": False,
+                        "error": "Не удалось распарсить статус контейнера"
+                    }
+            else:
+                # Контейнер не существует
+                return {
+                    "available": True,
+                    "exists": False,
+                    "running": False,
+                    "error": f"Контейнер {container_name} не найден"
+                }
+                
+        except subprocess.TimeoutExpired:
+            return {
+                "available": False,
+                "error": "Таймаут при проверке Docker"
+            }
+        except FileNotFoundError:
+            return {
+                "available": False,
+                "error": "Docker не найден в PATH"
+            }
+        except Exception as e:
+            return {
+                "available": False,
+                "error": f"Ошибка при проверке Docker: {str(e)}"
+            }
+    
+    def print_docker_container_info(self, container_name: str = "cursor-agent-life"):
+        """Вывод информации о Docker контейнере"""
+        status = self.check_docker_container_status(container_name)
+        
+        if not status.get("available", False):
+            self.print_warning(f"Docker недоступен: {status.get('error', 'Неизвестная ошибка')}")
+            return
+        
+        if not status.get("exists", False):
+            self.print_info(f"Контейнер {container_name} не существует")
+            self.print_info("Контейнер будет создан автоматически при первом использовании")
+            return
+        
+        self.print_info(f"Статус контейнера {container_name}:")
+        if status.get("running", False):
+            self.print_success(f"  Статус: {status.get('status', 'unknown')} (запущен)")
+            if status.get("started"):
+                self.print_info(f"  Запущен: {status.get('started', '')[:19]}")
+        else:
+            self.print_fail(f"  Статус: {status.get('status', 'unknown')} (не запущен)")
+            if status.get("error"):
+                self.print_warning(f"  Ошибка: {status.get('error')}")
+        
+        if status.get("restarting", False):
+            self.print_warning("  ⚠ Контейнер в состоянии перезапуска!")
+        
+        # Показываем последние логи если контейнер не запущен
+        if not status.get("running", False) and status.get("exists", False):
+            try:
+                logs_cmd = ["docker", "logs", "--tail", "5", container_name]
+                logs_result = subprocess.run(
+                    logs_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if logs_result.returncode == 0 and logs_result.stdout.strip():
+                    self.print_info("  Последние логи контейнера:")
+                    for line in logs_result.stdout.strip().split('\n')[-3:]:
+                        if line.strip():
+                            self.print_info(f"    {line[:100]}")
+            except:
+                pass
+    
+    def get_docker_container_logs(self, container_name: str = "cursor-agent-life", lines: int = 20) -> str:
+        """Получение логов Docker контейнера"""
+        try:
+            logs_cmd = ["docker", "logs", "--tail", str(lines), container_name]
+            logs_result = subprocess.run(
+                logs_cmd,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if logs_result.returncode == 0:
+                return logs_result.stdout
+            else:
+                return f"Ошибка получения логов: {logs_result.stderr}"
+        except Exception as e:
+            return f"Ошибка получения логов: {str(e)}"
+    
     def run_category(self, category: str) -> Dict[str, any]:
         """Запуск всех тестов категории"""
         if category not in TEST_CATEGORIES:
@@ -262,7 +437,26 @@ class TestRunner:
         
         # Проверка сервера для API тестов
         # test_real_server_integration.py может запустить сервер автоматически, поэтому не пропускаем
-        has_auto_start = any('test_real_server_integration' in test_file for test_file, _, _ in cat_info['tests'])
+        # Оба теста API могут запускать сервер автоматически
+        has_auto_start = any('test_real_server_integration' in test_file or 'test_server_api_only' in test_file 
+                           for test_file, _, _ in cat_info['tests'])
+        
+        # Для cursor тестов проверяем Docker
+        if category == 'cursor':
+            self.print_info("Проверка Docker окружения для Cursor тестов...")
+            container_status = self.check_docker_container_status("cursor-agent-life")
+            if container_status.get("available"):
+                if container_status.get("exists") and container_status.get("running"):
+                    self.print_success("Docker контейнер cursor-agent-life запущен и готов к работе")
+                elif container_status.get("exists") and not container_status.get("running"):
+                    self.print_warning("Docker контейнер существует, но не запущен")
+                    self.print_info("Контейнер будет запущен автоматически при выполнении тестов")
+                else:
+                    self.print_info("Docker контейнер не существует, будет создан автоматически")
+            else:
+                self.print_warning(f"Docker недоступен: {container_status.get('error', 'Неизвестная ошибка')}")
+                self.print_info("Тесты могут не работать без Docker")
+            print()
         
         if self.check_server_required(category) and not has_auto_start:
             if not self.check_server_availability():

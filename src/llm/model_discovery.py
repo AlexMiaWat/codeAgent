@@ -19,7 +19,7 @@ import requests
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,8 @@ class ModelDiscovery:
         
         # API ключ должен быть в переменной окружения, а не в конфиге
         # Приоритет: переменная окружения > конфиг (для обратной совместимости)
+        # Перезагружаем переменные окружения для получения актуального ключа
+        load_dotenv(override=True)
         api_key = os.getenv('OPENROUTER_API_KEY')
         if not api_key:
             # Fallback на конфиг (для обратной совместимости, но не рекомендуется)
