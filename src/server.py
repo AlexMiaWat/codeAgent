@@ -178,6 +178,10 @@ class CodeAgentServer:
         self._should_reload = False
         self._reload_lock = threading.Lock()
         
+        # Счетчик перезапусков
+        self._restart_count = 0
+        self._restart_count_lock = threading.Lock()
+        
         # Флаг для остановки сервера через API
         self._should_stop = False
         self._stop_lock = threading.Lock()
@@ -1476,7 +1480,10 @@ class CodeAgentServer:
             # Если да, инициируем его после завершения задачи
             with self._reload_lock:
                 if self._should_reload:
-                    logger.info("Обнаружен отложенный перезапуск - задача завершена, инициируем перезапуск")
+                    logger.warning("=" * 80)
+                    logger.warning("ОБНАРУЖЕН ОТЛОЖЕННЫЙ ПЕРЕЗАПУСК - ЗАДАЧА ЗАВЕРШЕНА")
+                    logger.warning("Перезапуск будет выполнен на следующей проверке")
+                    logger.warning("=" * 80)
                     # Не сбрасываем флаг здесь - он будет обработан в run_iteration или start()
     
     def _execute_task_via_cursor(self, todo_item: TodoItem, task_type: str, task_logger: TaskLogger) -> bool:
@@ -2407,6 +2414,11 @@ class CodeAgentServer:
             else:
                 current_activity = "Все задачи выполнены"
             
+            # Проверяем, есть ли запрос на перезапуск
+            pending_restart = False
+            with self._reload_lock:
+                pending_restart = self._should_reload
+            
             return jsonify({
                 'server': {
                     'status': 'running' if self._is_running else 'stopped',
@@ -2422,7 +2434,9 @@ class CodeAgentServer:
                     'last_stop_time': recovery_info['last_stop_time'],
                     'session_id': recovery_info['session_id'],
                     'iteration_count': self._current_iteration or recovery_info['iteration_count'],
-                    'current_activity': current_activity
+                    'current_activity': current_activity,
+                    'restart_count': self._restart_count,
+                    'pending_restart': pending_restart
                 },
                 'tasks': {
                     'in_progress': stats['in_progress'],
@@ -2465,13 +2479,18 @@ class CodeAgentServer:
         @self.flask_app.route('/restart', methods=['POST'])
         def restart():
             """Перезапустить сервер"""
-            logger.info("Получен запрос на перезапуск сервера через API")
+            logger.warning("=" * 80)
+            logger.warning("ПОЛУЧЕН ЗАПРОС НА ПЕРЕЗАПУСК СЕРВЕРА ЧЕРЕЗ API")
+            logger.warning("=" * 80)
             with self._reload_lock:
                 self._should_reload = True
+            logger.warning(f"Флаг перезапуска установлен. Текущий счетчик перезапусков: {self._restart_count}")
+            logger.warning("=" * 80)
             return jsonify({
                 'status': 'restarting',
                 'message': 'Сервер будет перезапущен после завершения текущей итерации',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'restart_count': self._restart_count
             })
         
         # Запускаем Flask в отдельном потоке
@@ -2733,10 +2752,32 @@ class CodeAgentServer:
                 with self._task_in_progress_lock:
                     if self._task_in_progress:
                         # Задача выполняется - откладываем перезапуск
-                        logger.debug("Перезапуск отложен - выполняется задача")
+                        logger.warning("=" * 80)
+                        logger.warning("ПЕРЕЗАПУСК ОТЛОЖЕН - ВЫПОЛНЯЕТСЯ ЗАДАЧА")
+                        logger.warning("Перезапуск произойдет после завершения текущей задачи")
+                        logger.warning("=" * 80)
                         return False
                 
                 # Задачи нет - можно перезапускать
+                logger.warning("=" * 80)
+                logger.warning("НАЧАЛО ПЕРЕЗАПУСКА СЕРВЕРА")
+                logger.warning(f"Счетчик перезапусков до перезапуска: {self._restart_count}")
+                logger.warning("=" * 80)
+                
+                # Увеличиваем счетчик перезапусков
+                with self._restart_count_lock:
+                    self._restart_count += 1
+                
+                # Перезапускаем Docker контейнер перед перезапуском сервера
+                logger.info("Перезапуск Docker контейнера перед перезапуском сервера...")
+                docker_restart_success = self._restart_cursor_environment()
+                if not docker_restart_success:
+                    logger.warning("Не удалось перезапустить Docker контейнер, но продолжаем перезапуск сервера")
+                
+                logger.warning("=" * 80)
+                logger.warning(f"ПЕРЕЗАПУСК ИНИЦИИРОВАН. Новый счетчик: {self._restart_count}")
+                logger.warning("=" * 80)
+                
                 self._should_reload = False
                 return True
             return False
@@ -2801,6 +2842,7 @@ class CodeAgentServer:
                 if self._check_reload_needed():
                     logger.warning("=" * 80)
                     logger.warning("ВЫПОЛНЯЕТСЯ ПЕРЕЗАПУСК СЕРВЕРА")
+                    logger.warning(f"Счетчик перезапусков: {self._restart_count}")
                     logger.warning("=" * 80)
                     logger.warning("Текущая задача будет прервана, checkpoint будет сохранен")
                     logger.warning("=" * 80)
@@ -2833,6 +2875,7 @@ class CodeAgentServer:
                 if self._check_reload_needed():
                     logger.warning("=" * 80)
                     logger.warning("ВЫПОЛНЯЕТСЯ ПЕРЕЗАПУСК СЕРВЕРА ПОСЛЕ ИТЕРАЦИИ")
+                    logger.warning(f"Счетчик перезапусков: {self._restart_count}")
                     logger.warning("=" * 80)
                     self.checkpoint_manager.mark_server_stop(clean=True)
                     self._is_running = False

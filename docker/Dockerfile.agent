@@ -9,10 +9,12 @@ RUN apt-get update && apt-get install -y \
     git \
     ca-certificates \
     util-linux \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # util-linux содержит утилиту 'script' для создания pseudo-TTY
 # Необходима для обхода проблемы Ink в Cursor CLI (требует TTY)
+# procps содержит утилиты для мониторинга процессов (pgrep, ps, free)
 
 # Создание рабочей директории
 WORKDIR /workspace
@@ -33,5 +35,65 @@ ENV AGENT_HOME=/root
 # Примечание: CURSOR_API_KEY должен быть передан через docker-compose.agent.yml
 # или через переменные окружения при запуске контейнера
 
-# Создание точки входа (переопределяется в docker-compose.agent.yml)
-ENTRYPOINT ["/root/.local/bin/agent"]
+# Создание скрипта запуска с логированием
+RUN cat > /start.sh << 'EOF'
+#!/bin/bash
+set -e
+
+# Функция логирования
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
+
+log "=== Cursor Agent Container Started ==="
+log "Container ID: $(hostname)"
+log "Container IP: $(hostname -i 2>/dev/null || echo 'N/A')"
+log "Image: cursor-agent:latest"
+
+# Основной цикл с периодическими сообщениями и мониторингом
+while true; do
+    # Вычисляем uptime
+    if [ -f /proc/uptime ]; then
+        UPTIME_SEC=$(awk '{print int($1)}' /proc/uptime)
+        UPTIME_HOURS=$((UPTIME_SEC / 3600))
+        UPTIME_MINS=$(((UPTIME_SEC % 3600) / 60))
+        UPTIME_STR="${UPTIME_HOURS}h ${UPTIME_MINS}m"
+    else
+        UPTIME_STR="N/A"
+    fi
+    
+    log "Status: Running | Uptime: ${UPTIME_STR}"
+    
+    # Проверка использования памяти
+    if command -v free >/dev/null 2>&1; then
+        MEM_INFO=$(free -h 2>/dev/null | awk '/^Mem:/ {print $3"/"$2}' || echo "N/A")
+        log "Memory usage: ${MEM_INFO}"
+    fi
+    
+    # Проверка cursor-agent процесса
+    if command -v pgrep >/dev/null 2>&1; then
+        if pgrep -f "cursor-agent\|agent" > /dev/null 2>&1; then
+            AGENT_PID=$(pgrep -f "cursor-agent\|agent" | head -1)
+            if [ -n "$AGENT_PID" ] && command -v ps >/dev/null 2>&1; then
+                AGENT_MEM=$(ps -p "$AGENT_PID" -o rss= 2>/dev/null | awk '{print int($1/1024)"MB"}' || echo "N/A")
+                log "Cursor Agent: Active | PID: ${AGENT_PID} | Memory: ${AGENT_MEM}"
+            else
+                log "Cursor Agent: Active | PID: ${AGENT_PID}"
+            fi
+        else
+            log "Cursor Agent: Not detected"
+        fi
+    fi
+    
+    sleep 3600
+done
+EOF
+
+RUN chmod +x /start.sh
+
+# HEALTHCHECK для мониторинга здоровья контейнера
+HEALTHCHECK --interval=1m --timeout=3s --start-period=5s --retries=3 \
+  CMD ps aux | grep -v grep | grep -q "start.sh" || exit 1
+
+# Использовать скрипт как точку входа (переопределяется в docker-compose.agent.yml)
+CMD ["/start.sh"]
