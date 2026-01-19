@@ -64,7 +64,7 @@ pytest test/ -m llm -v
 
 ## Подробная документация
 
-Полная документация по тестированию: [../docs/testing.md](../docs/testing.md)
+Полная документация по тестированию: [../docs/testing/TESTING.md](../docs/testing/TESTING.md)
 
 ## Требования
 

@@ -93,6 +93,9 @@ class TaskLogger:
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(exist_ok=True)
         
+        # Очищаем старые логи задач (оставляем только последние 20)
+        self._cleanup_old_logs(max_logs=20)
+        
         # Создаем имя файла лога на основе task_id и timestamp
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.log_file = self.log_dir / f"task_{task_id}_{timestamp}.log"
@@ -144,6 +147,33 @@ class TaskLogger:
         
         # Логируем начало
         self._log_header()
+    
+    def _cleanup_old_logs(self, max_logs: int = 20):
+        """
+        Очистка старых лог-файлов задач, оставляя только последние max_logs файлов
+        
+        Args:
+            max_logs: Максимальное количество лог-файлов задач для хранения
+        """
+        try:
+            # Получаем все лог-файлы задач
+            log_files = sorted(
+                self.log_dir.glob("task_*.log"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True  # Сортируем от новых к старым
+            )
+            
+            # Удаляем старые логи, оставляя только max_logs последних
+            if len(log_files) > max_logs:
+                for old_log in log_files[max_logs:]:
+                    try:
+                        old_log.unlink()
+                    except Exception as e:
+                        # Игнорируем ошибки удаления отдельных файлов
+                        pass
+        except Exception as e:
+            # Игнорируем ошибки очистки - это не критично
+            pass
     
     def _log_header(self):
         """Записать заголовок лога"""
@@ -430,6 +460,11 @@ ID: {self.task_id}
         self.logger.info(Colors.colorize(f"ℹ️  {message}", Colors.BRIGHT_BLUE))
         self.logger.debug(message)
     
+    def log_warning(self, message: str):
+        """Логировать предупреждение"""
+        self.logger.warning(Colors.colorize(f"⚠️  {message}", Colors.BRIGHT_YELLOW))
+        self.logger.debug(f"Предупреждение: {message}")
+    
     def log_debug(self, message: str):
         """Логировать отладочное сообщение (только в файл)"""
         self.logger.debug(message)
@@ -541,3 +576,30 @@ class ServerLogger:
         
         footer = '\n'.join(footer_lines)
         self.logger.info(footer)
+    
+    def _cleanup_old_logs(self, max_logs: int = 20):
+        """
+        Очистка старых лог-файлов задач, оставляя только последние max_logs файлов
+        
+        Args:
+            max_logs: Максимальное количество лог-файлов задач для хранения
+        """
+        try:
+            # Получаем все лог-файлы задач
+            log_files = sorted(
+                self.log_dir.glob("task_*.log"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True  # Сортируем от новых к старым
+            )
+            
+            # Удаляем старые логи, оставляя только max_logs последних
+            if len(log_files) > max_logs:
+                for old_log in log_files[max_logs:]:
+                    try:
+                        old_log.unlink()
+                    except Exception as e:
+                        # Игнорируем ошибки удаления отдельных файлов
+                        pass
+        except Exception as e:
+            # Игнорируем ошибки очистки - это не критично
+            pass

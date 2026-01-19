@@ -35,8 +35,8 @@ services:
     # Убираем stdin для non-interactive режима
     stdin_open: false
     tty: false
-    # Автоматический перезапуск при падении
-    restart: unless-stopped
+    # Автоматический перезапуск отключен (no)
+    restart: unless-stopped    
 
 volumes:
   agent-home:

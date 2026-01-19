@@ -7,6 +7,7 @@ import json
 import time
 import os
 import sys
+import subprocess
 from pathlib import Path
 from datetime import datetime
 
@@ -26,6 +27,54 @@ def load_checkpoint(checkpoint_file):
     except Exception as e:
         return None
 
+def is_server_process_running():
+    """Проверить, запущен ли процесс сервера"""
+    try:
+        if sys.platform == 'win32':
+            # Windows: используем wmic для получения командных строк
+            try:
+                result = subprocess.run(
+                    ['wmic', 'process', 'where', 'name="python.exe"', 'get', 'CommandLine', '/format:list'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    output = result.stdout
+                    # Проверяем наличие src.server или server.py в командной строке
+                    if 'src.server' in output or ('server.py' in output and 'monitor_server.py' not in output):
+                        return True
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                # Fallback: проверяем через tasklist (менее надежно)
+                result = subprocess.run(
+                    ['tasklist', '/FI', 'IMAGENAME eq python.exe', '/FO', 'CSV'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                # tasklist не показывает командные строки, поэтому всегда возвращаем None
+                # чтобы использовать только checkpoint для определения статуса
+                pass
+        else:
+            # Linux/Mac: используем ps
+            result = subprocess.run(
+                ['ps', 'aux'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                # Проверяем наличие процессов с src.server или server.py
+                for line in result.stdout.split('\n'):
+                    if 'src.server' in line or 'server.py' in line:
+                        # Исключаем сам скрипт мониторинга
+                        if 'monitor_server.py' not in line:
+                            return True
+    except Exception:
+        # Если не удалось проверить, возвращаем None (неизвестно)
+        return None
+    return False
+
 def print_status(checkpoint_data):
     """Вывести статус сервера"""
     if not checkpoint_data:
@@ -34,6 +83,31 @@ def print_status(checkpoint_data):
     
     server_state = checkpoint_data.get('server_state', {})
     tasks = checkpoint_data.get('tasks', [])
+    
+    # Проверяем реальное состояние процесса
+    process_running = is_server_process_running()
+    
+    # Определяем статус на основе checkpoint и проверки процесса
+    checkpoint_clean_shutdown = server_state.get('clean_shutdown', True)
+    
+    if process_running is True:
+        status = "[RUNNING]"
+        status_detail = "✅ Процесс запущен"
+    elif process_running is False:
+        if not checkpoint_clean_shutdown:
+            status = "[STOPPED (unclean)]"
+            status_detail = "⚠️ Процесс не запущен (некорректное завершение)"
+        else:
+            status = "[STOPPED]"
+            status_detail = "✅ Процесс остановлен корректно"
+    else:
+        # Не удалось проверить процесс, используем только checkpoint
+        if not checkpoint_clean_shutdown:
+            status = "[UNKNOWN - checkpoint: running]"
+            status_detail = "❓ Не удалось проверить процесс (checkpoint показывает running)"
+        else:
+            status = "[STOPPED]"
+            status_detail = "✅ Checkpoint показывает остановку"
     
     # Статистика
     in_progress = len([t for t in tasks if t['state'] == 'in_progress'])
@@ -46,7 +120,8 @@ def print_status(checkpoint_data):
     print(f"Session: {checkpoint_data.get('session_id', 'N/A')}")
     print(f"Iteration: {server_state.get('iteration_count', 0)}")
     print(f"Started: {server_state.get('last_start_time', 'N/A')}")
-    print(f"Status: {'[RUNNING]' if not server_state.get('clean_shutdown', True) else '[STOPPED]'}")
+    print(f"Status: {status}")
+    print(f"         {status_detail}")
     print()
     print(f"TASK STATISTICS:")
     print(f"   In Progress: {in_progress}")

@@ -36,7 +36,8 @@ llm:
 providers:
   openrouter:
     base_url: https://openrouter.ai/api/v1
-    api_key: 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
+    # api_key должен быть в переменной окружения OPENROUTER_API_KEY или в .env файле
+    # api_key: ${OPENROUTER_API_KEY}
     models:
       meta-llama:
       - name: meta-llama/llama-3.2-1b-instruct

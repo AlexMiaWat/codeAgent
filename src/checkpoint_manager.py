@@ -365,15 +365,50 @@ class CheckpointManager:
         """
         Проверить, была ли задача уже выполнена
         
+        ВАЖНО: Проверяет ПОСЛЕДНЮЮ попытку задачи, а не любую.
+        Если последняя попытка не завершена (pending/failed), задача считается невыполненной.
+        
         Args:
             task_text: Текст задачи
         
         Returns:
-            True если задача уже выполнена
+            True если задача уже выполнена (последняя попытка в статусе completed)
         """
-        for task in self.checkpoint_data.get("tasks", []):
-            if task.get("task_text") == task_text and task.get("state") == TaskState.COMPLETED.value:
-                return True
+        # Находим ВСЕ задачи с таким текстом
+        matching_tasks = [
+            task for task in self.checkpoint_data.get("tasks", [])
+            if task.get("task_text") == task_text
+        ]
+        
+        if not matching_tasks:
+            return False
+        
+        # Находим последнюю задачу по времени начала (start_time)
+        # Если start_time отсутствует, считаем задачу старой и проверяем статус
+        last_task = None
+        last_time = None
+        
+        for task in matching_tasks:
+            start_time_str = task.get("start_time")
+            if start_time_str:
+                try:
+                    from datetime import datetime
+                    start_time = datetime.fromisoformat(start_time_str)
+                    if last_time is None or start_time > last_time:
+                        last_time = start_time
+                        last_task = task
+                except (ValueError, TypeError):
+                    # Если не удалось распарсить время, игнорируем эту задачу
+                    pass
+        
+        # Если не нашли задачу с валидным start_time, берем первую с таким текстом
+        if last_task is None and matching_tasks:
+            last_task = matching_tasks[-1]
+        
+        # Проверяем статус последней попытки
+        if last_task:
+            return last_task.get("state") == TaskState.COMPLETED.value
+        
         return False
     
     def get_recovery_info(self) -> Dict[str, Any]:

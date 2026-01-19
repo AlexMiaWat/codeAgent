@@ -161,7 +161,22 @@ class LLMManager:
         provider_config = providers_config.get(default_provider, {})
         
         base_url = provider_config.get('base_url')
-        api_key = provider_config.get('api_key')
+        
+        # API ключ должен быть в переменной окружения, а не в конфиге
+        # Приоритет: переменная окружения > конфиг (для обратной совместимости)
+        api_key = os.getenv('OPENROUTER_API_KEY')
+        if not api_key:
+            # Fallback на конфиг (для обратной совместимости, но не рекомендуется)
+            api_key = provider_config.get('api_key')
+            if api_key:
+                logger.warning("API key found in config file. Please move it to OPENROUTER_API_KEY environment variable or .env file for security.")
+        
+        if not api_key:
+            raise ValueError(
+                f"API key not found for provider '{default_provider}'. "
+                f"Please set OPENROUTER_API_KEY environment variable or add it to .env file."
+            )
+        
         timeout = llm_config.get('timeout', 200)
         
         # Создаем клиент для всех моделей провайдера

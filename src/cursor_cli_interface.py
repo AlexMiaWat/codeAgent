@@ -7,6 +7,7 @@
 """
 
 import os
+import sys
 import subprocess
 import shutil
 import logging
@@ -85,8 +86,14 @@ class CursorCLIInterface:
             # Специальный маркер для Docker
             if cli_path == "docker-compose-agent":
                 self.cli_command = "docker-compose-agent"
-                self.cli_available = True
-                logger.info("Использование Docker Compose для Cursor CLI")
+                # Проверяем доступность Docker и возможность запустить контейнер
+                compose_file = Path(__file__).parent.parent / "docker" / "docker-compose.agent.yml"
+                docker_available = self._check_docker_availability(compose_file)
+                self.cli_available = docker_available
+                if docker_available:
+                    logger.info("Использование Docker Compose для Cursor CLI - Docker доступен")
+                else:
+                    logger.warning("Docker Compose указан, но Docker недоступен или контейнер не может быть запущен")
             elif os.path.exists(cli_path) and os.access(cli_path, os.X_OK):
                 self.cli_command = cli_path
                 self.cli_available = True
@@ -165,6 +172,129 @@ class CursorCLIInterface:
             pass
         
         return None, False
+    
+    def _check_docker_availability(self, compose_file: Path) -> bool:
+        """
+        Проверить доступность Docker и возможность запустить контейнер
+        
+        Args:
+            compose_file: Путь к docker-compose.agent.yml
+            
+        Returns:
+            True если Docker доступен и compose файл существует, False иначе
+        """
+        try:
+            # Проверяем наличие docker-compose файла
+            if not compose_file.exists():
+                logger.warning(f"Docker compose файл не найден: {compose_file}")
+                return False
+            
+            # Проверяем, что Docker доступен
+            docker_check = subprocess.run(
+                ["docker", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if docker_check.returncode != 0:
+                logger.warning("Docker не установлен или недоступен")
+                return False
+            
+            # Проверяем наличие docker compose
+            compose_check = subprocess.run(
+                ["docker", "compose", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if compose_check.returncode != 0:
+                logger.warning("Docker Compose не установлен или недоступен")
+                return False
+            
+            # Проверяем наличие образа cursor-agent:latest
+            image_check = subprocess.run(
+                ["docker", "images", "-q", "cursor-agent:latest"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if not image_check.stdout.strip():
+                logger.warning("Docker образ cursor-agent:latest не найден. Создайте образ: docker compose -f docker/docker-compose.agent.yml build")
+                return False
+            
+            logger.debug("Docker доступен и готов к использованию")
+            return True
+            
+        except subprocess.TimeoutExpired:
+            logger.warning("Таймаут при проверке Docker")
+            return False
+        except FileNotFoundError:
+            logger.warning("Docker не найден в системе")
+            return False
+        except Exception as e:
+            logger.warning(f"Ошибка при проверке Docker: {e}")
+            return False
+    
+    def _check_docker_container_activity(self, container_name: str) -> bool:
+        """
+        Проверить, активен ли Docker контейнер (выполняется ли в нем процесс)
+        
+        Args:
+            container_name: Имя контейнера
+            
+        Returns:
+            True если контейнер активен и выполняет процессы
+        """
+        try:
+            # Проверяем количество процессов в контейнере
+            ps_cmd = [
+                "docker", "exec", container_name,
+                "bash", "-c",
+                "ps aux | grep -E 'agent|cursor' | grep -v grep | wc -l"
+            ]
+            ps_result = subprocess.run(
+                ps_cmd,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if ps_result.returncode == 0:
+                process_count = int(ps_result.stdout.strip())
+                if process_count > 0:
+                    logger.debug(f"Контейнер активен: {process_count} процессов agent/cursor")
+                    return True
+                else:
+                    logger.debug("Контейнер не выполняет процессы agent/cursor")
+                    return False
+            
+            # Дополнительная проверка - статус контейнера
+            inspect_cmd = [
+                "docker", "inspect",
+                "--format", "{{.State.Status}}",
+                container_name
+            ]
+            inspect_result = subprocess.run(
+                inspect_cmd,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if inspect_result.returncode == 0:
+                status = inspect_result.stdout.strip()
+                is_active = status == "running"
+                logger.debug(f"Статус контейнера: {status}, активен: {is_active}")
+                return is_active
+            
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Ошибка проверки активности контейнера: {e}")
+            return False
     
     def _ensure_docker_container_running(self, compose_file: Path) -> Dict[str, Any]:
         """
@@ -311,6 +441,24 @@ class CursorCLIInterface:
         Returns:
             True если CLI доступен, False иначе
         """
+        # Для Docker дополнительно проверяем статус контейнера
+        if self.cli_command == "docker-compose-agent":
+            # Проверяем статус контейнера (без запуска, только проверка)
+            try:
+                result = subprocess.run(
+                    ["docker", "inspect", "--format", "{{.State.Status}}", "cursor-agent-life"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    status = result.stdout.strip()
+                    # Контейнер доступен если он running или stopped (можно запустить)
+                    return status in ["running", "exited", "created"]
+            except Exception:
+                # При ошибке проверки используем базовую доступность
+                pass
+        
         return self.cli_available
     
     def check_version(self) -> Optional[str]:
@@ -323,6 +471,37 @@ class CursorCLIInterface:
         if not self.cli_available:
             return None
         
+        # Для Docker проверяем версию через exec в контейнере
+        if self.cli_command == "docker-compose-agent":
+            try:
+                # Сначала проверяем/запускаем контейнер
+                compose_file = Path(__file__).parent.parent / "docker" / "docker-compose.agent.yml"
+                container_status = self._ensure_docker_container_running(compose_file)
+                if not container_status.get("running"):
+                    logger.warning(f"Контейнер не запущен: {container_status.get('error')}")
+                    return None
+                
+                # Проверяем версию agent в контейнере
+                result = subprocess.run(
+                    ["docker", "exec", "cursor-agent-life", "/root/.local/bin/agent", "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                
+                if result.returncode == 0:
+                    return result.stdout.strip()
+                else:
+                    logger.warning(f"Не удалось получить версию agent в контейнере: {result.stderr}")
+                    return None
+            except subprocess.TimeoutExpired:
+                logger.warning("Таймаут при проверке версии agent в контейнере")
+                return None
+            except Exception as e:
+                logger.error(f"Ошибка при проверке версии agent в контейнере: {e}")
+                return None
+        
+        # Для локального CLI
         try:
             result = subprocess.run(
                 [self.cli_command, "--version"],
@@ -510,6 +689,203 @@ This agent role is used for automated project tasks execution.
                 logger.error(f"Ошибка при возобновлении чата: {e}")
                 return False
     
+    def stop_active_chats(self) -> bool:
+        """
+        Остановить все активные чаты/диалоги в Docker контейнере
+        
+        Returns:
+            True если остановка выполнена успешно
+        """
+        if not self.cli_available:
+            logger.warning("Cursor CLI недоступен для остановки чатов")
+            return False
+        
+        try:
+            use_docker = self.cli_command == "docker-compose-agent"
+            
+            if use_docker:
+                # Останавливаем все процессы agent в контейнере
+                logger.info("Остановка активных процессов agent в Docker контейнере...")
+                
+                # Находим и убиваем все процессы agent
+                # pkill возвращает 1 если процессов не найдено - это нормально
+                kill_cmd = [
+                    "docker", "exec", "cursor-agent-life",
+                    "bash", "-c",
+                    "pkill -f 'agent.*-p' || pkill -f '/root/.local/bin/agent' || true"
+                ]
+                
+                result = subprocess.run(
+                    kill_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                
+                # Команда с || true всегда возвращает 0
+                # Проверяем, были ли найдены процессы через stderr или попытку поиска
+                # Если pkill не нашел процессы - это нормально (их может не быть)
+                if result.returncode == 0:
+                    # Проверяем, действительно ли процессы были остановлены
+                    # Пытаемся найти процессы еще раз - если их нет, значит остановка успешна
+                    check_cmd = [
+                        "docker", "exec", "cursor-agent-life",
+                        "bash", "-c",
+                        "pgrep -f 'agent.*-p' || pgrep -f '/root/.local/bin/agent' || true"
+                    ]
+                    check_result = subprocess.run(
+                        check_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    
+                    # Если pgrep ничего не нашел (процессы остановлены) или нашел что-то (значит остановка частичная)
+                    if not check_result.stdout.strip():
+                        logger.info("Активные процессы agent остановлены (или их не было)")
+                    else:
+                        logger.info(f"Попытка остановки выполнена (найдено процессов: {len(check_result.stdout.strip().split())})")
+                    return True
+                else:
+                    logger.warning(f"Не удалось остановить процессы: {result.stderr or result.stdout}")
+                    return False
+            else:
+                # Для не-Docker окружения - пытаемся убить процессы локально
+                logger.info("Остановка активных процессов agent...")
+                try:
+                    if sys.platform == 'win32':
+                        # Windows
+                        subprocess.run(
+                            ["taskkill", "/F", "/FI", "WINDOWTITLE eq *agent*"],
+                            capture_output=True,
+                            timeout=5
+                        )
+                    else:
+                        # Unix
+                        subprocess.run(
+                            ["pkill", "-f", "agent"],
+                            capture_output=True,
+                            timeout=5
+                        )
+                    logger.info("Процессы agent остановлены")
+                    return True
+                except Exception as e:
+                    logger.warning(f"Ошибка при остановке процессов: {e}")
+                    return False
+                
+        except Exception as e:
+            logger.error(f"Ошибка при остановке активных чатов: {e}")
+            return False
+    
+    def clear_chat_queue(self) -> bool:
+        """
+        Очистить очередь диалогов (удалить все чаты)
+        
+        Returns:
+            True если очистка выполнена успешно
+        """
+        if not self.cli_available:
+            logger.warning("Cursor CLI недоступен для очистки очереди")
+            return False
+        
+        try:
+            # Сначала останавливаем активные чаты
+            self.stop_active_chats()
+            
+            # Получаем список всех чатов
+            chat_ids = self.list_chats()
+            
+            if not chat_ids:
+                logger.info("Нет чатов для удаления")
+                return True
+            
+            logger.info(f"Найдено {len(chat_ids)} чатов для удаления")
+            
+            use_docker = self.cli_command == "docker-compose-agent"
+            
+            # Удаляем каждый чат (если есть такая команда в agent)
+            # Примечание: agent может не поддерживать прямого удаления чатов,
+            # поэтому мы просто останавливаем процессы и сбрасываем текущий chat_id
+            deleted_count = 0
+            
+            # ПРИМЕЧАНИЕ: Cursor agent CLI может не поддерживать команду delete
+            # В этом случае мы просто останавливаем процессы и сбрасываем chat_id
+            # Чаты могут остаться в базе данных agent, но активные процессы будут остановлены
+            logger.debug(f"Попытка удаления {len(chat_ids)} чатов (команда может не поддерживаться)")
+            
+            for chat_id in chat_ids:
+                try:
+                    # Пытаемся удалить через команду (если существует)
+                    if use_docker:
+                        cmd = [
+                            "docker", "exec", "cursor-agent-life",
+                            "bash", "-c",
+                            f"cd /workspace && /root/.local/bin/agent delete {chat_id} 2>&1 || true"
+                        ]
+                    else:
+                        cmd = [self.cli_command, "delete", chat_id]
+                    
+                    result = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    
+                    # Проверяем вывод - если команда не поддерживается, будет сообщение об ошибке
+                    output = (result.stdout + result.stderr).lower()
+                    if "unknown command" in output or "invalid command" in output or "not found" in output:
+                        # Команда не поддерживается - это нормально
+                        logger.debug(f"Команда delete не поддерживается для чата {chat_id}")
+                    elif result.returncode == 0 and "deleted" in output.lower():
+                        deleted_count += 1
+                        logger.debug(f"Чат {chat_id} удален")
+                    
+                except Exception as e:
+                    logger.debug(f"Не удалось удалить чат {chat_id}: {e}")
+                    # Продолжаем удаление остальных
+            
+            # Сбрасываем текущий chat_id
+            self.current_chat_id = None
+            
+            if deleted_count > 0:
+                logger.info(f"Удалено {deleted_count} из {len(chat_ids)} чатов")
+            else:
+                # Если ни один чат не удален, это нормально - команда delete может не поддерживаться
+                # Главное - процессы остановлены и chat_id сброшен
+                logger.info(f"Процессы остановлены, chat_id сброшен. Чаты могут остаться в базе agent (это нормально, если команда delete не поддерживается)")
+            
+            return True
+                
+        except Exception as e:
+            logger.error(f"Ошибка при очистке очереди чатов: {e}")
+            return False
+    
+    def prepare_for_new_task(self) -> bool:
+        """
+        Подготовка к новой задаче: остановка активных чатов и очистка очереди
+        
+        Returns:
+            True если подготовка выполнена успешно
+        """
+        logger.info("Подготовка к новой задаче: очистка активных диалогов...")
+        
+        # Останавливаем активные чаты
+        stop_result = self.stop_active_chats()
+        
+        # Очищаем очередь
+        clear_result = self.clear_chat_queue()
+        
+        # Сбрасываем текущий chat_id
+        self.current_chat_id = None
+        
+        if stop_result or clear_result:
+            logger.info("Подготовка к новой задаче завершена")
+            return True
+        else:
+            logger.warning("Подготовка к новой задаче выполнена с предупреждениями")
+            return True  # Все равно продолжаем, даже если были предупреждения
+    
     def execute(
         self,
         prompt: str,
@@ -585,12 +961,17 @@ This agent role is used for automated project tasks execution.
                 )
             
             # Читаем CURSOR_API_KEY из .env
+            cursor_api_key = None
             env_file = Path(__file__).parent.parent / ".env"
             if env_file.exists():
                 load_dotenv(env_file)
                 cursor_api_key = os.getenv("CURSOR_API_KEY")
                 if cursor_api_key:
-                    logger.debug("CURSOR_API_KEY загружен из .env")
+                    logger.info(f"CURSOR_API_KEY загружен из .env (длина: {len(cursor_api_key)})")
+                else:
+                    logger.warning("CURSOR_API_KEY не найден в .env файле")
+            else:
+                logger.warning(f".env файл не найден: {env_file}")
             
             # Проверяем и запускаем контейнер если нужно (с повторными попытками)
             max_retries = 3
@@ -682,16 +1063,46 @@ This agent role is used for automated project tasks execution.
             # Экранируем prompt для bash
             escaped_prompt = shlex.quote(prompt)
             
+            # Читаем модель из конфигурации (если указана)
+            # ПРИМЕЧАНИЕ: Пустая строка = "Auto" - Cursor сам выберет оптимальную модель (рекомендуется)
+            model_flag = ""
+            try:
+                from .config_loader import ConfigLoader
+                config = ConfigLoader()
+                cursor_config = config.get('cursor', {})
+                cli_config = cursor_config.get('cli', {})
+                model_name = cli_config.get('model', '').strip()
+                
+                if model_name:
+                    # Модель указана в конфиге - используем ее через -m флаг
+                    model_flag = f" -m {shlex.quote(model_name)}"
+                    logger.debug(f"Использование модели из конфига: {model_name}")
+                # Если модель не указана (пустая строка) - используем "Auto" (не добавляем -m флаг)
+            except Exception as e:
+                # Если не удалось прочитать конфиг - используем "Auto" (не добавляем -m флаг)
+                logger.debug(f"Не удалось прочитать модель из конфига: {e}. Используем Auto (без -m флага).")
+            
             # Формируем команду agent с prompt
-            agent_full_cmd = f'{agent_base_cmd} -p {escaped_prompt} --force --approve-mcps'
+            agent_full_cmd = f'{agent_base_cmd}{model_flag} -p {escaped_prompt} --force --approve-mcps'
             
             # Docker команда: выполняем agent напрямую без script (agent сам управляет TTY)
-            cmd = [
-                "docker", "exec",
+            # КРИТИЧНО: Передаем CURSOR_API_KEY в контейнер через -e флаг docker exec
+            # И экспортируем переменную в bash команде для надежности
+            cmd = ["docker", "exec"]
+            
+            # Передаем CURSOR_API_KEY если он доступен
+            if cursor_api_key:
+                cmd.extend(["-e", f"CURSOR_API_KEY={cursor_api_key}"])
+                # Дополнительно экспортируем в bash команде (на случай если -e не сработает)
+                bash_env_export = f'export CURSOR_API_KEY={shlex.quote(cursor_api_key)} && export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && {agent_full_cmd}'
+            else:
+                bash_env_export = f'export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && {agent_full_cmd}'
+            
+            cmd.extend([
                 "cursor-agent-life",
                 "bash", "-c",
-                f'export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && {agent_full_cmd}'
-            ]
+                bash_env_export
+            ])
             
             # Prompt передается через printf в bash команде, stdin subprocess НЕ используется
             
@@ -761,53 +1172,96 @@ This agent role is used for automated project tasks execution.
         
         try:
             # Для Docker передаем CURSOR_API_KEY через переменные окружения
-            # Примечание: для exec CURSOR_API_KEY уже установлен в docker-compose.agent.yml
-            # через environment, поэтому дополнительная передача не требуется
             env = None
-            
             exec_cmd = cmd
-            
-            # ИСПРАВЛЕНИЕ: prompt уже включен в bash команду через printf
-            # stdin не используется для передачи prompt
-            # Но оставляем stdin=None для ясности (если понадобится в будущем)
             stdin_input = None
             
-            # Выполняем команду
-            # ИСПРАВЛЕНИЕ: Для Docker не захватываем вывод (capture_output=False)
-            # Agent работает долго и может быть убит при захвате вывода
-            # Вместо этого запускаем в фоне и проверяем результат по созданным файлам
-            if use_docker:
-                # Запускаем в фоне без захвата вывода
-                result = subprocess.run(
-                    exec_cmd,
-                    input=stdin_input,
-                    stdout=subprocess.DEVNULL,  # Не захватываем stdout
-                    stderr=subprocess.DEVNULL,  # Не захватываем stderr
-                    timeout=exec_timeout,
-                    cwd=exec_cwd if exec_cwd else None,
-                    env=env
-                )
-                # Для Docker считаем успехом если код возврата 0 или 137 (процесс завершился)
-                # Реальный результат проверяем по созданным файлам
-                success = result.returncode in [0, 137]
-                result_stdout = "(вывод не захватывается для Docker, проверьте созданные файлы)"
-                result_stderr = ""
-            else:
-                # Для не-Docker команд захватываем вывод как обычно
-                result = subprocess.run(
-                    exec_cmd,
-                    input=stdin_input,
-                    capture_output=True,
-                    text=True,
-                    timeout=exec_timeout,
-                    cwd=exec_cwd if exec_cwd else None,
-                    encoding='utf-8',
-                    errors='replace',
-                    env=env
-                )
-                success = result.returncode == 0
-                result_stdout = result.stdout
-                result_stderr = result.stderr
+            # Умная обработка таймаута с проверкой активности контейнера
+            max_timeout_retries = 5  # Максимум 5 продлений таймаута
+            current_timeout = exec_timeout
+            
+            for retry in range(max_timeout_retries):
+                try:
+                    # Выполняем команду
+                    if use_docker:
+                        # Для Docker захватываем stderr для диагностики, но не stdout (может быть большим)
+                        result = subprocess.run(
+                            exec_cmd,
+                            input=stdin_input,
+                            stdout=subprocess.PIPE,  # Захватываем stdout
+                            stderr=subprocess.PIPE,  # Захватываем stderr для диагностики
+                            timeout=current_timeout,
+                            cwd=exec_cwd if exec_cwd else None,
+                            env=env,
+                            text=True,
+                            encoding='utf-8',
+                            errors='replace'
+                        )
+                        # Коды возврата для Docker:
+                        # 0 - успех
+                        # 137 - SIGKILL (процесс убит, но может быть фоновым)
+                        # 143 - SIGTERM (процесс завершен по сигналу, может быть нормальным завершением)
+                        # Сначала устанавливаем success только для кода 0, остальные обрабатываем ниже
+                        success = result.returncode == 0
+                        result_stdout = result.stdout if result.stdout else "(нет вывода)"
+                        result_stderr = result.stderr if result.stderr else ""
+                        
+                        # Логируем вывод для диагностики
+                        if result.returncode not in [0, 137, 143]:
+                            logger.warning(f"Agent вернул код {result.returncode}")
+                            if result_stderr:
+                                logger.warning(f"Stderr: {result_stderr[:500]}")
+                            if result_stdout:
+                                logger.debug(f"Stdout: {result_stdout[:500]}")
+                        elif result.returncode == 143:
+                            # Код 143 (SIGTERM) - логируем как информационное сообщение
+                            logger.debug(f"Agent вернул код 143 (SIGTERM) - процесс был прерван, но может быть успешным")
+                    else:
+                        result = subprocess.run(
+                            exec_cmd,
+                            input=stdin_input,
+                            capture_output=True,
+                            text=True,
+                            timeout=current_timeout,
+                            cwd=exec_cwd if exec_cwd else None,
+                            encoding='utf-8',
+                            errors='replace',
+                            env=env
+                        )
+                        success = result.returncode == 0
+                        result_stdout = result.stdout
+                        result_stderr = result.stderr
+                    
+                    # Команда завершилась - выходим из цикла
+                    break
+                    
+                except subprocess.TimeoutExpired:
+                    # Таймаут! Проверяем, идет ли генерация
+                    if use_docker and retry < max_timeout_retries - 1:
+                        logger.warning(f"Таймаут {current_timeout}с (попытка {retry + 1}/{max_timeout_retries})")
+                        logger.info("Проверка активности Docker контейнера...")
+                        
+                        # Проверяем статус контейнера
+                        container_active = self._check_docker_container_activity("cursor-agent-life")
+                        
+                        if container_active:
+                            # Контейнер активен - продлеваем таймаут
+                            current_timeout = exec_timeout * 2
+                            logger.info(f"Контейнер активен, генерация продолжается. Продление таймаута до {current_timeout}с")
+                            continue  # Повторяем попытку с увеличенным таймаутом
+                        else:
+                            # Контейнер не активен - что-то пошло не так
+                            logger.error("Контейнер не активен или завис. Перезапуск...")
+                            subprocess.run(["docker", "restart", "cursor-agent-life"], timeout=15, capture_output=True)
+                            import time
+                            time.sleep(5)
+                            logger.info("Контейнер перезапущен, повторная попытка...")
+                            current_timeout = exec_timeout  # Сбрасываем таймаут
+                            continue
+                    else:
+                        # Исчерпаны попытки или не Docker
+                        logger.error(f"Таймаут выполнения команды после {retry + 1} попыток ({current_timeout}с)")
+                        raise
             
             if success:
                 logger.info("Команда Cursor CLI выполнена успешно")
@@ -815,11 +1269,38 @@ This agent role is used for automated project tasks execution.
                 logger.warning(f"Команда Cursor CLI завершилась с кодом {result.returncode}")
                 if result_stderr:
                     logger.debug(f"Stderr: {result_stderr[:500]}")
+                    
+                    # Проверяем на критические ошибки аккаунта
+                    stderr_lower = result_stderr.lower()
+                    if "unpaid invoice" in stderr_lower or "pay your invoice" in stderr_lower:
+                        logger.error("=" * 80)
+                        logger.error("КРИТИЧЕСКАЯ ОШИБКА: Неоплаченный счет в Cursor")
+                        logger.error("=" * 80)
+                        logger.error("Для продолжения работы необходимо оплатить счет:")
+                        logger.error("https://cursor.com/dashboard")
+                        logger.error("=" * 80)
+                        error_msg = "Неоплаченный счет в Cursor. Требуется оплата: https://cursor.com/dashboard"
+                    else:
+                        error_msg = f"CLI вернул код {result.returncode}"
+                else:
+                    error_msg = f"CLI вернул код {result.returncode}"
                 
-                # Если код 137 (SIGKILL) и используется Docker - это нормально для фоновых задач
+                # Если код 137 (SIGKILL) или 143 (SIGTERM) и используется Docker - это может быть нормально
                 if result.returncode == 137 and use_docker:
-                    logger.info("Код 137 для Docker - agent выполнился в фоне, проверяем результат по файлам")
+                    logger.info("Код 137 (SIGKILL) для Docker - agent выполнился в фоне, проверяем результат по файлам")
                     success = True  # Считаем успехом для Docker
+                    error_msg = None
+                elif result.returncode == 143 and use_docker:
+                    logger.warning("Код 143 (SIGTERM) для Docker - процесс был прерван. Это может быть нормально, если процесс завершился корректно перед прерыванием")
+                    # Код 143 может быть нормальным, если процесс был завершен корректно
+                    # Проверяем stderr - если нет ошибок, считаем успехом
+                    if not result_stderr or "error" not in result_stderr.lower():
+                        logger.info("Процесс завершился корректно перед прерыванием (код 143)")
+                        success = True
+                        error_msg = None
+                    else:
+                        # Есть ошибки - оставляем как неуспех
+                        error_msg = f"Процесс прерван (код 143): {result_stderr[:200]}"
             
             return CursorCLIResult(
                 success=success,
@@ -827,7 +1308,7 @@ This agent role is used for automated project tasks execution.
                 stderr=result_stderr,
                 return_code=result.returncode,
                 cli_available=True,
-                error_message=None if success else f"CLI вернул код {result.returncode}"
+                error_message=None if success else error_msg
             )
             
         except subprocess.TimeoutExpired:

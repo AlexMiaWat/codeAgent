@@ -72,17 +72,35 @@ When working with the project, you have access to:
     
     llm_kwargs = {}
     
-    # Пытаемся использовать OpenRouter через CrewAI LLM
+    # Пытаемся использовать OpenRouter через CrewAI LLM с моделями из llm_settings.yaml (протестированные)
     if os.getenv('OPENROUTER_API_KEY'):
         try:
             from crewai.llm import LLM
+            import yaml
+            from pathlib import Path
+            
+            # Читаем default_model из llm_settings.yaml (протестированные модели)
+            llm_config_path = Path(llm_config_path)
+            if llm_config_path.exists():
+                with open(llm_config_path, 'r', encoding='utf-8') as f:
+                    llm_config = yaml.safe_load(f) or {}
+                
+                # Используем default_model из конфига (это протестированная модель)
+                model_config = llm_config.get('llm', {})
+                model_name = model_config.get('default_model', 'meta-llama/llama-3.2-1b-instruct')
+                
+                logger.info(f"Using OpenRouter with model from llm_settings.yaml: {model_name}")
+            else:
+                # Fallback на протестированную модель, если конфиг не найден
+                model_name = 'meta-llama/llama-3.2-1b-instruct'
+                logger.warning(f"LLM config not found at {llm_config_path}, using fallback model: {model_name}")
+            
             # Создаем LLM объект с параметрами OpenRouter
             llm_kwargs['llm'] = LLM(
-                model="google/gemini-2.0-flash-exp:free",
+                model=model_name,
                 api_key=os.getenv('OPENROUTER_API_KEY'),
                 base_url="https://openrouter.ai/api/v1"
             )
-            logger.info("Using OpenRouter with gemini-2.0-flash-exp:free model")
         except Exception as e:
             logger.warning(f"Failed to create OpenRouter LLM: {e}")
             # Fallback: устанавливаем фиктивный OPENAI_API_KEY для использования по умолчанию

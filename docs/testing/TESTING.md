@@ -155,7 +155,7 @@ pytest test/ --cov=src --cov-fail-under=80
 
 ## Дополнительная информация
 
-Полная документация: [docs/testing.md](docs/testing.md)
+Полная документация: [TESTING.md](TESTING.md) (этот файл)
 
 ## Troubleshooting
 

@@ -6,11 +6,27 @@ import os
 import sys
 import time
 import logging
+import socket
+import subprocess
+import threading
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 from crewai import Task, Crew
+
+try:
+    from flask import Flask, jsonify
+    FLASK_AVAILABLE = True
+except ImportError:
+    FLASK_AVAILABLE = False
+
+try:
+    from watchdog.observers import Observer
+    from watchdog.events import FileSystemEventHandler, FileModifiedEvent
+    WATCHDOG_AVAILABLE = True
+except ImportError:
+    WATCHDOG_AVAILABLE = False
 
 from .config_loader import ConfigLoader
 from .status_manager import StatusManager
@@ -33,16 +49,60 @@ if sys.platform == 'win32':
         # Для старых версий Python
         sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, errors='replace')
 
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('logs/code_agent.log', encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+# Настройка логирования будет выполнена после очистки логов
+# Временно отключаем автоматическую настройку, чтобы не создавать файл при импорте
+# logging.basicConfig() вызывается в _setup_logging() после очистки логов
+
+# Создаем директорию для логов если не существует
+Path('logs').mkdir(exist_ok=True)
+
 logger = logging.getLogger(__name__)
+
+
+class ServerReloadException(Exception):
+    """Исключение для инициации перезапуска сервера"""
+    pass
+
+
+def _setup_logging():
+    """Настройка логирования (вызывается после очистки логов)"""
+    # Удаляем существующий FileHandler для code_agent.log если есть
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        if isinstance(handler, logging.FileHandler):
+            # baseFilename может быть строкой с абсолютным путем
+            base_filename = str(handler.baseFilename)
+            if base_filename.endswith('code_agent.log') or 'code_agent.log' in base_filename:
+                root_logger.removeHandler(handler)
+                handler.close()
+    
+    # Удаляем файл code_agent.log если он существует
+    log_file = Path('logs/code_agent.log')
+    if log_file.exists():
+        try:
+            log_file.unlink()
+        except Exception:
+            pass
+    
+    # Настраиваем логирование (force=True доступен с Python 3.8+)
+    try:
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler('logs/code_agent.log', encoding='utf-8'),
+                logging.StreamHandler(sys.stdout)
+            ],
+            force=True  # Переопределяем существующую конфигурацию (Python 3.8+)
+        )
+    except TypeError:
+        # Для старых версий Python без force=True
+        # Очищаем handlers и настраиваем заново
+        root_logger = logging.getLogger()
+        root_logger.handlers.clear()
+        root_logger.addHandler(logging.FileHandler('logs/code_agent.log', encoding='utf-8'))
+        root_logger.addHandler(logging.StreamHandler(sys.stdout))
+        root_logger.setLevel(logging.INFO)
 
 
 class CodeAgentServer:
@@ -85,6 +145,35 @@ class CodeAgentServer:
         self.check_interval = server_config.get('check_interval', 60)
         self.task_delay = server_config.get('task_delay', 5)
         self.max_iterations = server_config.get('max_iterations')
+        
+        # Настройки HTTP сервера
+        self.http_port = server_config.get('http_port', 3456)
+        self.http_enabled = server_config.get('http_enabled', True)
+        self.flask_app = None
+        self.http_thread = None
+        self.http_server = None  # Ссылка на werkzeug сервер для управления
+        
+        # Настройки автоперезапуска
+        self.auto_reload = server_config.get('auto_reload', True)
+        self.reload_on_py_changes = server_config.get('reload_on_py_changes', True)
+        self.file_observer = None
+        self._should_reload = False
+        self._reload_lock = threading.Lock()
+        
+        # Флаг для остановки сервера через API
+        self._should_stop = False
+        self._stop_lock = threading.Lock()
+        
+        # Текущее состояние сервера
+        self._current_iteration = 0
+        self._is_running = False
+        
+        # Отслеживание повторяющихся ошибок Cursor
+        self._cursor_error_count = 0  # Счетчик последовательных ошибок
+        self._cursor_error_lock = threading.Lock()
+        self._last_cursor_error = None  # Последняя ошибка Cursor
+        self._cursor_error_delay = 0  # Дополнительная задержка при ошибках (секунды)
+        self._max_cursor_errors = 3  # Максимальное количество ошибок перед перезапуском
         
         # Инициализация Cursor интерфейсов
         cursor_config = self.config.get('cursor', {})
@@ -286,6 +375,286 @@ class CodeAgentServer:
         
         return result
     
+    def _execute_cursor_instruction_with_retry(
+        self,
+        instruction: str,
+        task_id: str,
+        timeout: Optional[int],
+        task_logger: TaskLogger,
+        instruction_num: int
+    ) -> dict:
+        """
+        Выполнить инструкцию через Cursor с обработкой повторяющихся ошибок
+        
+        Args:
+            instruction: Текст инструкции
+            task_id: ID задачи
+            timeout: Таймаут выполнения
+            task_logger: Логгер задачи
+            instruction_num: Номер инструкции
+            
+        Returns:
+            Словарь с результатом выполнения
+        """
+        return self.execute_cursor_instruction(
+            instruction=instruction,
+            task_id=task_id,
+            timeout=timeout
+        )
+    
+    def _is_critical_cursor_error(self, error_message: str) -> bool:
+        """
+        Проверка, является ли ошибка критической (не исправится перезапуском)
+        
+        Args:
+            error_message: Сообщение об ошибке
+            
+        Returns:
+            True если ошибка критическая
+        """
+        error_lower = error_message.lower()
+        critical_keywords = [
+            "неоплаченный счет",
+            "unpaid",
+            "billing",
+            "payment required",
+            "subscription",
+            "account suspended",
+            "аккаунт заблокирован",
+            "доступ запрещен",
+            "access denied",
+            "authentication failed",
+            "invalid api key",
+            "api key expired"
+        ]
+        return any(keyword in error_lower for keyword in critical_keywords)
+    
+    def _handle_cursor_error(self, error_message: str, task_logger: TaskLogger) -> bool:
+        """
+        Обработка ошибки Cursor с учетом повторяющихся ошибок
+        
+        Args:
+            error_message: Сообщение об ошибке
+            task_logger: Логгер задачи
+            
+        Returns:
+            True если можно продолжать работу, False если нужно остановить сервер
+        """
+        # Проверяем, является ли ошибка критической
+        is_critical = self._is_critical_cursor_error(error_message)
+        
+        with self._cursor_error_lock:
+            # Проверяем, та же ли ошибка (сравниваем по первым 100 символам для группировки похожих ошибок)
+            error_key = error_message[:100] if error_message else ""
+            if self._last_cursor_error == error_key:
+                self._cursor_error_count += 1
+            else:
+                # Новая ошибка - сбрасываем счетчик и задержку
+                self._cursor_error_count = 1
+                self._last_cursor_error = error_key
+                self._cursor_error_delay = 30  # Начинаем с 30 секунд для новой ошибки
+            
+            # Для критических ошибок - останавливаем сервер сразу (не ждем повторений)
+            if is_critical:
+                logger.error("=" * 80)
+                logger.error(f"КРИТИЧЕСКАЯ ОШИБКА CURSOR: {error_message}")
+                logger.error("Критическая ошибка не исправится перезапуском - останавливаем сервер немедленно")
+                logger.error("=" * 80)
+                task_logger.log_error(f"Критическая ошибка Cursor (не исправится): {error_message}", Exception(error_message))
+                # Останавливаем сервер немедленно для критических ошибок
+                self._stop_server_due_to_cursor_errors(error_message)
+                return False
+            
+            # Увеличиваем задержку на +30 секунд при каждой повторяющейся ошибке
+            # При первой ошибке задержка уже установлена в 30 секунд выше
+            # При каждой следующей повторяющейся ошибке добавляем еще 30 секунд
+            if self._cursor_error_count > 1:
+                self._cursor_error_delay += 30
+            
+            logger.warning(f"Ошибка Cursor #{self._cursor_error_count}: {error_message}")
+            logger.warning(f"Дополнительная задержка перед следующим запросом: {self._cursor_error_delay} секунд")
+            task_logger.log_warning(f"Ошибка Cursor #{self._cursor_error_count}, задержка перед следующим запросом: {self._cursor_error_delay}с")
+            
+            # Если ошибка повторилась 3 раза - перезапускаем Docker и очищаем диалоги
+            if self._cursor_error_count >= self._max_cursor_errors:
+                # Выводим в консоль и в лог
+                critical_msg = "=" * 80 + "\n"
+                critical_msg += f"КРИТИЧЕСКАЯ СИТУАЦИЯ: Ошибка Cursor повторилась {self._cursor_error_count} раз\n"
+                critical_msg += f"Последняя ошибка: {error_message}\n"
+                critical_msg += "=" * 80
+                
+                print("\n" + critical_msg + "\n", flush=True)
+                logger.error(critical_msg)
+                
+                task_logger.log_error(f"Критическая ошибка: повтор {self._cursor_error_count} раз", Exception(error_message))
+                
+                # Перезапускаем Docker контейнер и очищаем диалоги
+                print("Попытка перезапуска Docker контейнера и очистки диалогов...", flush=True)
+                if self._restart_cursor_environment():
+                    success_msg = "Docker контейнер и диалоги перезапущены. Сбрасываем счетчик ошибок."
+                    print(success_msg, flush=True)
+                    logger.info(success_msg)
+                    task_logger.log_info("Docker контейнер перезапущен после критической ошибки")
+                    # Сбрасываем счетчик после перезапуска
+                    self._cursor_error_count = 0
+                    self._cursor_error_delay = 0
+                    self._last_cursor_error = None
+                    return True
+                else:
+                    # Перезапуск не помог - останавливаем сервер
+                    print("Перезапуск не помог. Останавливаем сервер...", flush=True)
+                    task_logger.log_error("Критическая ошибка: перезапуск не помог, сервер остановлен", Exception(error_message))
+                    
+                    # Останавливаем сервер
+                    self._stop_server_due_to_cursor_errors(error_message)
+                    return False
+            
+            return True
+    
+    def _restart_cursor_environment(self) -> bool:
+        """
+        Перезапустить Docker контейнер и очистить открытые диалоги Cursor
+        
+        Returns:
+            True если перезапуск успешен, False иначе
+        """
+        logger.info("=" * 80)
+        logger.info("ПЕРЕЗАПУСК CURSOR ENVIRONMENT")
+        logger.info("=" * 80)
+        
+        try:
+            # 1. Очищаем открытые диалоги
+            logger.info("Шаг 1: Очистка открытых диалогов Cursor...")
+            if self.cursor_cli:
+                cleanup_result = self.cursor_cli.prepare_for_new_task()
+                if cleanup_result:
+                    logger.info("  ✓ Диалоги очищены")
+                else:
+                    logger.warning("  ⚠ Не удалось полностью очистить диалоги")
+            
+            # 2. Перезапускаем Docker контейнер (если используется)
+            logger.info("Шаг 2: Перезапуск Docker контейнера...")
+            if self.cursor_cli and hasattr(self.cursor_cli, 'cli_command'):
+                if self.cursor_cli.cli_command == "docker-compose-agent":
+                    # Перезапускаем Docker контейнер
+                    compose_file = Path(__file__).parent.parent / "docker" / "docker-compose.agent.yml"
+                    container_name = "cursor-agent-life"  # Имя из docker-compose.agent.yml
+                    
+                    try:
+                        import subprocess
+                        
+                        # Останавливаем контейнер
+                        logger.info(f"  Остановка контейнера {container_name}...")
+                        stop_result = subprocess.run(
+                            ["docker", "stop", container_name],
+                            capture_output=True,
+                            text=True,
+                            timeout=15
+                        )
+                        if stop_result.returncode == 0:
+                            logger.info(f"  ✓ Контейнер {container_name} остановлен")
+                        else:
+                            logger.warning(f"  ⚠ Не удалось остановить контейнер: {stop_result.stderr[:200]}")
+                        
+                        # Ждем немного
+                        time.sleep(2)
+                        
+                        # Запускаем контейнер заново
+                        logger.info(f"  Запуск контейнера {container_name}...")
+                        up_result = subprocess.run(
+                            ["docker", "compose", "-f", str(compose_file), "up", "-d"],
+                            capture_output=True,
+                            text=True,
+                            timeout=30
+                        )
+                        
+                        if up_result.returncode == 0:
+                            logger.info(f"  ✓ Контейнер {container_name} запущен")
+                            # Ждем, пока контейнер запустится
+                            time.sleep(5)
+                            
+                            # Проверяем, что контейнер работает
+                            check_result = subprocess.run(
+                                ["docker", "exec", container_name, "echo", "ok"],
+                                capture_output=True,
+                                timeout=5
+                            )
+                            
+                            if check_result.returncode == 0:
+                                logger.info("  ✓ Контейнер работает корректно")
+                                logger.info("=" * 80)
+                                logger.info("ПЕРЕЗАПУСК УСПЕШЕН")
+                                logger.info("=" * 80)
+                                return True
+                            else:
+                                logger.warning(f"  ⚠ Контейнер запущен, но не отвечает: {check_result.stderr[:200]}")
+                        else:
+                            logger.error(f"  ✗ Не удалось запустить контейнер: {up_result.stderr[:200]}")
+                    except Exception as e:
+                        logger.error(f"  ✗ Ошибка при перезапуске Docker: {e}", exc_info=True)
+                        return False
+                else:
+                    logger.info("  Docker не используется, пропускаем перезапуск контейнера")
+                    # Если не Docker, просто очищаем диалоги
+                    logger.info("=" * 80)
+                    logger.info("ПЕРЕЗАПУСК ЗАВЕРШЕН (без Docker)")
+                    logger.info("=" * 80)
+                    return True
+            else:
+                logger.warning("  Cursor CLI недоступен, пропускаем перезапуск")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Ошибка при перезапуске Cursor environment: {e}", exc_info=True)
+            return False
+    
+    def _stop_server_due_to_cursor_errors(self, error_message: str):
+        """
+        Остановить сервер из-за критических ошибок Cursor
+        
+        Args:
+            error_message: Сообщение об ошибке
+        """
+        # Выводим в консоль и в лог
+        error_msg = "=" * 80 + "\n"
+        error_msg += "ОСТАНОВКА СЕРВЕРА ИЗ-ЗА КРИТИЧЕСКИХ ОШИБОК CURSOR\n"
+        error_msg += "=" * 80 + "\n"
+        error_msg += f"Ошибка повторяется: {error_message}\n"
+        error_msg += f"Количество повторений: {self._cursor_error_count}\n"
+        error_msg += "Перезапуск Docker контейнера не помог\n"
+        error_msg += "=" * 80 + "\n"
+        error_msg += "РЕКОМЕНДАЦИИ:\n"
+        error_msg += "1. Проверьте состояние Cursor аккаунта: https://cursor.com/dashboard\n"
+        error_msg += "2. Проверьте доступность Docker контейнера\n"
+        error_msg += "3. Проверьте логи Cursor для деталей ошибки\n"
+        error_msg += "4. Перезапустите сервер вручную после устранения проблемы\n"
+        error_msg += "=" * 80
+        
+        # Выводим в консоль
+        print("\n" + error_msg + "\n", flush=True)
+        
+        # Логируем
+        logger.error(error_msg)
+        
+        # Обновляем статус
+        self.status_manager.append_status(
+            f"КРИТИЧЕСКАЯ ОШИБКА: Cursor ошибка повторяется ({self._cursor_error_count} раз). "
+            f"Ошибка: {error_message}. Сервер остановлен.",
+            level=2
+        )
+        
+        # Устанавливаем флаг остановки
+        with self._stop_lock:
+            self._should_stop = True
+        
+        # Отмечаем некорректный останов
+        self.checkpoint_manager.mark_server_stop(clean=False)
+        
+        # Логируем остановку
+        self.server_logger.log_server_shutdown(
+            f"Остановка из-за критических ошибок Cursor: {error_message} (повтор {self._cursor_error_count} раз)"
+        )
+    
     def is_cursor_cli_available(self) -> bool:
         """
         Проверка доступности Cursor CLI
@@ -325,7 +694,7 @@ class CodeAgentServer:
         
         Args:
             task_type: Тип задачи
-            instruction_id: ID инструкции (обычно 1 для базовой)
+            instruction_id: ID инструкции (1-8 для последовательного выполнения)
         
         Returns:
             Словарь с шаблоном инструкции или None
@@ -338,13 +707,37 @@ class CodeAgentServer:
             if isinstance(instruction, dict) and instruction.get('instruction_id') == instruction_id:
                 return instruction
         
-        # Если не найдена, берем первую доступную
+        # Если не найдена, берем первую доступную (только для backward compatibility)
         if task_instructions and isinstance(task_instructions[0], dict):
             return task_instructions[0]
         
         return None
     
-    def _format_instruction(self, template: Dict[str, Any], todo_item: TodoItem, task_id: str) -> str:
+    def _get_all_instruction_templates(self, task_type: str) -> List[Dict[str, Any]]:
+        """
+        Получить все шаблоны инструкций для типа задачи (последовательно 1-8)
+        
+        Args:
+            task_type: Тип задачи
+        
+        Returns:
+            Список шаблонов инструкций, отсортированный по instruction_id
+        """
+        instructions = self.config.get('instructions', {})
+        task_instructions = instructions.get(task_type, instructions.get('default', []))
+        
+        # Фильтруем только словари с instruction_id и сортируем по ID
+        valid_instructions = [
+            instr for instr in task_instructions
+            if isinstance(instr, dict) and 'instruction_id' in instr
+        ]
+        
+        # Сортируем по instruction_id (1, 2, 3, ...)
+        valid_instructions.sort(key=lambda x: x.get('instruction_id', 999))
+        
+        return valid_instructions
+    
+    def _format_instruction(self, template: Dict[str, Any], todo_item: TodoItem, task_id: str, instruction_num: int = 1) -> str:
         """
         Форматирование инструкции из шаблона
         
@@ -352,6 +745,7 @@ class CodeAgentServer:
             template: Шаблон инструкции
             todo_item: Элемент todo-листа
             task_id: Идентификатор задачи
+            instruction_num: Номер инструкции в последовательности
         
         Returns:
             Отформатированная инструкция
@@ -364,7 +758,7 @@ class CodeAgentServer:
             'task_id': task_id,
             'task_description': todo_item.text,
             'date': datetime.now().strftime('%Y%m%d'),
-            'plan_item_number': '1',  # По умолчанию
+            'plan_item_number': str(instruction_num),  # Номер инструкции
             'plan_item_text': todo_item.text
         }
         
@@ -408,6 +802,29 @@ class CodeAgentServer:
         check_interval = 2
         
         while time.time() - start_time < timeout:
+            # Проверяем запрос на остановку
+            with self._stop_lock:
+                if self._should_stop:
+                    logger.warning(f"Получен запрос на остановку во время ожидания файла результата")
+                    return {
+                        "success": False,
+                        "file_path": str(file_path),
+                        "content": None,
+                        "wait_time": time.time() - start_time,
+                        "error": "Остановка сервера по запросу"
+                    }
+            
+            # Проверяем необходимость перезапуска
+            if self._check_reload_needed():
+                logger.warning(f"Обнаружено изменение кода во время ожидания файла результата")
+                return {
+                    "success": False,
+                    "file_path": str(file_path),
+                    "content": None,
+                    "wait_time": time.time() - start_time,
+                    "error": "Перезапуск сервера из-за изменения кода"
+                }
+            
             if file_path.exists():
                 try:
                     content = file_path.read_text(encoding='utf-8')
@@ -436,6 +853,29 @@ class CodeAgentServer:
                 except Exception as e:
                     logger.warning(f"Ошибка чтения файла {file_path}: {e}")
             
+            # Проверяем запрос на остановку перед ожиданием
+            with self._stop_lock:
+                if self._should_stop:
+                    logger.warning(f"Получен запрос на остановку во время ожидания файла результата")
+                    return {
+                        "success": False,
+                        "file_path": str(file_path),
+                        "content": None,
+                        "wait_time": time.time() - start_time,
+                        "error": "Остановка сервера по запросу"
+                    }
+            
+            # Проверяем необходимость перезапуска
+            if self._check_reload_needed():
+                logger.warning(f"Обнаружено изменение кода во время ожидания файла результата")
+                return {
+                    "success": False,
+                    "file_path": str(file_path),
+                    "content": None,
+                    "wait_time": time.time() - start_time,
+                    "error": "Перезапуск сервера из-за изменения кода"
+                }
+            
             # Ждем перед следующей проверкой
             time.sleep(check_interval)
         
@@ -448,6 +888,79 @@ class CodeAgentServer:
             "wait_time": timeout,
             "error": f"Таймаут ожидания файла ({timeout} секунд)"
         }
+    
+    def _verify_real_work_done(self, task_id: str, todo_item: TodoItem, result_content: str) -> bool:
+        """
+        Проверка, что была выполнена реальная работа, а не только создан план
+        
+        Args:
+            task_id: ID задачи
+            todo_item: Элемент todo-листа
+            result_content: Содержимое файла результата
+            
+        Returns:
+            True если работа выполнена, False если только план
+        """
+        # Проверяем по ключевым словам в отчете
+        result_lower = result_content.lower()
+        
+        # Индикаторы реальной работы
+        work_indicators = [
+            "создан файл",
+            "изменен файл",
+            "добавлен код",
+            "реализован",
+            "выполнен",
+            "созданы тесты",
+            "добавлена функциональность",
+            "изменения в",
+            "modified",
+            "created",
+            "implemented",
+            "added"
+        ]
+        
+        # Индикаторы только плана
+        plan_only_indicators = [
+            "только план",
+            "план выполнения",
+            "планирование",
+            "буду выполнить",
+            "будет выполнено",
+            "следующие шаги",
+            "рекомендации"
+        ]
+        
+        # Проверяем наличие индикаторов работы
+        has_work = any(indicator in result_lower for indicator in work_indicators)
+        has_plan_only = all(indicator not in result_lower or "план" not in result_lower[:200] for indicator in plan_only_indicators)
+        
+        # Дополнительная проверка - наличие изменений в git (если доступен)
+        try:
+            import subprocess
+            git_status = subprocess.run(
+                ["git", "status", "--short"],
+                cwd=self.project_dir,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if git_status.returncode == 0:
+                has_git_changes = bool(git_status.stdout.strip())
+                if has_git_changes:
+                    logger.info(f"Обнаружены изменения в git для задачи {task_id}")
+                    return True
+        except Exception as e:
+            logger.debug(f"Не удалось проверить git статус: {e}")
+        
+        # Если есть индикаторы работы - считаем выполненным
+        if has_work:
+            logger.info(f"Обнаружены индикаторы выполненной работы для задачи {task_id}")
+            return True
+        
+        # Если только план без реальной работы
+        logger.warning(f"Для задачи {task_id} выполнен только план, реальная работа не обнаружена")
+        return False
     
     def _should_use_cursor(self, todo_item: TodoItem) -> bool:
         """
@@ -544,9 +1057,75 @@ class CodeAgentServer:
             True если задача выполнена успешно
         """
         # Проверяем, не была ли задача уже выполнена
-        if self.checkpoint_manager.is_task_completed(todo_item.text):
-            logger.info(f"Задача уже выполнена (пропуск): {todo_item.text}")
-            return True
+        # ВАЖНО: Проверяем не только статус в checkpoint, но и реальное выполнение всех инструкций
+        # Если выполнена только инструкция 1 (создание плана) - считаем задачу не выполненной
+        is_completed_in_checkpoint = self.checkpoint_manager.is_task_completed(todo_item.text)
+        if is_completed_in_checkpoint:
+            # ВАЖНО: Проверяем последнюю попытку задачи - время выполнения и наличие результатов
+            # Находим последнюю попытку задачи
+            matching_tasks = [
+                task for task in self.checkpoint_manager.checkpoint_data.get("tasks", [])
+                if task.get("task_text") == todo_item.text and task.get("state") == "completed"
+            ]
+            
+            last_completed_task = None
+            last_time = None
+            
+            for task in matching_tasks:
+                start_time_str = task.get("start_time")
+                end_time_str = task.get("end_time")
+                if start_time_str:
+                    try:
+                        start_time = datetime.fromisoformat(start_time_str)
+                        if last_time is None or start_time > last_time:
+                            last_time = start_time
+                            last_completed_task = task
+                    except (ValueError, TypeError):
+                        pass
+            
+            # Если нашли последнюю завершенную попытку, проверяем время выполнения
+            execution_too_short = False
+            if last_completed_task and last_completed_task.get("start_time") and last_completed_task.get("end_time"):
+                try:
+                    start_time = datetime.fromisoformat(last_completed_task.get("start_time"))
+                    end_time = datetime.fromisoformat(last_completed_task.get("end_time"))
+                    duration_minutes = (end_time - start_time).total_seconds() / 60
+                    # Если выполнение заняло меньше 10 минут - скорее всего выполнена только инструкция 1
+                    # (реальное выполнение 7-8 инструкций занимает минимум 20-30 минут)
+                    if duration_minutes < 10:
+                        execution_too_short = True
+                        logger.warning(f"Последняя попытка задачи завершена за {duration_minutes:.1f} минут - слишком быстро для полного выполнения всех инструкций")
+                except (ValueError, TypeError):
+                    pass
+            
+            # Проверяем наличие файлов результатов других инструкций (не только планов)
+            # Но учитываем, что файлы могут быть от других задач
+            results_dir = self.project_dir / "docs" / "results"
+            reviews_dir = self.project_dir / "docs" / "reviews"
+            
+            test_files = list(results_dir.glob("test*.md")) if results_dir.exists() else []
+            review_files = list(reviews_dir.glob("skeptic_*.md")) if reviews_dir.exists() else []
+            plan_result_files = list(results_dir.glob("plan_result_*.md")) if results_dir.exists() else []
+            test_full_files = list(results_dir.glob("test_full_*.md")) if results_dir.exists() else []
+            
+            has_other_results = len(test_files) > 0 or len(review_files) > 0 or len(plan_result_files) > 0 or len(test_full_files) > 0
+            
+            # ВАЖНО: Если выполнение было слишком коротким, всегда перевыполняем, даже если есть файлы результатов
+            # (файлы могли быть созданы другими задачами)
+            if execution_too_short or not has_other_results:
+                # Задача помечена как completed, но нет подтверждения выполнения всех инструкций
+                reason = "выполнение слишком короткое" if execution_too_short else "нет файлов результатов инструкций 2-7"
+                logger.warning(f"Задача помечена как completed, но {reason}. Перевыполняем со всеми инструкциями: {todo_item.text}")
+                # Сбрасываем статус последней завершенной задачи в checkpoint для перевыполнения
+                if last_completed_task:
+                    last_completed_task["state"] = "pending"
+                    logger.info(f"Статус задачи '{todo_item.text}' (task_id: {last_completed_task.get('task_id')}) сброшен с completed на pending для перевыполнения")
+                    self.checkpoint_manager._save_checkpoint()
+                # Продолжаем выполнение задачи (не возвращаем True)
+            else:
+                # Есть подтверждение выполнения других инструкций - задача действительно выполнена
+                logger.info(f"Задача уже выполнена (пропуск): {todo_item.text}")
+                return True
         
         # Логируем начало задачи
         self.server_logger.log_task_start(task_number, total_tasks, todo_item.text)
@@ -596,6 +1175,14 @@ class CodeAgentServer:
                 task_logger.log_completion(result, "Задача выполнена через Cursor")
                 task_logger.close()
                 
+                # Проверяем флаг остановки после выполнения задачи
+                with self._stop_lock:
+                    if self._should_stop:
+                        logger.warning("Получен запрос на остановку после выполнения задачи через Cursor")
+                        # Отмечаем задачу как прерванную
+                        self.checkpoint_manager.mark_task_failed(task_id, "Задача прервана из-за остановки сервера")
+                        return False
+                
                 # Отмечаем в checkpoint
                 if result:
                     self.checkpoint_manager.mark_task_completed(task_id)
@@ -616,6 +1203,20 @@ class CodeAgentServer:
                     self.checkpoint_manager.mark_task_failed(task_id, "Задача не выполнена через CrewAI")
                 
                 return result
+            
+        except ServerReloadException:
+            # Перезапуск из-за изменений в коде - пробрасываем дальше
+            logger.warning(f"Перезапуск сервера во время выполнения задачи {task_id}")
+            task_logger.log_warning("Перезапуск сервера - задача будет прервана")
+            task_logger.close()
+            # Отмечаем задачу как прерванную
+            self.checkpoint_manager.mark_task_failed(task_id, "Задача прервана из-за перезапуска сервера")
+            self.status_manager.update_task_status(
+                task_name=todo_item.text,
+                status="Прервано",
+                details="Задача прервана из-за перезапуска сервера"
+            )
+            raise  # Пробрасываем исключение дальше
             
         except Exception as e:
             logger.error(f"Ошибка выполнения задачи '{todo_item.text}': {e}", exc_info=True)
@@ -654,98 +1255,287 @@ class CodeAgentServer:
         # Фаза: Генерация инструкции
         task_logger.set_phase(TaskPhase.INSTRUCTION_GENERATION)
         
-        # Получаем шаблон инструкции
-        template = self._get_instruction_template(task_type, instruction_id=1)
+        # Получаем ВСЕ инструкции для последовательного выполнения (1-8)
+        all_templates = self._get_all_instruction_templates(task_type)
         
-        if not template:
-            logger.warning(f"Шаблон инструкции для типа '{task_type}' не найден, используется базовый")
-            task_logger.log_debug("Шаблон не найден, используется базовый")
+        if not all_templates:
+            logger.warning(f"Инструкции для типа '{task_type}' не найдены, используется базовый шаблон")
+            task_logger.log_debug("Инструкции не найдены, используется базовый")
             # Используем базовый шаблон
-            instruction_text = f"Выполни задачу: {todo_item.text}\n\nСоздай отчет в docs/results/last_result.md, в конце напиши 'Отчет завершен!'"
-            wait_for_file = "docs/results/last_result.md"
-            control_phrase = "Отчет завершен!"
-            timeout = 600
-        else:
-            # Форматируем инструкцию из шаблона
-            instruction_text = self._format_instruction(template, todo_item, task_id)
-            wait_for_file = template.get('wait_for_file')
-            control_phrase = template.get('control_phrase')
-            timeout = template.get('timeout', 600)
+            all_templates = [{
+                'instruction_id': 1,
+                'template': f'Выполни задачу: "{todo_item.text}"\n\nСоздай отчет в docs/results/last_result.md, в конце напиши "Отчет завершен!"',
+                'wait_for_file': 'docs/results/last_result.md',
+                'control_phrase': 'Отчет завершен!',
+                'timeout': 600
+            }]
         
-        # Логируем инструкцию
-        task_logger.log_instruction(1, instruction_text, task_type)
-        logger.info(f"Инструкция для Cursor: {instruction_text[:200]}...")
+        logger.info(f"Найдено {len(all_templates)} инструкций для последовательного выполнения")
+        task_logger.log_info(f"Последовательное выполнение {len(all_templates)} инструкций")
         
-        # Фаза: Выполнение через Cursor
-        task_logger.set_phase(TaskPhase.CURSOR_EXECUTION, stage=1, instruction_num=1)
+        # Проверяем доступность CLI
+        if not self.use_cursor_cli:
+            logger.error(f"Cursor CLI недоступен для задачи {task_id}")
+            task_logger.log_error("Cursor CLI недоступен")
+            return False
         
-        # Выполняем через CLI или файловый интерфейс
-        if self.use_cursor_cli:
-            # Логируем создание нового диалога
-            task_logger.log_new_chat()
+        # КРИТИЧНО: Останавливаем активные диалоги и очищаем очередь перед новой задачей
+        logger.info(f"Подготовка к задаче {task_id}: остановка активных диалогов...")
+        task_logger.log_info("Остановка активных диалогов перед началом новой задачи")
+        
+        if self.cursor_cli:
+            cleanup_result = self.cursor_cli.prepare_for_new_task()
+            if cleanup_result:
+                logger.info("Активные диалоги остановлены, очередь очищена")
+                task_logger.log_info("Активные диалоги остановлены, очередь очищена")
+            else:
+                logger.warning("Не удалось полностью очистить активные диалоги, продолжаем...")
+                task_logger.log_warning("Предупреждение: не удалось полностью очистить диалоги")
+        
+        # Логируем создание нового диалога (один раз для всей последовательности)
+        task_logger.log_new_chat()
+        
+        # Отслеживаем успешно выполненные инструкции
+        successful_instructions = 0
+        failed_instructions = 0
+        critical_instructions = min(3, len(all_templates))  # Минимум 3 инструкции для завершения задачи
+        
+        # Выполняем все инструкции последовательно (1, 2, 3, ...)
+        for instruction_num, template in enumerate(all_templates, start=1):
+            # Проверяем запрос на остановку перед каждой инструкцией
+            with self._stop_lock:
+                if self._should_stop:
+                    logger.warning(f"Получен запрос на остановку во время выполнения задачи {task_id}")
+                    task_logger.log_warning("Запрос на остановку сервера - прерывание выполнения задачи")
+                    self.status_manager.update_task_status(
+                        task_name=todo_item.text,
+                        status="Прервано",
+                        details="Выполнение прервано по запросу остановки сервера"
+                    )
+                    return False
             
-            # Используем Cursor CLI
-            result = self.execute_cursor_instruction(
+            # Проверяем необходимость перезапуска перед каждой инструкцией
+            if self._check_reload_needed():
+                logger.warning(f"Обнаружено изменение кода во время выполнения задачи {task_id}")
+                task_logger.log_warning("Обнаружено изменение кода - требуется перезапуск")
+                self.status_manager.update_task_status(
+                    task_name=todo_item.text,
+                    status="Прервано",
+                    details="Выполнение прервано из-за изменения кода (требуется перезапуск)"
+                )
+                # Инициируем перезапуск
+                raise ServerReloadException("Перезапуск из-за изменения кода во время выполнения задачи")
+            
+            instruction_id = template.get('instruction_id', instruction_num)
+            instruction_name = template.get('name', f'Инструкция {instruction_id}')
+            
+            logger.info(f"[{instruction_num}/{len(all_templates)}] Выполнение инструкции: {instruction_name} (ID: {instruction_id})")
+            task_logger.log_info(f"Инструкция {instruction_num}/{len(all_templates)}: {instruction_name}")
+            
+            # Форматируем инструкцию из шаблона
+            instruction_text = self._format_instruction(template, todo_item, task_id, instruction_num)
+            wait_for_file = template.get('wait_for_file', '')
+            control_phrase = template.get('control_phrase', '')
+            timeout = template.get('timeout', 600)
+            
+            # Подстановка переменных в wait_for_file
+            if wait_for_file:
+                wait_for_file = wait_for_file.replace('{task_id}', task_id)
+                wait_for_file = wait_for_file.replace('{date}', datetime.now().strftime('%Y%m%d'))
+                wait_for_file = wait_for_file.replace('{plan_item_number}', str(instruction_num))
+            
+            # Логируем инструкцию
+            task_logger.log_instruction(instruction_num, instruction_text, task_type)
+            logger.debug(f"Инструкция {instruction_num} для Cursor: {instruction_text[:200]}...")
+            
+            # Фаза: Выполнение через Cursor
+            task_logger.set_phase(TaskPhase.CURSOR_EXECUTION, stage=instruction_num, instruction_num=instruction_num)
+            
+            # Используем Cursor CLI для выполнения инструкции с обработкой повторяющихся ошибок
+            result = self._execute_cursor_instruction_with_retry(
                 instruction=instruction_text,
                 task_id=task_id,
-                timeout=timeout
+                timeout=timeout,
+                task_logger=task_logger,
+                instruction_num=instruction_num
             )
             
             # Логируем ответ от Cursor
             task_logger.log_cursor_response(result, brief=True)
             
-            if result.get("success"):
-                logger.info(f"Задача {task_id} выполнена через Cursor CLI")
+            if not result.get("success"):
+                failed_instructions += 1
+                error_message = result.get('error_message', 'Неизвестная ошибка')
+                logger.warning(f"Инструкция {instruction_num}/{len(all_templates)} завершилась с ошибкой: {error_message}")
+                task_logger.log_error(f"Инструкция {instruction_num} не выполнена: {error_message}")
                 
-                # Фаза: Ожидание результата
-                if wait_for_file:
-                    task_logger.set_phase(TaskPhase.WAITING_RESULT)
-                    task_logger.log_waiting_result(wait_for_file, timeout)
-                    
-                    wait_result = self._wait_for_result_file(
-                        task_id=task_id,
-                        wait_for_file=wait_for_file,
-                        control_phrase=control_phrase,
-                        timeout=timeout
-                    )
-                    
-                    if wait_result["success"]:
-                        result_content = wait_result.get("content", "")
-                        task_logger.log_result_received(
-                            wait_result['file_path'],
-                            wait_result['wait_time'],
-                            result_content[:500]
+                # Обрабатываем повторяющиеся ошибки
+                can_continue = self._handle_cursor_error(error_message, task_logger)
+                
+                # Проверяем флаг остановки после обработки ошибки
+                with self._stop_lock:
+                    if self._should_stop:
+                        logger.error("=" * 80)
+                        logger.error("СЕРВЕР ОСТАНОВЛЕН ИЗ-ЗА КРИТИЧЕСКИХ ОШИБОК CURSOR")
+                        logger.error("=" * 80)
+                        task_logger.log_error("Критическая ошибка Cursor - выполнение задачи прервано", Exception(error_message))
+                        self.status_manager.update_task_status(
+                            task_name=todo_item.text,
+                            status="Прервано",
+                            details=f"Критическая ошибка Cursor: {error_message}"
                         )
-                        logger.info(f"Файл результата получен: {wait_result['file_path']}")
-                    else:
-                        task_logger.log_error(f"Файл результата не получен: {wait_result.get('error')}")
-                        logger.warning(f"Файл результата не получен: {wait_result.get('error')}")
+                        return False
                 
-                # Фаза: Завершение
-                task_logger.set_phase(TaskPhase.COMPLETION)
+                if not can_continue:
+                    # Критическая ошибка - сервер должен быть остановлен
+                    logger.error("=" * 80)
+                    logger.error("КРИТИЧЕСКАЯ ОШИБКА CURSOR - ПРЕРЫВАНИЕ ВЫПОЛНЕНИЯ ЗАДАЧИ")
+                    logger.error("=" * 80)
+                    task_logger.log_error("Критическая ошибка Cursor - выполнение задачи прервано", Exception(error_message))
+                    self.status_manager.update_task_status(
+                        task_name=todo_item.text,
+                        status="Прервано",
+                        details=f"Критическая ошибка Cursor: {error_message}"
+                    )
+                    # Убеждаемся, что флаг остановки установлен
+                    with self._stop_lock:
+                        if not self._should_stop:
+                            logger.warning("Флаг остановки не был установлен, устанавливаем вручную")
+                            self._should_stop = True
+                    return False
                 
-                # Отмечаем задачу как выполненную
-                self.todo_manager.mark_task_done(todo_item.text)
+                # Проверяем флаг остановки перед задержкой
+                with self._stop_lock:
+                    if self._should_stop:
+                        logger.warning("Получен запрос на остановку после обработки ошибки Cursor")
+                        return False
                 
-                self.status_manager.update_task_status(
-                    task_name=todo_item.text,
-                    status="Выполнено",
-                    details=f"Выполнено через Cursor CLI (task_id: {task_id})"
-                )
+                # Применяем задержку перед следующей попыткой (накопленная задержка из-за ошибок)
+                # Но проверяем флаг остановки во время задержки
+                if self._cursor_error_delay > 0:
+                    logger.info(f"Ожидание {self._cursor_error_delay} секунд перед следующей инструкцией (из-за предыдущих ошибок Cursor)")
+                    task_logger.log_info(f"Задержка {self._cursor_error_delay} сек перед следующей инструкцией из-за ошибок Cursor")
+                    
+                    # Проверяем флаг остановки во время задержки
+                    for i in range(self._cursor_error_delay):
+                        with self._stop_lock:
+                            if self._should_stop:
+                                logger.warning(f"Получен запрос на остановку во время задержки из-за ошибок Cursor (через {i+1} секунд)")
+                                return False
+                        time.sleep(1)
                 
-                return True
+                # Проверяем флаг остановки после задержки
+                with self._stop_lock:
+                    if self._should_stop:
+                        logger.warning("Получен запрос на остановку после задержки из-за ошибок Cursor")
+                        return False
+                
+                # Продолжаем со следующей инструкцией (некоторые могут быть опциональными)
+                continue
             else:
-                logger.warning(f"Cursor CLI вернул ошибку: {result.get('error_message')}")
-                task_logger.log_error(f"Cursor CLI вернул ошибку: {result.get('error_message')}")
+                # Успешное выполнение - сбрасываем счетчик ошибок
+                with self._cursor_error_lock:
+                    if self._cursor_error_count > 0:
+                        logger.info(f"Инструкция выполнена успешно, счетчик ошибок Cursor сброшен (было {self._cursor_error_count})")
+                        self._cursor_error_count = 0
+                        self._cursor_error_delay = 0
+                        self._last_cursor_error = None
+            
+            # Инструкция выполнена успешно на уровне команды - проверяем ожидание результата
+            instruction_successful = False
+            
+            # Проверяем запрос на остановку перед ожиданием результата
+            with self._stop_lock:
+                if self._should_stop:
+                    logger.warning(f"Получен запрос на остановку перед ожиданием результата для инструкции {instruction_num}")
+                    task_logger.log_warning("Запрос на остановку - прерывание ожидания результата")
+                    break
+            
+            # Проверяем необходимость перезапуска перед ожиданием результата
+            if self._check_reload_needed():
+                logger.warning(f"Обнаружено изменение кода перед ожиданием результата для инструкции {instruction_num}")
+                task_logger.log_warning("Обнаружено изменение кода - требуется перезапуск")
+                raise ServerReloadException("Перезапуск из-за изменения кода перед ожиданием результата")
+            
+            # Фаза: Ожидание результата (если указан wait_for_file)
+            if wait_for_file:
+                task_logger.set_phase(TaskPhase.WAITING_RESULT)
+                task_logger.log_waiting_result(wait_for_file, timeout)
                 
-                # НЕ используем fallback на файловый интерфейс - только автоматическое выполнение!
-                # Помечаем задачу как неуспешную и возвращаем False
-                self.status_manager.update_task_status(
-                    task_name=todo_item.text,
-                    status="Ошибка",
-                    details=f"Ошибка выполнения через Cursor CLI: {result.get('error_message')}"
+                wait_result = self._wait_for_result_file(
+                    task_id=task_id,
+                    wait_for_file=wait_for_file,
+                    control_phrase=control_phrase,
+                    timeout=timeout
                 )
-                return False
+                
+                # Проверяем, была ли остановка или перезапуск во время ожидания
+                if wait_result.get("error") == "Остановка сервера по запросу":
+                    logger.warning(f"Ожидание результата прервано по запросу остановки")
+                    task_logger.log_warning("Ожидание результата прервано по запросу остановки")
+                    break
+                elif wait_result.get("error") == "Перезапуск сервера из-за изменения кода":
+                    logger.warning(f"Ожидание результата прервано из-за изменения кода")
+                    task_logger.log_warning("Ожидание результата прервано - требуется перезапуск")
+                    raise ServerReloadException("Перезапуск из-за изменения кода во время ожидания результата")
+                
+                if wait_result["success"]:
+                    result_content = wait_result.get("content", "")
+                    task_logger.log_result_received(
+                        wait_result['file_path'],
+                        wait_result['wait_time'],
+                        result_content[:500]
+                    )
+                    logger.info(f"Файл результата получен для инструкции {instruction_num}: {wait_result['file_path']}")
+                    instruction_successful = True
+                    
+                    # Для последней инструкции проверяем, была ли выполнена реальная работа
+                    if instruction_num == len(all_templates):
+                        work_done = self._verify_real_work_done(task_id, todo_item, result_content)
+                        if not work_done and instruction_num == 1:  # Только для первой инструкции требуем реальную работу
+                            logger.warning(f"Инструкция {instruction_num} выполнила только план, реальная работа не обнаружена")
+                            task_logger.log_warning("Выполнен только план, реальная работа не обнаружена")
+                            # Продолжаем со следующими инструкциями - они могут выполнить реальную работу
+                else:
+                    logger.warning(f"Файл результата для инструкции {instruction_num} не получен: {wait_result.get('error')}")
+                    task_logger.log_warning(f"Файл результата не получен для инструкции {instruction_num}")
+                    # Инструкция не считается успешной если файл результата не получен
+                    continue
+            else:
+                # Если wait_for_file не указан, считаем инструкцию успешной если команда выполнена успешно
+                instruction_successful = True
+            
+            if instruction_successful:
+                successful_instructions += 1
+                logger.info(f"Инструкция {instruction_num}/{len(all_templates)} выполнена успешно")
+        
+        # Фаза: Завершение - проверяем, достаточно ли инструкций выполнено
+        task_logger.set_phase(TaskPhase.COMPLETION)
+        
+        # ВАЖНО: Задача считается выполненной только если выполнено минимум critical_instructions инструкций
+        # Если выполнена только инструкция 1 (план), задача НЕ считается выполненной
+        if successful_instructions < critical_instructions:
+            logger.warning(f"Задача {task_id} не выполнена полностью: выполнено только {successful_instructions}/{len(all_templates)} инструкций (требуется минимум {critical_instructions})")
+            task_logger.log_warning(f"Выполнено только {successful_instructions} из {len(all_templates)} инструкций")
+            self.status_manager.update_task_status(
+                task_name=todo_item.text,
+                status="Частично выполнено",
+                details=f"Выполнено только {successful_instructions}/{len(all_templates)} инструкций. Требуется минимум {critical_instructions} для завершения (task_id: {task_id})"
+            )
+            # НЕ отмечаем задачу как выполненную, возвращаем False
+            return False
+        
+        # Отмечаем задачу как выполненную только если выполнено достаточно инструкций
+        self.todo_manager.mark_task_done(todo_item.text)
+        
+        self.status_manager.update_task_status(
+            task_name=todo_item.text,
+            status="Выполнено",
+            details=f"Выполнено через Cursor CLI, успешно выполнено {successful_instructions}/{len(all_templates)} инструкций (task_id: {task_id})"
+        )
+        
+        logger.info(f"Задача {task_id} выполнена: успешно выполнено {successful_instructions}/{len(all_templates)} инструкций")
+        return True
         
         # Если CLI недоступен - возвращаем ошибку (НЕ используем файловый интерфейс)
         logger.error(f"Cursor CLI недоступен для задачи {task_id}")
@@ -1101,18 +1891,474 @@ class CodeAgentServer:
         # Выполняем каждую задачу в отдельной сессии
         total_tasks = len(pending_tasks)
         for idx, todo_item in enumerate(pending_tasks, start=1):
+            # Проверяем запрос на остановку перед каждой задачей
+            with self._stop_lock:
+                if self._should_stop:
+                    logger.warning(f"Получен запрос на остановку перед выполнением задачи {idx}/{total_tasks}")
+                    break
+            
+            # Проверяем необходимость перезапуска перед задачей
+            if self._check_reload_needed():
+                logger.warning(f"Обнаружено изменение кода перед выполнением задачи {idx}/{total_tasks}")
+                raise ServerReloadException("Перезапуск из-за изменения кода перед выполнением задачи")
+            
             self.status_manager.add_separator()
-            self._execute_task(todo_item, task_number=idx, total_tasks=total_tasks)
+            task_result = self._execute_task(todo_item, task_number=idx, total_tasks=total_tasks)
+            
+            # Проверяем запрос на остановку после выполнения задачи
+            with self._stop_lock:
+                if self._should_stop:
+                    logger.warning(f"Получен запрос на остановку после выполнения задачи {idx}/{total_tasks}")
+                    break
+            
+            # Если задача завершилась из-за критической ошибки Cursor, проверяем флаг остановки
+            if task_result is False:
+                with self._stop_lock:
+                    if self._should_stop:
+                        logger.warning("Задача завершилась из-за критической ошибки Cursor - прерывание итерации")
+                        break
+            
+            # Проверяем необходимость перезапуска после задачи
+            if self._check_reload_needed():
+                logger.warning(f"Обнаружено изменение кода после выполнения задачи {idx}/{total_tasks}")
+                raise ServerReloadException("Перезапуск из-за изменения кода после выполнения задачи")
             
             # Задержка между задачами
             if self.task_delay > 0:
-                time.sleep(self.task_delay)
+                # Проверяем остановку и перезапуск во время задержки
+                for _ in range(self.task_delay):
+                    with self._stop_lock:
+                        if self._should_stop:
+                            break
+                    if self._check_reload_needed():
+                        raise ServerReloadException("Перезапуск из-за изменения кода во время задержки")
+                    time.sleep(1)
         
         return True  # Есть еще задачи
+    
+    def _check_port_in_use(self, port: int) -> bool:
+        """
+        Проверка, занят ли порт
+        
+        Args:
+            port: Номер порта для проверки
+            
+        Returns:
+            True если порт занят, False иначе
+        """
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                result = s.connect_ex(('localhost', port))
+                return result == 0
+        except Exception as e:
+            logger.debug(f"Ошибка проверки порта {port}: {e}")
+            return False
+    
+    def _kill_process_on_port(self, port: int) -> bool:
+        """
+        Завершить процесс, использующий указанный порт
+        
+        Args:
+            port: Номер порта
+            
+        Returns:
+            True если процесс найден и завершен, False иначе
+        """
+        try:
+            if sys.platform == 'win32':
+                # Windows: используем netstat для поиска PID
+                result = subprocess.run(
+                    ['netstat', '-ano'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.split('\n'):
+                        if f':{port}' in line and 'LISTENING' in line:
+                            parts = line.split()
+                            if len(parts) >= 5:
+                                pid = parts[-1]
+                                try:
+                                    # Завершаем процесс
+                                    subprocess.run(
+                                        ['taskkill', '/F', '/PID', pid],
+                                        capture_output=True,
+                                        timeout=3
+                                    )
+                                    logger.info(f"Завершен процесс {pid}, использующий порт {port}")
+                                    # Даем время процессу завершиться
+                                    time.sleep(2)
+                                    return True
+                                except Exception as e:
+                                    logger.warning(f"Не удалось завершить процесс {pid}: {e}")
+            else:
+                # Linux/Mac: используем lsof
+                try:
+                    result = subprocess.run(
+                        ['lsof', '-ti', f':{port}'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        pids = result.stdout.strip().split('\n')
+                        for pid in pids:
+                            try:
+                                subprocess.run(
+                                    ['kill', '-9', pid],
+                                    capture_output=True,
+                                    timeout=3
+                                )
+                                logger.info(f"Завершен процесс {pid}, использующий порт {port}")
+                            except Exception as e:
+                                logger.warning(f"Не удалось завершить процесс {pid}: {e}")
+                        # Даем время процессу завершиться
+                        time.sleep(2)
+                        return True
+                except FileNotFoundError:
+                    # lsof не установлен, пробуем через fuser
+                    try:
+                        result = subprocess.run(
+                            ['fuser', '-k', f'{port}/tcp'],
+                            capture_output=True,
+                            timeout=5
+                        )
+                        if result.returncode == 0:
+                            logger.info(f"Завершены процессы на порту {port}")
+                            time.sleep(2)
+                            return True
+                    except FileNotFoundError:
+                        pass
+        except Exception as e:
+            logger.warning(f"Ошибка при завершении процесса на порту {port}: {e}")
+        
+        return False
+    
+    def _setup_http_server(self):
+        """Настройка и запуск HTTP сервера на порту"""
+        if not FLASK_AVAILABLE:
+            logger.warning("Flask не установлен, HTTP сервер недоступен")
+            return
+        
+        if not self.http_enabled:
+            logger.info("HTTP сервер отключен в конфигурации")
+            return
+        
+        # Проверяем занятость порта
+        if self._check_port_in_use(self.http_port):
+            logger.warning(f"Порт {self.http_port} занят, пытаемся завершить старый процесс...")
+            if self._kill_process_on_port(self.http_port):
+                # Ждем освобождения порта
+                for _ in range(10):
+                    if not self._check_port_in_use(self.http_port):
+                        break
+                    time.sleep(1)
+                else:
+                    logger.error(f"Порт {self.http_port} все еще занят после попытки завершения процесса")
+                    return
+            else:
+                logger.error(f"Не удалось завершить процесс на порту {self.http_port}")
+                return
+        
+        # Создаем Flask приложение
+        self.flask_app = Flask(__name__)
+        
+        @self.flask_app.route('/')
+        def index():
+            """Главная страница с информацией о сервере"""
+            stats = self.checkpoint_manager.get_statistics()
+            return jsonify({
+                'status': 'running',
+                'port': self.http_port,
+                'session_id': self.session_tracker.current_session_id,
+                'iteration': self.checkpoint_manager.get_iteration_count(),
+                'statistics': stats,
+                'project_dir': str(self.project_dir),
+                'cursor_cli_available': self.use_cursor_cli,
+                'auto_todo_enabled': self.auto_todo_enabled
+            })
+        
+        @self.flask_app.route('/status')
+        def status():
+            """Статус сервера с подробной информацией"""
+            recovery_info = self.checkpoint_manager.get_recovery_info()
+            stats = self.checkpoint_manager.get_statistics()
+            current_task = self.checkpoint_manager.get_current_task()
+            
+            # Получаем текущие задачи из todo_manager
+            pending_tasks = self.todo_manager.get_pending_tasks()
+            
+            # Определяем, что делает сервер
+            current_activity = "Ожидание"
+            if current_task:
+                current_activity = f"Выполнение задачи: {current_task.get('task_text', 'N/A')[:100]}"
+            elif pending_tasks:
+                current_activity = f"Ожидание выполнения {len(pending_tasks)} задач"
+            else:
+                current_activity = "Все задачи выполнены"
+            
+            return jsonify({
+                'server': {
+                    'status': 'running' if self._is_running else 'stopped',
+                    'running': self._is_running,
+                    'port': self.http_port,
+                    'project_dir': str(self.project_dir),
+                    'cursor_cli_available': self.use_cursor_cli,
+                    'auto_todo_enabled': self.auto_todo_enabled
+                },
+                'server_state': {
+                    'clean_shutdown': recovery_info['was_clean_shutdown'],
+                    'last_start_time': recovery_info['last_start_time'],
+                    'last_stop_time': recovery_info['last_stop_time'],
+                    'session_id': recovery_info['session_id'],
+                    'iteration_count': self._current_iteration or recovery_info['iteration_count'],
+                    'current_activity': current_activity
+                },
+                'tasks': {
+                    'in_progress': stats['in_progress'],
+                    'completed': stats['completed'],
+                    'failed': stats['failed'],
+                    'pending': stats['pending'],
+                    'total': stats['total_tasks'],
+                    'pending_in_todo': len(pending_tasks)
+                },
+                'current_task': {
+                    'task_id': current_task.get('task_id') if current_task else None,
+                    'task_text': current_task.get('task_text', '')[:200] if current_task else None,
+                    'state': current_task.get('state') if current_task else None,
+                    'start_time': current_task.get('start_time') if current_task else None,
+                    'attempts': current_task.get('attempts', 0) if current_task else 0
+                } if current_task else None
+            })
+        
+        @self.flask_app.route('/health')
+        def health():
+            """Health check endpoint"""
+            return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
+        
+        @self.flask_app.route('/stop', methods=['POST'])
+        def stop():
+            """Остановить сервер немедленно"""
+            with self._stop_lock:
+                self._should_stop = True
+            logger.warning("=" * 80)
+            logger.warning("ПОЛУЧЕН ЗАПРОС НА НЕМЕДЛЕННУЮ ОСТАНОВКУ СЕРВЕРА ЧЕРЕЗ API")
+            logger.warning("=" * 80)
+            logger.warning("Сервер будет остановлен немедленно, текущая задача будет прервана")
+            logger.warning("=" * 80)
+            return jsonify({
+                'status': 'stopping',
+                'message': 'Сервер будет остановлен немедленно',
+                'timestamp': datetime.now().isoformat()
+            })
+        
+        @self.flask_app.route('/restart', methods=['POST'])
+        def restart():
+            """Перезапустить сервер"""
+            logger.info("Получен запрос на перезапуск сервера через API")
+            with self._reload_lock:
+                self._should_reload = True
+            return jsonify({
+                'status': 'restarting',
+                'message': 'Сервер будет перезапущен после завершения текущей итерации',
+                'timestamp': datetime.now().isoformat()
+            })
+        
+        # Запускаем Flask в отдельном потоке
+        def run_flask():
+            try:
+                from werkzeug.serving import make_server
+                import sys
+                
+                logger.info(f"Инициализация HTTP сервера на порту {self.http_port}...")
+                
+                # Создаем сервер через werkzeug
+                try:
+                    self.http_server = make_server(
+                        '127.0.0.1',
+                        self.http_port,
+                        self.flask_app,
+                        threaded=True
+                    )
+                    logger.info(f"HTTP сервер создан на порту {self.http_port}")
+                except OSError as e:
+                    # Правильная обработка ошибок с UTF-8 кодировкой
+                    error_msg = f"Ошибка создания HTTP сервера на порту {self.http_port}"
+                    if e.errno == 22:  # Invalid argument
+                        error_msg += ": порт может быть занят или недоступен"
+                    elif e.errno == 10048:  # Address already in use (Windows)
+                        error_msg += ": порт уже занят другим процессом"
+                    elif e.errno == 98:  # Address already in use (Linux)
+                        error_msg += ": порт уже занят другим процессом"
+                    else:
+                        error_msg += f" (errno: {e.errno})"
+                    
+                    logger.error(error_msg)
+                    logger.error(f"Детали ошибки: {str(e)}")
+                    return
+                except Exception as e:
+                    logger.error(f"Неожиданная ошибка при создании HTTP сервера: {e}", exc_info=True)
+                    return
+                
+                # Запускаем сервер
+                logger.info(f"Запуск HTTP сервера на порту {self.http_port}...")
+                logger.info(f"HTTP сервер будет доступен по адресу: http://127.0.0.1:{self.http_port}")
+                try:
+                    self.http_server.serve_forever()
+                except Exception as e:
+                    logger.error(f"Ошибка при работе HTTP сервера: {e}", exc_info=True)
+                    raise
+                
+            except KeyboardInterrupt:
+                logger.info("HTTP сервер получил сигнал остановки")
+            except Exception as e:
+                # Общая обработка ошибок с правильной кодировкой
+                error_msg = f"Критическая ошибка HTTP сервера: {str(e)}"
+                logger.error(error_msg, exc_info=True)
+        
+        self.http_thread = threading.Thread(target=run_flask, daemon=True, name="HTTP-Server")
+        self.http_thread.start()
+        
+        # Ждем запуска сервера с более длительным таймаутом
+        logger.info(f"Ожидание запуска HTTP сервера на порту {self.http_port}...")
+        max_attempts = 20  # Увеличиваем до 20 попыток (10 секунд)
+        server_started = False
+        
+        for attempt in range(max_attempts):
+            if self._check_port_in_use(self.http_port):
+                # Дополнительно проверяем доступность HTTP
+                try:
+                    try:
+                        import requests
+                        response = requests.get(f'http://127.0.0.1:{self.http_port}/health', timeout=1)
+                        if response.status_code == 200:
+                            logger.info(f"HTTP сервер успешно запущен и доступен на порту {self.http_port}")
+                            server_started = True
+                            break
+                    except ImportError:
+                        # requests не установлен - используем только проверку порта
+                        logger.info(f"HTTP сервер запущен на порту {self.http_port} (requests не установлен для проверки)")
+                        server_started = True
+                        break
+                except Exception as e:
+                    # Порт занят, но HTTP еще не отвечает - продолжаем ждать
+                    if attempt % 4 == 0:  # Логируем каждые 2 секунды
+                        logger.debug(f"Порт {self.http_port} занят, но HTTP еще не отвечает: {e}")
+            
+            if attempt < max_attempts - 1:
+                time.sleep(0.5)
+            elif attempt % 4 == 0:  # Логируем каждые 2 секунды
+                logger.debug(f"Ожидание запуска HTTP сервера... (попытка {attempt + 1}/{max_attempts})")
+        
+        if not server_started:
+            logger.warning(f"HTTP сервер не смог запуститься на порту {self.http_port} после {max_attempts} попыток.")
+            logger.warning("Проверьте логи выше на наличие ошибок. Сервер продолжит работу без HTTP API.")
+    
+    def _setup_file_watcher(self):
+        """Настройка отслеживания изменений .py файлов для автоперезапуска"""
+        if not WATCHDOG_AVAILABLE:
+            logger.warning("Watchdog не установлен, автоперезапуск недоступен")
+            return
+        
+        if not self.auto_reload or not self.reload_on_py_changes:
+            logger.info("Автоперезапуск отключен в конфигурации")
+            return
+        
+        class PyFileHandler(FileSystemEventHandler):
+            """Обработчик изменений .py файлов"""
+            def __init__(self, server_instance):
+                self.server = server_instance
+                self.last_reload_time = 0
+                self.reload_cooldown = 5  # Минимальный интервал между перезапусками (секунды)
+            
+            def on_modified(self, event):
+                if event.is_directory:
+                    return
+                
+                # Проверяем, что это .py файл
+                if not event.src_path.endswith('.py'):
+                    return
+                
+                # Игнорируем изменения в __pycache__ и других служебных директориях
+                if '__pycache__' in event.src_path or '.pyc' in event.src_path:
+                    return
+                
+                # Проверяем cooldown
+                current_time = time.time()
+                if current_time - self.last_reload_time < self.reload_cooldown:
+                    return
+                
+                # Игнорируем изменения в test директориях
+                if '/test/' in event.src_path or '\\test\\' in event.src_path:
+                    return
+                
+                logger.info(f"Обнаружено изменение файла: {event.src_path}")
+                self.last_reload_time = current_time
+                
+                # Устанавливаем флаг перезапуска
+                with self.server._reload_lock:
+                    self.server._should_reload = True
+                    logger.warning("=" * 80)
+                    logger.warning("ОБНАРУЖЕНО ИЗМЕНЕНИЕ .py ФАЙЛА - ТРЕБУЕТСЯ ПЕРЕЗАПУСК")
+                    logger.warning(f"Изменен файл: {event.src_path}")
+                    logger.warning("=" * 80)
+        
+        # Определяем директории для отслеживания
+        watch_dirs = []
+        
+        # Добавляем директорию src
+        src_dir = Path(__file__).parent
+        if src_dir.exists():
+            watch_dirs.append(str(src_dir))
+        
+        # Добавляем корневую директорию проекта (где main.py)
+        root_dir = Path(__file__).parent.parent
+        if root_dir.exists():
+            watch_dirs.append(str(root_dir))
+        
+        if not watch_dirs:
+            logger.warning("Не найдены директории для отслеживания изменений")
+            return
+        
+        # Создаем observer
+        self.file_observer = Observer()
+        handler = PyFileHandler(self)
+        
+        for watch_dir in watch_dirs:
+            try:
+                self.file_observer.schedule(handler, watch_dir, recursive=True)
+                logger.info(f"Отслеживание изменений .py файлов в: {watch_dir}")
+            except Exception as e:
+                logger.warning(f"Не удалось добавить директорию для отслеживания {watch_dir}: {e}")
+        
+        # Запускаем observer
+        self.file_observer.start()
+        logger.info("File watcher запущен для автоперезапуска при изменении .py файлов")
+    
+    def _check_reload_needed(self) -> bool:
+        """
+        Проверка необходимости перезапуска
+        
+        Returns:
+            True если требуется перезапуск
+        """
+        with self._reload_lock:
+            if self._should_reload:
+                self._should_reload = False
+                return True
+            return False
     
     def start(self):
         """Запуск сервера агента в бесконечном цикле"""
         logger.info("Запуск Code Agent Server")
+        
+        # Запускаем HTTP сервер
+        self._setup_http_server()
+        
+        # Запускаем file watcher для автоперезапуска
+        self._setup_file_watcher()
         
         # Отмечаем запуск в checkpoint
         session_id = self.session_tracker.current_session_id
@@ -1125,14 +2371,79 @@ class CodeAgentServer:
         
         # Получаем начальную итерацию из checkpoint (для восстановления)
         iteration = self.checkpoint_manager.get_iteration_count()
+        self._current_iteration = iteration
+        self._is_running = True
         
         try:
             while True:
+                # Проверяем запрос на остановку (через API или из-за критических ошибок Cursor)
+                with self._stop_lock:
+                    if self._should_stop:
+                        # Проверяем, это остановка через API или из-за ошибок Cursor
+                        with self._cursor_error_lock:
+                            cursor_error_stop = self._cursor_error_count >= self._max_cursor_errors
+                        
+                        if cursor_error_stop:
+                            logger.error("=" * 80)
+                            logger.error("ОСТАНОВКА СЕРВЕРА ИЗ-ЗА КРИТИЧЕСКИХ ОШИБОК CURSOR")
+                            logger.error("=" * 80)
+                            self.checkpoint_manager.mark_server_stop(clean=False)
+                        else:
+                            logger.warning("=" * 80)
+                            logger.warning("ОСТАНОВКА СЕРВЕРА ПО ЗАПРОСУ ЧЕРЕЗ API")
+                            logger.warning("=" * 80)
+                            logger.warning("Текущая задача будет прервана, checkpoint будет сохранен")
+                            logger.warning("=" * 80)
+                            self.checkpoint_manager.mark_server_stop(clean=True)
+                        
+                        self._is_running = False
+                        self.status_manager.append_status(
+                            f"Code Agent Server остановлен по запросу через API. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                            level=2
+                        )
+                        # Прерываем выполнение немедленно
+                        break
+                
+                # Проверяем необходимость перезапуска
+                if self._check_reload_needed():
+                    logger.warning("=" * 80)
+                    logger.warning("ВЫПОЛНЯЕТСЯ ПЕРЕЗАПУСК СЕРВЕРА")
+                    logger.warning("=" * 80)
+                    logger.warning("Текущая задача будет прервана, checkpoint будет сохранен")
+                    logger.warning("=" * 80)
+                    self.checkpoint_manager.mark_server_stop(clean=True)
+                    self._is_running = False
+                    # Инициируем перезапуск через исключение
+                    # main.py перехватит это и перезапустит сервер
+                    raise ServerReloadException("Перезапуск сервера")
+                
                 iteration += 1
+                self._current_iteration = iteration
                 logger.info(f"Итерация {iteration}")
                 
                 # Выполняем итерацию
-                has_tasks = self.run_iteration(iteration)
+                try:
+                    has_tasks = self.run_iteration(iteration)
+                except ServerReloadException:
+                    # Перезапуск из-за изменений в коде во время выполнения итерации
+                    logger.warning("Перезапуск сервера во время выполнения итерации")
+                    self.checkpoint_manager.mark_server_stop(clean=True)
+                    self._is_running = False
+                    raise  # Пробрасываем исключение дальше
+                
+                # Проверяем флаг остановки после итерации (может быть установлен из-за ошибок Cursor)
+                with self._stop_lock:
+                    if self._should_stop:
+                        break
+                
+                # Проверяем необходимость перезапуска после итерации
+                if self._check_reload_needed():
+                    logger.warning("=" * 80)
+                    logger.warning("ВЫПОЛНЯЕТСЯ ПЕРЕЗАПУСК СЕРВЕРА ПОСЛЕ ИТЕРАЦИИ")
+                    logger.warning("=" * 80)
+                    self.checkpoint_manager.mark_server_stop(clean=True)
+                    self._is_running = False
+                    raise ServerReloadException("Перезапуск сервера")
                 
                 # Проверяем ограничение итераций
                 if self.max_iterations and iteration >= self.max_iterations:
@@ -1147,14 +2458,46 @@ class CodeAgentServer:
                 # Если нет задач, проверяем снова через интервал
                 if not has_tasks:
                     logger.info(f"Ожидание {self.check_interval} секунд перед следующей проверкой")
-                    time.sleep(self.check_interval)
+                    # Проверяем перезапуск и остановку во время ожидания
+                    for _ in range(self.check_interval):
+                        with self._stop_lock:
+                            if self._should_stop:
+                                break
+                        if self._check_reload_needed():
+                            logger.warning("Обнаружено изменение кода во время ожидания - перезапуск")
+                            self.checkpoint_manager.mark_server_stop(clean=True)
+                            raise ServerReloadException("Перезапуск из-за изменения кода")
+                        time.sleep(1)
                 else:
                     # Если задачи были, ждем интервал перед следующей итерацией
-                    time.sleep(self.check_interval)
+                    # Проверяем перезапуск и остановку во время ожидания
+                    for _ in range(self.check_interval):
+                        with self._stop_lock:
+                            if self._should_stop:
+                                break
+                        if self._check_reload_needed():
+                            logger.warning("Обнаружено изменение кода во время ожидания - перезапуск")
+                            self.checkpoint_manager.mark_server_stop(clean=True)
+                            raise ServerReloadException("Перезапуск из-за изменения кода")
+                        time.sleep(1)
                     
+        except ServerReloadException as e:
+            # Перезапуск из-за изменений в .py файлах
+            logger.warning("=" * 80)
+            logger.warning("ПЕРЕЗАПУСК СЕРВЕРА ИЗ-ЗА ИЗМЕНЕНИЙ В КОДЕ")
+            logger.warning("=" * 80)
+            logger.warning(f"Причина: {str(e)}")
+            logger.warning("=" * 80)
+            self._is_running = False
+            self.checkpoint_manager.mark_server_stop(clean=True)
+            self.server_logger.log_server_shutdown(f"Перезапуск из-за изменений в коде: {str(e)}")
+            # Пробрасываем исключение дальше для обработки в main.py
+            raise
+            
         except KeyboardInterrupt:
             logger.info("Получен сигнал остановки")
             self.server_logger.log_server_shutdown("Остановка пользователем (Ctrl+C)")
+            self._is_running = False
             
             # Отмечаем корректный останов
             self.checkpoint_manager.mark_server_stop(clean=True)
@@ -1166,6 +2509,7 @@ class CodeAgentServer:
         except Exception as e:
             logger.error(f"Критическая ошибка: {e}", exc_info=True)
             self.server_logger.log_server_shutdown(f"Критическая ошибка: {str(e)}")
+            self._is_running = False
             
             # Отмечаем некорректный останов
             self.checkpoint_manager.mark_server_stop(clean=False)
@@ -1176,6 +2520,31 @@ class CodeAgentServer:
             )
             raise
         finally:
+            self._is_running = False
+            
+            # Останавливаем file watcher
+            if self.file_observer:
+                try:
+                    self.file_observer.stop()
+                    self.file_observer.join(timeout=2)
+                    logger.info("File watcher остановлен")
+                except Exception as e:
+                    logger.warning(f"Ошибка при остановке file watcher: {e}")
+            
+            # Останавливаем HTTP сервер явно
+            if self.http_server:
+                try:
+                    self.http_server.shutdown()
+                    logger.info("HTTP сервер остановлен")
+                except Exception as e:
+                    logger.warning(f"Ошибка при остановке HTTP сервера: {e}")
+            elif self.flask_app:
+                try:
+                    # Flask в отдельном потоке остановится автоматически (daemon=True)
+                    logger.info("HTTP сервер будет остановлен автоматически")
+                except Exception as e:
+                    logger.warning(f"Ошибка при остановке HTTP сервера: {e}")
+            
             # Гарантируем сохранение checkpoint при любом выходе
             try:
                 if not self.checkpoint_manager.was_clean_shutdown():

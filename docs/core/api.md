@@ -138,22 +138,43 @@ agent = create_executor_agent(
 
 #### `CodeAgentServer`
 
-Основной сервер Code Agent.
+Основной сервер Code Agent с поддержкой HTTP API и автоперезапуска.
 
 ```python
 from src.server import CodeAgentServer
 
 server = CodeAgentServer("config/config.yaml")
-server.start()  # Запуск бесконечного цикла
+server.start()  # Запуск бесконечного цикла с HTTP сервером
 ```
 
 **Методы:**
 
 - `__init__(config_path: Optional[str])` - Инициализация сервера
-- `start()` - Запуск сервера в бесконечном цикле
+- `start()` - Запуск сервера в бесконечном цикле с HTTP сервером и file watcher
 - `run_iteration()` - Выполнение одной итерации
 - `_execute_task(todo_item: TodoItem)` - Выполнение задачи через агента
 - `_load_documentation()` - Загрузка документации проекта
+- `_setup_http_server()` - Настройка и запуск HTTP сервера на порту 3456
+- `_setup_file_watcher()` - Настройка отслеживания изменений .py файлов
+- `_check_port_in_use(port: int)` - Проверка занятости порта
+- `_kill_process_on_port(port: int)` - Завершение процесса на порту
+
+**HTTP API:**
+
+Сервер автоматически запускает Flask HTTP сервер на порту 3456 (настраивается в config):
+
+**Endpoints:**
+- `GET /health` - Проверка работоспособности сервера
+- `GET /` - Общая информация о сервере и статистика
+- `GET /status` - Подробный статус сервера, задач и текущей активности
+- `POST /stop` - Остановить сервер после завершения текущей итерации
+- `POST /restart` - Перезапустить сервер после завершения текущей итерации
+
+**Детальная документация:** См. [api_endpoints.md](api_endpoints.md)
+
+**Автоперезапуск:**
+
+При изменении любых `.py` файлов в `src/` или корне проекта сервер автоматически перезапускается.
 
 ---
 

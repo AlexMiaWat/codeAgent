@@ -1,7 +1,7 @@
 # Документация Code Agent
 
-**Дата обновления:** 2026-01-18  
-**Версия:** 2.0
+**Дата обновления:** 2026-01-19  
+**Версия:** 2.1
 
 ---
 
@@ -27,9 +27,10 @@
 
 ### 📂 core/ - Основная документация
 Ключевые технические документы:
-- **[api.md](core/api.md)** - API документация
+- **[api.md](core/api.md)** - API документация (программный интерфейс)
+- **[api_endpoints.md](core/api_endpoints.md)** - HTTP API Endpoints (мониторинг и управление)
 - **[architecture.md](core/architecture.md)** - Архитектура системы
-- **[project_structure.md](core/project_structure.md)** - Структура проекта (старая версия)
+- **[project_structure.md](core/project_structure.md)** - Структура проекта
 - **[workflow_detailed.md](core/workflow_detailed.md)** - Детальный workflow
 
 ### 📂 guides/ - Руководства
@@ -128,7 +129,12 @@
 **Разработка:**
 - [core/architecture.md](core/architecture.md)
 - [core/api.md](core/api.md)
+- [core/api_endpoints.md](core/api_endpoints.md) - HTTP API для мониторинга и управления
 - [planning/implementation_roadmap.md](planning/implementation_roadmap.md)
+
+**Мониторинг и управление:**
+- [core/api_endpoints.md](core/api_endpoints.md) - Полная документация HTTP API
+- [guides/SERVER_MONITORING_GUIDE.md](guides/SERVER_MONITORING_GUIDE.md) - Руководство по мониторингу
 
 ---
 
@@ -169,5 +175,5 @@
 
 ---
 
-**Обновлено:** 2026-01-18  
-**Версия:** 2.0
+**Обновлено:** 2026-01-19  
+**Версия:** 2.1

@@ -9,6 +9,7 @@
 
 import logging
 import json
+import os
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from datetime import datetime
@@ -79,11 +80,19 @@ class ModelDiscovery:
             Список моделей с информацией о них
         """
         provider_config = self.config.get('providers', {}).get('openrouter', {})
-        api_key = provider_config.get('api_key')
         base_url = provider_config.get('base_url', 'https://openrouter.ai/api/v1')
         
+        # API ключ должен быть в переменной окружения, а не в конфиге
+        # Приоритет: переменная окружения > конфиг (для обратной совместимости)
+        api_key = os.getenv('OPENROUTER_API_KEY')
         if not api_key:
-            logger.warning("OpenRouter API key not found in config")
+            # Fallback на конфиг (для обратной совместимости, но не рекомендуется)
+            api_key = provider_config.get('api_key')
+            if api_key:
+                logger.warning("API key found in config file. Please move it to OPENROUTER_API_KEY environment variable or .env file for security.")
+        
+        if not api_key:
+            logger.warning("OpenRouter API key not found. Please set OPENROUTER_API_KEY environment variable or add it to .env file.")
             return []
         
         try:
