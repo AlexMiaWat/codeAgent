@@ -30,7 +30,7 @@ services:
       - LC_ALL=C.utf8
     # Используем скрипт запуска с логированием из Dockerfile
     # Скрипт /start.sh выводит логи в stdout/stderr для docker logs
-    entrypoint: ["/start.sh"]
+    entrypoint: ["/bin/bash", "/start.sh"]
     # Убираем stdin для non-interactive режима
     stdin_open: false
     tty: false

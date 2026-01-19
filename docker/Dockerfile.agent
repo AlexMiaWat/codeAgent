@@ -37,7 +37,7 @@ ENV AGENT_HOME=/root
 
 # Создание скрипта запуска с логированием
 RUN cat > /start.sh << 'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 # Функция логирования
@@ -89,7 +89,9 @@ while true; do
 done
 EOF
 
-RUN chmod +x /start.sh
+RUN chmod +x /start.sh && \
+    sed -i 's/\r$//' /start.sh && \
+    ls -la /start.sh
 
 # HEALTHCHECK для мониторинга здоровья контейнера
 HEALTHCHECK --interval=1m --timeout=3s --start-period=5s --retries=3 \
