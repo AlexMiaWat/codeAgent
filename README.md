@@ -72,6 +72,23 @@ uv pip install crewai crewai-tools
 - Для работы с LLM требуется хотя бы один API ключ (рекомендуется `OPENROUTER_API_KEY`)
 - Подробнее о настройке API ключей: [docs/guides/API_KEYS_SETUP.md](docs/guides/API_KEYS_SETUP.md)
 
+### Настройка Git аутентификации (для автоматической отправки коммитов)
+
+**Важно:** После настройки SSH-ключа инструкция 8 будет автоматически отправлять коммиты в удаленный репозиторий без запросов пароля.
+
+Для автоматической отправки коммитов через инструкцию 8 требуется настройка SSH-ключа:
+
+**Быстрая настройка:**
+```bash
+# Windows
+scripts\setup_git_ssh.bat
+
+# Linux/Mac
+./scripts/setup_git_ssh.sh
+```
+
+Подробная инструкция: [docs/guides/GIT_AUTHENTICATION_SETUP.md](docs/guides/GIT_AUTHENTICATION_SETUP.md)
+
 Основные настройки находятся в `config/config.yaml`:
 
 ```yaml

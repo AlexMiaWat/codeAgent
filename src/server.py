@@ -1037,6 +1037,43 @@ class CodeAgentServer:
                 except Exception as e:
                     logger.warning(f"Ошибка чтения файла {file_path}: {e}")
             
+            # Дополнительная проверка: для инструкции 3 (тестирование) проверяем альтернативные имена
+            # Если ожидаем test_{task_id}.md, проверяем также test_task_{task_id}.md и другие варианты
+            if "test_" in wait_for_file.lower() and "docs/results" in wait_for_file:
+                results_dir = self.project_dir / "docs" / "results"
+                if results_dir.exists():
+                    # Проверяем альтернативные варианты имен файлов
+                    alternative_patterns = [
+                        f"test_{task_id}.md",
+                        f"test_{task_id}.txt",
+                        f"test_task_{task_id}.md",
+                        f"test_task_{task_id}.txt",
+                    ]
+                    for alt_pattern in alternative_patterns:
+                        alt_path = results_dir / alt_pattern
+                        if alt_path.exists() and alt_path != file_path:
+                            logger.info(f"Найден альтернативный файл результата: {alt_path}")
+                            try:
+                                content = alt_path.read_text(encoding='utf-8')
+                                if control_phrase:
+                                    if control_phrase in content:
+                                        logger.info(f"Альтернативный файл содержит контрольную фразу")
+                                        return {
+                                            "success": True,
+                                            "file_path": str(alt_path),
+                                            "content": content,
+                                            "wait_time": time.time() - start_time
+                                        }
+                                else:
+                                    return {
+                                        "success": True,
+                                        "file_path": str(alt_path),
+                                        "content": content,
+                                        "wait_time": time.time() - start_time
+                                    }
+                            except Exception as e:
+                                logger.warning(f"Ошибка чтения альтернативного файла {alt_path}: {e}")
+            
             # Проверяем запрос на остановку перед ожиданием
             with self._stop_lock:
                 if self._should_stop:
@@ -1645,13 +1682,37 @@ class CodeAgentServer:
                 # Продолжаем со следующей инструкцией (некоторые могут быть опциональными)
                 continue
             else:
-                # Успешное выполнение - сбрасываем счетчик ошибок
-                with self._cursor_error_lock:
-                    if self._cursor_error_count > 0:
-                        logger.info(f"Инструкция выполнена успешно, счетчик ошибок Cursor сброшен (было {self._cursor_error_count})")
-                        self._cursor_error_count = 0
-                        self._cursor_error_delay = 0
-                        self._last_cursor_error = None
+                # Успешное выполнение - проверяем, был ли использован fallback
+                fallback_used = result.get('fallback_used', False)
+                primary_model_failed = result.get('primary_model_failed', False)
+                
+                if fallback_used or primary_model_failed:
+                    # Fallback был использован - это признак проблемы с основной моделью
+                    # Увеличиваем счетчик ошибок, даже если fallback помог
+                    error_message = f"Основная модель не смогла выполнить команду, использован fallback"
+                    logger.warning(f"⚠️ Fallback использован для успешного выполнения - это признак проблемы с основной моделью")
+                    can_continue = self._handle_cursor_error(error_message, task_logger)
+                    
+                    if not can_continue:
+                        # Критическая ситуация - слишком много использований fallback
+                        logger.error("=" * 80)
+                        logger.error("КРИТИЧЕСКАЯ СИТУАЦИЯ: Слишком часто используется fallback")
+                        logger.error("=" * 80)
+                        task_logger.log_error("Критическая ситуация: слишком часто используется fallback", Exception(error_message))
+                        self.status_manager.update_task_status(
+                            task_name=todo_item.text,
+                            status="Прервано",
+                            details=f"Критическая ситуация: слишком часто используется fallback"
+                        )
+                        return False
+                else:
+                    # Успешное выполнение без fallback - сбрасываем счетчик ошибок
+                    with self._cursor_error_lock:
+                        if self._cursor_error_count > 0:
+                            logger.info(f"Инструкция выполнена успешно, счетчик ошибок Cursor сброшен (было {self._cursor_error_count})")
+                            self._cursor_error_count = 0
+                            self._cursor_error_delay = 0
+                            self._last_cursor_error = None
             
             # Инструкция выполнена успешно на уровне команды - проверяем ожидание результата
             instruction_successful = False

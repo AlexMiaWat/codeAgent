@@ -35,6 +35,8 @@ class CursorCLIResult:
     return_code: int
     cli_available: bool
     error_message: Optional[str] = None
+    fallback_used: bool = False  # Флаг использования fallback модели
+    primary_model_failed: bool = False  # Флаг неудачи основной модели
 
 
 class CursorCLIInterface:
@@ -1268,6 +1270,15 @@ This agent role is used for automated project tasks execution.
                 logger.info("Команда Cursor CLI выполнена успешно")
             else:
                 logger.warning(f"Команда Cursor CLI завершилась с кодом {result.returncode}")
+                
+                # Специальная обработка кода 1 (общая ошибка выполнения)
+                if result.returncode == 1:
+                    logger.warning("⚠️ Код возврата 1 - общая ошибка выполнения команды agent")
+                    if result_stderr:
+                        logger.warning(f"Детали ошибки (stderr): {result_stderr[:1000]}")
+                    if result_stdout:
+                        logger.debug(f"Stdout (первые 500 символов): {result_stdout[:500]}")
+                
                 if result_stderr:
                     logger.debug(f"Stderr: {result_stderr[:500]}")
                     
@@ -1415,7 +1426,12 @@ This agent role is used for automated project tasks execution.
                 if result.return_code != 0 and result.return_code != -1:
                     stderr_lower = (result.stderr or '').lower()
                     if 'unpaid invoice' not in stderr_lower and 'pay your invoice' not in stderr_lower:
+                        # Логируем детали ошибки для диагностики
+                        error_details = result.stderr[:500] if result.stderr else "(нет stderr)"
                         logger.warning(f"Обнаружена ошибка (код {result.return_code}) - активируем fallback")
+                        logger.debug(f"Детали ошибки (stderr): {error_details}")
+                        if result.stdout:
+                            logger.debug(f"Stdout (первые 200 символов): {result.stdout[:200]}")
                         return True
         
         return False
@@ -1485,7 +1501,12 @@ This agent role is used for automated project tasks execution.
             # Если успешно - возвращаем результат
             if result.success:
                 if attempt > 1:
+                    # Fallback помог - но это все равно признак проблемы с основной моделью
                     logger.info(f"✅ Успешно выполнено с резервной моделью '{model}' (попытка {attempt})")
+                    logger.warning(f"⚠️ Основная модель '{primary_model}' не смогла выполнить команду, использован fallback на '{model}'")
+                    # Устанавливаем флаги для отслеживания использования fallback
+                    result.fallback_used = True
+                    result.primary_model_failed = True
                 else:
                     logger.info(f"✅ Успешно выполнено с основной моделью '{model}'")
                 return result
@@ -1618,6 +1639,14 @@ This agent role is used for automated project tasks execution.
             result_stdout = result.stdout if result.stdout else ""
             result_stderr = result.stderr if result.stderr else ""
             
+            # Логируем ошибки для диагностики
+            if not success:
+                logger.warning(f"Команда завершилась с кодом {result.returncode}")
+                if result_stderr:
+                    logger.debug(f"Stderr (первые 500 символов): {result_stderr[:500]}")
+                if result_stdout:
+                    logger.debug(f"Stdout (первые 200 символов): {result_stdout[:200]}")
+            
             # Проверяем billing error
             stderr_lower = result_stderr.lower()
             billing_error = "unpaid invoice" in stderr_lower or "pay your invoice" in stderr_lower
@@ -1726,7 +1755,12 @@ This agent role is used for automated project tasks execution.
                 if result.return_code != 0 and result.return_code != -1:
                     stderr_lower = (result.stderr or '').lower()
                     if 'unpaid invoice' not in stderr_lower and 'pay your invoice' not in stderr_lower:
+                        # Логируем детали ошибки для диагностики
+                        error_details = result.stderr[:500] if result.stderr else "(нет stderr)"
                         logger.warning(f"Обнаружена ошибка (код {result.return_code}) - активируем fallback")
+                        logger.debug(f"Детали ошибки (stderr): {error_details}")
+                        if result.stdout:
+                            logger.debug(f"Stdout (первые 200 символов): {result.stdout[:200]}")
                         return True
         
         return False
@@ -1816,6 +1850,14 @@ This agent role is used for automated project tasks execution.
             success = result.returncode == 0
             result_stdout = result.stdout if result.stdout else ""
             result_stderr = result.stderr if result.stderr else ""
+            
+            # Логируем ошибки для диагностики
+            if not success:
+                logger.warning(f"Команда завершилась с кодом {result.returncode}")
+                if result_stderr:
+                    logger.debug(f"Stderr (первые 500 символов): {result_stderr[:500]}")
+                if result_stdout:
+                    logger.debug(f"Stdout (первые 200 символов): {result_stdout[:200]}")
             
             # Проверяем billing error
             stderr_lower = result_stderr.lower()
@@ -1922,7 +1964,12 @@ This agent role is used for automated project tasks execution.
             # Если успешно - возвращаем результат
             if result.success:
                 if attempt > 1:
+                    # Fallback помог - но это все равно признак проблемы с основной моделью
                     logger.info(f"✅ Успешно выполнено с резервной моделью '{model}' (попытка {attempt})")
+                    logger.warning(f"⚠️ Основная модель '{primary_model}' не смогла выполнить команду, использован fallback на '{model}'")
+                    # Устанавливаем флаги для отслеживания использования fallback
+                    result.fallback_used = True
+                    result.primary_model_failed = True
                 else:
                     logger.info(f"✅ Успешно выполнено с основной моделью '{model}'")
                 return result
@@ -1995,7 +2042,9 @@ This agent role is used for automated project tasks execution.
             "stderr": result.stderr,
             "return_code": result.return_code,
             "cli_available": result.cli_available,
-            "error_message": result.error_message
+            "error_message": result.error_message,
+            "fallback_used": getattr(result, 'fallback_used', False),
+            "primary_model_failed": getattr(result, 'primary_model_failed', False)
         }
 
 
