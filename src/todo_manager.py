@@ -425,9 +425,95 @@ class TodoManager:
         return False
     
     def _save_todos(self) -> None:
-        """Сохранение todo в файл (базовая реализация)"""
-        # В будущем можно реализовать сохранение обратно в файл
-        pass
+        """
+        Сохранение todo в файл
+        
+        Сохраняет изменения статуса задач обратно в файл todo в соответствующем формате.
+        """
+        if not self.todo_file or not self.todo_file.exists():
+            logger.debug(f"Файл todo не найден, пропускаем сохранение")
+            return
+        
+        # Проверка прав доступа на запись
+        if not os.access(self.todo_file, os.W_OK):
+            logger.warning(f"Нет прав на запись файла todo: {self.todo_file}")
+            return
+        
+        try:
+            # Определяем формат файла
+            file_format = self._detect_file_format()
+            
+            if file_format == "yaml":
+                self._save_to_yaml()
+            elif file_format == "md":
+                self._save_to_markdown()
+            else:
+                self._save_to_text()
+            
+            logger.debug(f"Todo файл обновлен: {self.todo_file}")
+        except Exception as e:
+            logger.error(
+                f"Ошибка при сохранении todo в файл {self.todo_file}",
+                exc_info=True,
+                extra={
+                    "todo_file": str(self.todo_file),
+                    "error_type": type(e).__name__
+                }
+            )
+    
+    def _save_to_text(self) -> None:
+        """Сохранение todo в текстовый файл"""
+        if not self.todo_file:
+            return
+        
+        lines = []
+        for item in self.items:
+            indent = "  " * item.level
+            status = "[x]" if item.done else "[ ]"
+            lines.append(f"{indent}{status} {item.text}")
+        
+        content = "\n".join(lines)
+        if lines:
+            content += "\n"
+        
+        self.todo_file.write_text(content, encoding='utf-8')
+    
+    def _save_to_markdown(self) -> None:
+        """Сохранение todo в Markdown файл с чекбоксами"""
+        if not self.todo_file:
+            return
+        
+        lines = []
+        for item in self.items:
+            indent = "  " * item.level
+            checkbox = "[x]" if item.done else "[ ]"
+            lines.append(f"{indent}- {checkbox} {item.text}")
+        
+        content = "\n".join(lines)
+        if lines:
+            content += "\n"
+        
+        self.todo_file.write_text(content, encoding='utf-8')
+    
+    def _save_to_yaml(self) -> None:
+        """Сохранение todo в YAML файл"""
+        if not self.todo_file:
+            return
+        
+        tasks = []
+        for item in self.items:
+            task_data = {
+                "text": item.text,
+                "done": item.done
+            }
+            if item.level > 0:
+                task_data["level"] = item.level
+            tasks.append(task_data)
+        
+        data = {"tasks": tasks}
+        content = yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        
+        self.todo_file.write_text(content, encoding='utf-8')
     
     def get_task_hierarchy(self) -> Dict[str, Any]:
         """

@@ -205,7 +205,12 @@ class CheckpointManager:
             "end_time": None,
             "attempts": 0,
             "error_message": None,
-            "metadata": metadata or {}
+            "metadata": metadata or {},
+            "instruction_progress": {
+                "last_completed_instruction": 0,
+                "total_instructions": 0,
+                "completed_instructions": []
+            }
         }
         
         # Проверяем, не существует ли уже такая задача
@@ -258,6 +263,14 @@ class CheckpointManager:
         if result:
             task["result"] = result
         
+        # Очищаем прогресс инструкций при завершении задачи (задача полностью выполнена)
+        if "instruction_progress" in task:
+            task["instruction_progress"] = {
+                "last_completed_instruction": task.get("instruction_progress", {}).get("total_instructions", 0),
+                "total_instructions": task.get("instruction_progress", {}).get("total_instructions", 0),
+                "completed_instructions": list(range(1, task.get("instruction_progress", {}).get("total_instructions", 0) + 1))
+            }
+        
         # Очищаем current_task если это была текущая задача
         if self.checkpoint_data.get("current_task") == task_id:
             self.checkpoint_data["current_task"] = None
@@ -265,6 +278,60 @@ class CheckpointManager:
         self._save_checkpoint()
         
         logger.info(f"Задача завершена: {task_id}")
+    
+    def update_instruction_progress(self, task_id: str, instruction_num: int, total_instructions: int):
+        """
+        Обновить прогресс выполнения инструкций для задачи
+        
+        Args:
+            task_id: ID задачи
+            instruction_num: Номер выполненной инструкции (1-based)
+            total_instructions: Общее количество инструкций
+        """
+        task = self._find_task(task_id)
+        if not task:
+            logger.warning(f"Задача {task_id} не найдена в checkpoint")
+            return
+        
+        # Инициализируем instruction_progress если его нет
+        if "instruction_progress" not in task:
+            task["instruction_progress"] = {
+                "last_completed_instruction": 0,
+                "total_instructions": 0,
+                "completed_instructions": []
+            }
+        
+        progress = task["instruction_progress"]
+        progress["last_completed_instruction"] = instruction_num
+        progress["total_instructions"] = total_instructions
+        
+        # Добавляем номер инструкции в список выполненных, если его там еще нет
+        if instruction_num not in progress["completed_instructions"]:
+            progress["completed_instructions"].append(instruction_num)
+            progress["completed_instructions"].sort()
+        
+        self._save_checkpoint(create_backup=False)
+        logger.debug(f"Прогресс инструкций обновлен для задачи {task_id}: {instruction_num}/{total_instructions}")
+    
+    def get_instruction_progress(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Получить прогресс выполнения инструкций для задачи
+        
+        Args:
+            task_id: ID задачи
+        
+        Returns:
+            Словарь с прогрессом или None если задача не найдена
+        """
+        task = self._find_task(task_id)
+        if not task:
+            return None
+        
+        return task.get("instruction_progress", {
+            "last_completed_instruction": 0,
+            "total_instructions": 0,
+            "completed_instructions": []
+        })
     
     def mark_task_failed(self, task_id: str, error_message: str):
         """
@@ -438,6 +505,9 @@ class CheckpointManager:
     def reset_interrupted_task(self):
         """
         Сбросить состояние прерванной задачи для повторного выполнения
+        
+        ВАЖНО: НЕ сбрасывает прогресс инструкций - он сохраняется для восстановления
+        при следующей попытке выполнения задачи
         """
         current_task = self.get_current_task()
         if current_task:
@@ -447,6 +517,10 @@ class CheckpointManager:
             # Возвращаем задачу в состояние PENDING
             current_task["state"] = TaskState.PENDING.value
             current_task["end_time"] = None
+            
+            # ВАЖНО: НЕ сбрасываем прогресс инструкций - он сохраняется для восстановления
+            # При следующей попытке выполнения задачи с тем же текстом, прогресс будет восстановлен
+            # и выполнение продолжится с последней успешно выполненной инструкции + 1
             
             self.checkpoint_data["current_task"] = None
             self._save_checkpoint()

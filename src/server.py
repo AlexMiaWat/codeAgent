@@ -37,6 +37,7 @@ from .cursor_file_interface import CursorFileInterface
 from .task_logger import TaskLogger, ServerLogger, TaskPhase
 from .session_tracker import SessionTracker
 from .checkpoint_manager import CheckpointManager
+from .git_utils import auto_push_after_commit
 
 
 # Настройка кодировки для Windows консоли
@@ -176,6 +177,7 @@ class CodeAgentServer:
         self.reload_on_py_changes = server_config.get('reload_on_py_changes', True)
         self.file_observer = None
         self._should_reload = False
+        self._reload_after_instruction = False  # Флаг для перезапуска после текущей инструкции
         self._reload_lock = threading.Lock()
         
         # Счетчик перезапусков
@@ -200,6 +202,10 @@ class CodeAgentServer:
         self._last_cursor_error = None  # Последняя ошибка Cursor
         self._cursor_error_delay = 0  # Дополнительная задержка при ошибках (секунды)
         self._max_cursor_errors = self.MAX_CURSOR_ERRORS  # Максимальное количество ошибок перед перезапуском
+        
+        # Отслеживание выполнения ревизии
+        self._revision_done = False  # Флаг выполнения ревизии в текущей сессии
+        self._revision_lock = threading.Lock()
         
         # Инициализация Cursor интерфейсов
         cursor_config = self.config.get('cursor', {})
@@ -238,6 +244,9 @@ class CodeAgentServer:
         
         # Проверяем, нужно ли восстановление после сбоя
         self._check_recovery_needed()
+        
+        # Синхронизируем TODO задачи с checkpoint (помечаем выполненные задачи)
+        self._sync_todos_with_checkpoint()
         
         # Логируем инициализацию
         self.server_logger.log_initialization({
@@ -400,6 +409,48 @@ class CodeAgentServer:
             logger.info(f"Статистика: выполнено {stats['completed']} задач, "
                        f"ошибок {stats['failed']}, итераций {stats['iteration_count']}")
     
+    def _sync_todos_with_checkpoint(self):
+        """
+        Синхронизация TODO задач с checkpoint - помечает задачи как выполненные в TODO файле,
+        если они помечены как completed в checkpoint
+        """
+        try:
+            # Получаем все задачи из TODO
+            all_todo_items = self.todo_manager.get_all_tasks()
+            
+            # Получаем все завершенные задачи из checkpoint
+            completed_tasks_in_checkpoint = [
+                task for task in self.checkpoint_manager.checkpoint_data.get("tasks", [])
+                if task.get("state") == "completed"
+            ]
+            
+            # Создаем словарь завершенных задач для быстрого поиска
+            completed_task_texts = set()
+            for task in completed_tasks_in_checkpoint:
+                task_text = task.get("task_text", "")
+                if task_text:
+                    completed_task_texts.add(task_text)
+            
+            # Синхронизируем: помечаем задачи как done в TODO, если они completed в checkpoint
+            synced_count = 0
+            for todo_item in all_todo_items:
+                if not todo_item.done and todo_item.text in completed_task_texts:
+                    # Задача выполнена в checkpoint, но не отмечена в TODO файле
+                    todo_item.done = True
+                    synced_count += 1
+                    logger.debug(f"Синхронизация: задача '{todo_item.text}' помечена как выполненная в TODO")
+            
+            # Сохраняем изменения в TODO файл
+            if synced_count > 0:
+                self.todo_manager._save_todos()
+                logger.info(f"Синхронизация TODO с checkpoint: {synced_count} задач помечено как выполненные")
+            else:
+                logger.debug("Синхронизация TODO с checkpoint: изменений не требуется")
+                
+        except Exception as e:
+            logger.error(f"Ошибка при синхронизации TODO с checkpoint: {e}", exc_info=True)
+            # Не прерываем инициализацию из-за ошибки синхронизации
+    
     def _init_cursor_cli(self) -> Optional[CursorCLIInterface]:
         """
         Инициализация Cursor CLI интерфейса
@@ -534,6 +585,54 @@ class CodeAgentServer:
         ]
         return any(keyword in error_lower for keyword in critical_keywords)
     
+    def _is_unexpected_cursor_error(self, error_message: str) -> bool:
+        """
+        Проверка, является ли ошибка непредвиденной (требует перезапуска Docker)
+        
+        Непредвиденные ошибки - это ошибки, которые могут быть исправлены перезапуском Docker,
+        например, когда Cursor CLI недоступен или возвращает неизвестную ошибку.
+        
+        Args:
+            error_message: Сообщение об ошибке
+            
+        Returns:
+            True если ошибка непредвиденная и может быть исправлена перезапуском Docker
+        """
+        if not error_message:
+            return False
+        
+        error_lower = error_message.lower()
+        unexpected_keywords = [
+            "неизвестная ошибка",
+            "unknown error",
+            "cursor cli недоступен",
+            "cursor cli unavailable",
+            "cli недоступен",
+            "cli unavailable"
+        ]
+        
+        # Проверяем на ключевые слова
+        if any(keyword in error_lower for keyword in unexpected_keywords):
+            return True
+        
+        # Проверяем на ошибки вида "CLI вернул код X" (кроме специальных кодов)
+        # Коды 137 (SIGKILL) и 143 (SIGTERM) обрабатываются специально и не требуют перезапуска
+        import re
+        cli_code_pattern = r"cli вернул код (\d+)"
+        match = re.search(cli_code_pattern, error_lower)
+        if match:
+            return_code = int(match.group(1))
+            logger.debug(f"Найдена ошибка 'CLI вернул код {return_code}' в сообщении: {error_message}")
+            # Игнорируем специальные коды, которые обрабатываются отдельно
+            if return_code not in [137, 143]:
+                # Коды ошибок (не 0) могут указывать на проблемы с контейнером
+                logger.debug(f"Код возврата {return_code} не является специальным, считаем ошибку непредвиденной")
+                return True
+            else:
+                logger.debug(f"Код возврата {return_code} является специальным (SIGKILL/SIGTERM), не считаем непредвиденной")
+        
+        return False
+    
     def _handle_cursor_error(self, error_message: str, task_logger: TaskLogger) -> bool:
         """
         Обработка ошибки Cursor с учетом повторяющихся ошибок
@@ -547,6 +646,10 @@ class CodeAgentServer:
         """
         # Проверяем, является ли ошибка критической
         is_critical = self._is_critical_cursor_error(error_message)
+        
+        # Проверяем, является ли ошибка непредвиденной (требует немедленного перезапуска Docker)
+        is_unexpected = self._is_unexpected_cursor_error(error_message)
+        logger.info(f"Обработка ошибки Cursor: error_message='{error_message}', is_critical={is_critical}, is_unexpected={is_unexpected}")
         
         with self._cursor_error_lock:
             # Проверяем, та же ли ошибка (сравниваем по первым 100 символам для группировки похожих ошибок)
@@ -569,6 +672,71 @@ class CodeAgentServer:
                 # Останавливаем сервер немедленно для критических ошибок
                 self._stop_server_due_to_cursor_errors(error_message)
                 return False
+            
+            # Для непредвиденных ошибок - перезапускаем Docker при первой или второй ошибке (если используется Docker)
+            # Это позволяет перезапустить Docker даже если первая ошибка была другой
+            logger.info(f"Проверка непредвиденной ошибки: is_unexpected={is_unexpected}, счетчик={self._cursor_error_count}")
+            if is_unexpected and self._cursor_error_count <= 2:
+                logger.info(f"Обнаружена непредвиденная ошибка (счетчик: {self._cursor_error_count}), проверяем использование Docker...")
+                # Проверяем, используется ли Docker
+                if self.cursor_cli and hasattr(self.cursor_cli, 'cli_command'):
+                    logger.debug(f"Cursor CLI доступен, cli_command: {self.cursor_cli.cli_command}")
+                    if self.cursor_cli.cli_command == "docker-compose-agent":
+                        logger.warning("=" * 80)
+                        logger.warning(f"НЕПРЕДВИДЕННАЯ ОШИБКА CURSOR (#{self._cursor_error_count}): {error_message}")
+                        logger.warning("Перезапускаем Docker контейнер из-за непредвиденной ошибки...")
+                        logger.warning("=" * 80)
+                        task_logger.log_warning(f"Непредвиденная ошибка Cursor - перезапуск Docker: {error_message}")
+                        
+                        # Сначала проверяем, установлен ли агент в контейнере
+                        container_name = "cursor-agent-life"
+                        logger.info(f"Проверка установки Cursor Agent в контейнере {container_name}...")
+                        import subprocess
+                        agent_check = subprocess.run(
+                            ["docker", "exec", container_name, "/root/.local/bin/agent", "--version"],
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
+                        
+                        if agent_check.returncode != 0:
+                            logger.warning("Cursor Agent не найден в контейнере, пытаемся переустановить...")
+                            self._safe_print("Переустановка Cursor Agent в контейнере...")
+                            reinstall_result = subprocess.run(
+                                ["docker", "exec", container_name, "bash", "-c", "curl https://cursor.com/install -fsS | bash"],
+                                capture_output=True,
+                                text=True,
+                                timeout=60
+                            )
+                            if reinstall_result.returncode == 0:
+                                logger.info("✓ Cursor Agent переустановлен")
+                                self._safe_print("✓ Cursor Agent переустановлен")
+                            else:
+                                logger.warning(f"Не удалось переустановить агент: {reinstall_result.stderr[:200]}")
+                        
+                        # Перезапускаем Docker контейнер и очищаем диалоги
+                        self._safe_print("Попытка перезапуска Docker контейнера из-за непредвиденной ошибки...")
+                        if self._restart_cursor_environment():
+                            success_msg = "Docker контейнер перезапущен после непредвиденной ошибки. Сбрасываем счетчик ошибок."
+                            self._safe_print(success_msg)
+                            logger.info(success_msg)
+                            task_logger.log_info("Docker контейнер перезапущен после непредвиденной ошибки")
+                            # Сбрасываем счетчик после перезапуска
+                            self._cursor_error_count = 0
+                            self._cursor_error_delay = 0
+                            self._last_cursor_error = None
+                            return True
+                        else:
+                            logger.warning("Перезапуск Docker не удался, продолжаем с обычной обработкой ошибки")
+                            # Продолжаем с обычной обработкой ошибки
+                    else:
+                        logger.warning(f"Docker не используется (cli_command='{self.cursor_cli.cli_command}'), пропускаем перезапуск для непредвиденной ошибки")
+                else:
+                    logger.warning("Cursor CLI недоступен или не имеет cli_command, пропускаем перезапуск для непредвиденной ошибки")
+            elif is_unexpected:
+                logger.debug(f"Непредвиденная ошибка обнаружена, но счетчик ошибок ({self._cursor_error_count}) > 2, пропускаем перезапуск")
+            else:
+                logger.debug(f"Ошибка не является непредвиденной (is_unexpected=False), обычная обработка")
             
             # Увеличиваем задержку на +30 секунд при каждой повторяющейся ошибке
             # При первой ошибке задержка уже установлена в 30 секунд выше
@@ -687,6 +855,43 @@ class CodeAgentServer:
                             
                             if check_result.returncode == 0:
                                 logger.info("  ✓ Контейнер работает корректно")
+                                
+                                # Проверяем, установлен ли Cursor Agent
+                                logger.info("  Проверка установки Cursor Agent...")
+                                agent_check = subprocess.run(
+                                    ["docker", "exec", container_name, "/root/.local/bin/agent", "--version"],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=10
+                                )
+                                
+                                if agent_check.returncode == 0:
+                                    agent_version = agent_check.stdout.strip()[:50] if agent_check.stdout else "unknown"
+                                    logger.info(f"  ✓ Cursor Agent установлен: {agent_version}")
+                                else:
+                                    logger.warning("  ⚠ Cursor Agent не найден, пытаемся переустановить...")
+                                    reinstall_result = subprocess.run(
+                                        ["docker", "exec", container_name, "bash", "-c", "curl https://cursor.com/install -fsS | bash"],
+                                        capture_output=True,
+                                        text=True,
+                                        timeout=60
+                                    )
+                                    if reinstall_result.returncode == 0:
+                                        logger.info("  ✓ Cursor Agent переустановлен")
+                                        # Проверяем снова
+                                        verify_result = subprocess.run(
+                                            ["docker", "exec", container_name, "/root/.local/bin/agent", "--version"],
+                                            capture_output=True,
+                                            text=True,
+                                            timeout=10
+                                        )
+                                        if verify_result.returncode == 0:
+                                            logger.info("  ✓ Cursor Agent подтвержден после переустановки")
+                                        else:
+                                            logger.warning("  ⚠ Cursor Agent все еще не работает после переустановки")
+                                    else:
+                                        logger.error(f"  ✗ Не удалось переустановить Cursor Agent: {reinstall_result.stderr[:200]}")
+                                
                                 logger.info("=" * 80)
                                 logger.info("ПЕРЕЗАПУСК УСПЕШЕН")
                                 logger.info("=" * 80)
@@ -1522,6 +1727,80 @@ class CodeAgentServer:
         logger.info(f"Найдено {len(all_templates)} инструкций для последовательного выполнения")
         task_logger.log_info(f"Последовательное выполнение {len(all_templates)} инструкций")
         
+        # Проверяем, есть ли сохраненный прогресс выполнения инструкций для этой задачи
+        # Сначала проверяем текущий task_id, затем ищем последнюю попытку с тем же текстом
+        instruction_progress = self.checkpoint_manager.get_instruction_progress(task_id)
+        start_from_instruction = 1
+        
+        logger.debug(f"Проверка прогресса инструкций для задачи {task_id}: {instruction_progress}")
+        
+        # Если для текущего task_id нет прогресса, ищем последнюю попытку с тем же текстом задачи
+        if not instruction_progress or instruction_progress.get("last_completed_instruction", 0) == 0:
+            # Ищем последнюю попытку задачи с тем же текстом (исключая текущий task_id)
+            matching_tasks = [
+                task for task in self.checkpoint_manager.checkpoint_data.get("tasks", [])
+                if task.get("task_text") == todo_item.text and task.get("task_id") != task_id
+            ]
+            
+            logger.debug(f"Найдено {len(matching_tasks)} предыдущих попыток задачи '{todo_item.text[:50]}...'")
+            
+            if matching_tasks:
+                # Находим последнюю задачу по времени начала (start_time)
+                last_task = None
+                last_time = None
+                
+                for task in matching_tasks:
+                    start_time_str = task.get("start_time")
+                    if start_time_str:
+                        try:
+                            start_time = datetime.fromisoformat(start_time_str)
+                            if last_time is None or start_time > last_time:
+                                last_time = start_time
+                                last_task = task
+                        except (ValueError, TypeError):
+                            pass
+                
+                # Если не нашли задачу с start_time, берем последнюю в списке
+                if last_task is None and matching_tasks:
+                    last_task = matching_tasks[-1]
+                    logger.debug(f"Не найдена задача с start_time, берем последнюю в списке: {last_task.get('task_id')}")
+                
+                # Если нашли последнюю задачу, проверяем ее прогресс
+                if last_task:
+                    last_progress = last_task.get("instruction_progress", {})
+                    last_completed = last_progress.get("last_completed_instruction", 0) if last_progress else 0
+                    last_state = last_task.get("state", "unknown")
+                    logger.info(f"Последняя попытка: task_id={last_task.get('task_id')}, state={last_state}, last_completed={last_completed}, total={last_progress.get('total_instructions', 0) if last_progress else 0}")
+                    
+                    if last_progress and last_completed > 0:
+                        instruction_progress = last_progress
+                        logger.info(f"✓ Найден прогресс из предыдущей попытки задачи (task_id: {last_task.get('task_id')}, state: {last_state}, последняя инструкция: {last_completed})")
+                    else:
+                        logger.debug(f"У предыдущей попытки нет прогресса инструкций или прогресс пустой")
+        
+        if instruction_progress and instruction_progress.get("last_completed_instruction", 0) > 0:
+            last_completed = instruction_progress.get("last_completed_instruction", 0)
+            total_saved = instruction_progress.get("total_instructions", 0)
+            
+            logger.info(f"Восстановление прогресса: последняя выполненная инструкция={last_completed}, всего инструкций={total_saved}, текущее количество={len(all_templates)}")
+            
+            # Если количество инструкций совпадает, продолжаем с последней выполненной + 1
+            if total_saved == len(all_templates) and last_completed < len(all_templates):
+                start_from_instruction = last_completed + 1
+                logger.info(f"✓ Восстановление прогресса: продолжаем с инструкции {start_from_instruction}/{len(all_templates)} (последняя выполненная: {last_completed})")
+                task_logger.log_info(f"Восстановление прогресса: продолжаем с инструкции {start_from_instruction}")
+            elif total_saved != len(all_templates):
+                # Количество инструкций изменилось - начинаем сначала
+                logger.warning(f"Количество инструкций изменилось ({total_saved} -> {len(all_templates)}), начинаем сначала")
+                task_logger.log_warning("Количество инструкций изменилось, начинаем сначала")
+                start_from_instruction = 1
+            else:
+                # Все инструкции уже выполнены
+                logger.info(f"Все инструкции уже выполнены ({last_completed}/{total_saved}), начинаем сначала")
+                start_from_instruction = 1
+        else:
+            logger.debug(f"Прогресс инструкций не найден или пустой, начинаем с инструкции 1")
+        
         # Проверяем доступность CLI
         if not self.use_cursor_cli:
             logger.error(f"Cursor CLI недоступен для задачи {task_id}")
@@ -1550,7 +1829,14 @@ class CodeAgentServer:
         critical_instructions = min(3, len(all_templates))  # Минимум 3 инструкции для завершения задачи
         
         # Выполняем все инструкции последовательно (1, 2, 3, ...)
+        # Начинаем с start_from_instruction если есть сохраненный прогресс
         for instruction_num, template in enumerate(all_templates, start=1):
+            # Пропускаем уже выполненные инструкции
+            if instruction_num < start_from_instruction:
+                logger.info(f"Пропуск инструкции {instruction_num}/{len(all_templates)} (уже выполнена)")
+                task_logger.log_info(f"Пропуск инструкции {instruction_num} (уже выполнена)")
+                successful_instructions += 1  # Учитываем уже выполненную инструкцию
+                continue
             # Проверяем запрос на остановку перед каждой инструкцией
             with self._stop_lock:
                 if self._should_stop:
@@ -1686,6 +1972,18 @@ class CodeAgentServer:
                         logger.warning("Получен запрос на остановку после задержки из-за ошибок Cursor")
                         return False
                 
+                # Проверяем необходимость перезапуска после завершения текущей инструкции (с ошибкой)
+                with self._reload_lock:
+                    if self._reload_after_instruction:
+                        logger.info(f"Инструкция {instruction_num} завершена (с ошибкой) - инициируем перезапуск из-за изменения кода")
+                        task_logger.log_warning("Перезапуск после завершения инструкции из-за изменения кода")
+                        self.status_manager.update_task_status(
+                            task_name=todo_item.text,
+                            status="Прервано",
+                            details=f"Перезапуск после инструкции {instruction_num} из-за изменения кода"
+                        )
+                        raise ServerReloadException("Перезапуск из-за изменения кода после завершения инструкции")
+                
                 # Продолжаем со следующей инструкцией (некоторые могут быть опциональными)
                 continue
             else:
@@ -1784,6 +2082,19 @@ class CodeAgentServer:
                     logger.warning(f"Файл результата для инструкции {instruction_num} не получен: {wait_result.get('error')}")
                     task_logger.log_warning(f"Файл результата не получен для инструкции {instruction_num}")
                     # Инструкция не считается успешной если файл результата не получен
+                    
+                    # Проверяем необходимость перезапуска после завершения текущей инструкции
+                    with self._reload_lock:
+                        if self._reload_after_instruction:
+                            logger.info(f"Инструкция {instruction_num} завершена (с ошибкой) - инициируем перезапуск из-за изменения кода")
+                            task_logger.log_warning("Перезапуск после завершения инструкции из-за изменения кода")
+                            self.status_manager.update_task_status(
+                                task_name=todo_item.text,
+                                status="Прервано",
+                                details=f"Перезапуск после инструкции {instruction_num} из-за изменения кода"
+                            )
+                            raise ServerReloadException("Перезапуск из-за изменения кода после завершения инструкции")
+                    
                     continue
             else:
                 # Если wait_for_file не указан, считаем инструкцию успешной если команда выполнена успешно
@@ -1792,6 +2103,57 @@ class CodeAgentServer:
             if instruction_successful:
                 successful_instructions += 1
                 logger.info(f"Инструкция {instruction_num}/{len(all_templates)} выполнена успешно")
+                
+                # Сохраняем прогресс выполнения инструкций в checkpoint
+                self.checkpoint_manager.update_instruction_progress(
+                    task_id=task_id,
+                    instruction_num=instruction_num,
+                    total_instructions=len(all_templates)
+                )
+                
+                # Автоматический push после успешного выполнения инструкции с контрольной фразой "Коммит выполнен!"
+                # Это работает для инструкции 8 (default) и инструкции 6 (revision)
+                if control_phrase and control_phrase.strip() == "Коммит выполнен!":
+                    logger.info(f"Инструкция {instruction_num} с коммитом выполнена успешно - выполняем автоматический push из сервера")
+                    task_logger.log_info("Автоматический push после успешного коммита")
+                    
+                    try:
+                        push_result = auto_push_after_commit(
+                            working_dir=Path(self.project_dir),
+                            remote="origin",
+                            timeout=60
+                        )
+                        
+                        if push_result.get("success"):
+                            logger.info(f"✅ Автоматический push выполнен успешно: {push_result.get('branch')} -> origin/{push_result.get('branch')}")
+                            task_logger.log_info(f"Push выполнен: {push_result.get('branch')}")
+                            
+                            commit_info = push_result.get("commit_info")
+                            if commit_info:
+                                logger.info(f"Коммит: {commit_info.get('hash_short')} - {commit_info.get('message')}")
+                        else:
+                            error_msg = push_result.get("error", "Неизвестная ошибка")
+                            logger.warning(f"⚠️ Автоматический push не удался: {error_msg}")
+                            task_logger.log_warning(f"Push не удался: {error_msg}")
+                            
+                            # Push не удался, но это не критично - коммит уже создан
+                            # Логируем предупреждение, но не прерываем выполнение задачи
+                    except Exception as e:
+                        logger.error(f"Ошибка при автоматическом push: {e}", exc_info=True)
+                        task_logger.log_error("Ошибка при автоматическом push", e)
+                        # Не прерываем выполнение задачи из-за ошибки push
+            
+            # Проверяем необходимость перезапуска после завершения текущей инструкции
+            with self._reload_lock:
+                if self._reload_after_instruction:
+                    logger.info(f"Инструкция {instruction_num} завершена - инициируем перезапуск из-за изменения кода")
+                    task_logger.log_warning("Перезапуск после завершения инструкции из-за изменения кода")
+                    self.status_manager.update_task_status(
+                        task_name=todo_item.text,
+                        status="Прервано",
+                        details=f"Перезапуск после инструкции {instruction_num} из-за изменения кода"
+                    )
+                    raise ServerReloadException("Перезапуск из-за изменения кода после завершения инструкции")
         
         # Фаза: Завершение - проверяем, достаточно ли инструкций выполнено
         task_logger.set_phase(TaskPhase.COMPLETION)
@@ -1883,6 +2245,128 @@ class CodeAgentServer:
         task_logger.set_phase(TaskPhase.COMPLETION)
         logger.info(f"Задача выполнена через CrewAI: {todo_item.text}")
         return True
+    
+    def _execute_revision(self) -> bool:
+        """
+        Выполнение ревизии проекта через Cursor
+        
+        Returns:
+            True если ревизия успешна, False иначе
+        """
+        logger.info("=" * 80)
+        logger.info("НАЧАЛО РЕВИЗИИ ПРОЕКТА")
+        logger.info("=" * 80)
+        
+        # Получаем инструкции для ревизии
+        instructions = self.config.get('instructions', {})
+        revision_instructions = instructions.get('revision', [])
+        
+        if not revision_instructions:
+            logger.error("Инструкции для ревизии не найдены в конфигурации")
+            return False
+        
+        # Создаем специальный task_id для ревизии
+        revision_task_id = f"revision_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # Создаем TaskLogger для ревизии
+        task_logger = TaskLogger(
+            task_id=revision_task_id,
+            task_name="Ревизия проекта",
+            project_dir=self.project_dir
+        )
+        
+        try:
+            # Получаем все инструкции ревизии и сортируем по instruction_id
+            valid_instructions = [
+                instr for instr in revision_instructions
+                if isinstance(instr, dict) and 'instruction_id' in instr
+            ]
+            valid_instructions.sort(key=lambda x: x.get('instruction_id', 999))
+            
+            logger.info(f"Найдено {len(valid_instructions)} инструкций для ревизии")
+            
+            successful_instructions = 0
+            critical_instructions = min(3, len(valid_instructions))  # Минимум 3 инструкции для завершения
+            
+            for instruction_num, template in enumerate(valid_instructions, start=1):
+                instruction_id = template.get('instruction_id', instruction_num)
+                instruction_name = template.get('name', f'Инструкция {instruction_num}')
+                instruction_text = template.get('template', '')
+                wait_for_file = template.get('wait_for_file', '')
+                control_phrase = template.get('control_phrase', '')
+                timeout = template.get('timeout', 600)
+                
+                # Заменяем плейсхолдеры
+                instruction_text = instruction_text.replace('{task_id}', revision_task_id)
+                if wait_for_file:
+                    wait_for_file = wait_for_file.replace('{task_id}', revision_task_id)
+                
+                logger.info(f"[{instruction_num}/{len(valid_instructions)}] Выполнение ревизии: {instruction_name}")
+                task_logger.log_info(f"Ревизия {instruction_num}/{len(valid_instructions)}: {instruction_name}")
+                
+                # Выполняем инструкцию через Cursor
+                result = self._execute_cursor_instruction_with_retry(
+                    instruction=instruction_text,
+                    task_id=revision_task_id,
+                    timeout=timeout,
+                    task_logger=task_logger,
+                    instruction_num=instruction_num
+                )
+                
+                if not result.get("success"):
+                    logger.warning(f"Инструкция ревизии {instruction_num} завершилась с ошибкой")
+                    continue
+                
+                # Ожидаем результат, если указан wait_for_file
+                if wait_for_file:
+                    wait_result = self._wait_for_result_file(
+                        task_id=revision_task_id,
+                        wait_for_file=wait_for_file,
+                        control_phrase=control_phrase,
+                        timeout=timeout
+                    )
+                    
+                    if wait_result and wait_result.get("success"):
+                        successful_instructions += 1
+                        logger.info(f"Инструкция ревизии {instruction_num} выполнена успешно")
+                        
+                        # Автоматический push после коммита в ревизии
+                        if control_phrase and control_phrase.strip() == "Коммит выполнен!":
+                            logger.info("Ревизия: коммит выполнен - выполняем автоматический push из сервера")
+                            try:
+                                push_result = auto_push_after_commit(
+                                    working_dir=Path(self.project_dir),
+                                    remote="origin",
+                                    timeout=60
+                                )
+                                
+                                if push_result.get("success"):
+                                    logger.info(f"✅ Автоматический push выполнен успешно: {push_result.get('branch')} -> origin/{push_result.get('branch')}")
+                                else:
+                                    error_msg = push_result.get("error", "Неизвестная ошибка")
+                                    logger.warning(f"⚠️ Автоматический push не удался: {error_msg}")
+                            except Exception as e:
+                                logger.error(f"Ошибка при автоматическом push: {e}", exc_info=True)
+                    else:
+                        logger.warning(f"Файл результата для инструкции ревизии {instruction_num} не получен")
+                else:
+                    # Если wait_for_file не указан, считаем успешным если команда выполнена
+                    successful_instructions += 1
+            
+            if successful_instructions >= critical_instructions:
+                logger.info("=" * 80)
+                logger.info(f"РЕВИЗИЯ ЗАВЕРШЕНА: выполнено {successful_instructions}/{len(valid_instructions)} инструкций")
+                logger.info("=" * 80)
+                task_logger.set_phase(TaskPhase.COMPLETION)
+                return True
+            else:
+                logger.warning(f"Ревизия не завершена полностью: выполнено только {successful_instructions}/{len(valid_instructions)} инструкций")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Ошибка при выполнении ревизии: {e}", exc_info=True)
+            task_logger.log_error("Ошибка при выполнении ревизии", e)
+            return False
     
     def _generate_new_todo_list(self) -> bool:
         """
@@ -2146,27 +2630,78 @@ class CodeAgentServer:
                 level=2
             )
             
-            # Пытаемся сгенерировать новый TODO лист
-            if self.auto_todo_enabled:
-                logger.info("Попытка генерации нового TODO листа...")
-                generation_success = self._generate_new_todo_list()
+            # ВАЖНО: Сначала выполняем ревизию проекта
+            # Проверяем, была ли уже выполнена ревизия в этой сессии
+            with self._revision_lock:
+                revision_done = self._revision_done
+            
+            # Инициализируем pending_tasks для случая, когда ревизия уже выполнена
+            pending_tasks_after_revision = []
+            
+            if not revision_done:
+                logger.info("=" * 80)
+                logger.info("ВЫПОЛНЕНИЕ РЕВИЗИИ ПРОЕКТА (все задачи выполнены)")
+                logger.info("=" * 80)
                 
-                if generation_success:
-                    logger.info("Новый TODO лист успешно сгенерирован, перезагрузка задач")
-                    # Перезагружаем задачи
-                    pending_tasks = self.todo_manager.get_pending_tasks()
+                revision_success = self._execute_revision()
+                
+                if revision_success:
+                    # Отмечаем, что ревизия выполнена
+                    with self._revision_lock:
+                        self._revision_done = True
+                    logger.info("Ревизия проекта успешно завершена")
                     
-                    if pending_tasks:
-                        logger.info(f"Загружено {len(pending_tasks)} новых задач")
+                    # После ревизии перезагружаем задачи (может появиться новый todo)
+                    self.todo_manager = TodoManager(self.project_dir, todo_format=self.config.get('project.todo_format', 'txt'))
+                    pending_tasks_after_revision = self.todo_manager.get_pending_tasks()
+                    
+                    if pending_tasks_after_revision:
+                        logger.info(f"После ревизии найдено {len(pending_tasks_after_revision)} новых задач, продолжаем выполнение")
                         # Продолжаем выполнение с новыми задачами
                     else:
-                        logger.warning("После генерации TODO задачи не найдены")
+                        logger.info("После ревизии задач не найдено, переходим к генерации нового TODO")
+                        # Нет задач - переходим к empty_todo
+                else:
+                    logger.warning("Ревизия не завершена полностью, но продолжаем работу")
+                    # Продолжаем даже если ревизия не завершена полностью
+                    # Перезагружаем задачи на всякий случай
+                    self.todo_manager = TodoManager(self.project_dir, todo_format=self.config.get('project.todo_format', 'txt'))
+                    pending_tasks_after_revision = self.todo_manager.get_pending_tasks()
+            else:
+                logger.info("Ревизия уже выполнена в этой сессии, пропускаем")
+                # Перезагружаем задачи на всякий случай
+                self.todo_manager = TodoManager(self.project_dir, todo_format=self.config.get('project.todo_format', 'txt'))
+                pending_tasks_after_revision = self.todo_manager.get_pending_tasks()
+            
+            # Если после ревизии все еще нет задач, используем empty_todo для генерации нового TODO
+            if not pending_tasks_after_revision:
+                if self.auto_todo_enabled:
+                    logger.info("=" * 80)
+                    logger.info("ГЕНЕРАЦИЯ НОВОГО TODO ЛИСТА (все todo выполнены и ревизия завершена)")
+                    logger.info("=" * 80)
+                    generation_success = self._generate_new_todo_list()
+                    
+                    if generation_success:
+                        logger.info("Новый TODO лист успешно сгенерирован, перезагрузка задач")
+                        # Перезагружаем задачи
+                        self.todo_manager = TodoManager(self.project_dir, todo_format=self.config.get('project.todo_format', 'txt'))
+                        pending_tasks_after_revision = self.todo_manager.get_pending_tasks()
+                        
+                        if pending_tasks_after_revision:
+                            logger.info(f"Загружено {len(pending_tasks_after_revision)} новых задач")
+                            # Продолжаем выполнение с новыми задачами
+                            pending_tasks = pending_tasks_after_revision
+                        else:
+                            logger.warning("После генерации TODO задачи не найдены")
+                            return False
+                    else:
+                        logger.info("Генерация TODO не выполнена (лимит или отключена)")
                         return False
                 else:
-                    logger.info("Генерация TODO не выполнена (лимит или отключена)")
-                    return False
+                    return False  # Нет задач для выполнения
             else:
-                return False  # Нет задач для выполнения
+                # Есть задачи после ревизии, продолжаем выполнение
+                pending_tasks = pending_tasks_after_revision
         
         # Логируем начало итерации
         self.server_logger.log_iteration_start(iteration, len(pending_tasks))
@@ -2694,10 +3229,11 @@ class CodeAgentServer:
                     task_in_progress = self.server._task_in_progress
                 
                 if task_in_progress:
-                    # Если задача выполняется, откладываем перезапуск
-                    logger.info(f"Обнаружено изменение кода во время выполнения задачи - перезапуск будет выполнен после завершения задачи")
+                    # Если задача выполняется, откладываем перезапуск до завершения текущей инструкции
+                    logger.info(f"Обнаружено изменение кода во время выполнения задачи - перезапуск будет выполнен после завершения текущей инструкции")
                     with self.server._reload_lock:
                         self.server._should_reload = True
+                        self.server._reload_after_instruction = True
                 else:
                     # Если задачи нет, перезапускаем немедленно
                     with self.server._reload_lock:
@@ -2751,10 +3287,11 @@ class CodeAgentServer:
                 # Проверяем, выполняется ли сейчас задача
                 with self._task_in_progress_lock:
                     if self._task_in_progress:
-                        # Задача выполняется - откладываем перезапуск
+                        # Задача выполняется - перезапуск будет выполнен после завершения текущей инструкции
+                        # (проверка _reload_after_instruction происходит после завершения инструкции)
                         logger.warning("=" * 80)
                         logger.warning("ПЕРЕЗАПУСК ОТЛОЖЕН - ВЫПОЛНЯЕТСЯ ЗАДАЧА")
-                        logger.warning("Перезапуск произойдет после завершения текущей задачи")
+                        logger.warning("Перезапуск произойдет после завершения текущей инструкции")
                         logger.warning("=" * 80)
                         return False
                 
@@ -2779,6 +3316,7 @@ class CodeAgentServer:
                 logger.warning("=" * 80)
                 
                 self._should_reload = False
+                self._reload_after_instruction = False
                 return True
             return False
     
