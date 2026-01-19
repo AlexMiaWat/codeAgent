@@ -243,6 +243,10 @@ def main():
     # Настраиваем логирование ПОСЛЕ очистки логов
     _setup_logging()
     
+    # Импортируем logger после настройки логирования
+    import logging
+    logger = logging.getLogger(__name__)
+    
     # Загружаем конфигурацию для получения порта и настроек перезапуска
     from src.config_loader import ConfigLoader
     config = ConfigLoader("config/config.yaml")
@@ -284,7 +288,18 @@ def main():
             print("\nОстановка сервера...")
             break
         except Exception as e:
+            # Детальное логирование критических ошибок
+            logger.error(
+                "Критическая ошибка при работе сервера",
+                exc_info=True,
+                extra={
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "context": "main_loop"
+                }
+            )
             print(f"Критическая ошибка: {e}")
+            print("Подробности в логах. Проверьте logs/codeagent.log")
             import traceback
             traceback.print_exc()
             break

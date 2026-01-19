@@ -111,9 +111,13 @@ def start_server(server_id: int) -> Optional[subprocess.Popen]:
             if env_file.exists():
                 with open(env_file, 'r', encoding='utf-8') as f:
                     for line in f:
+                        line = line.strip()
                         if line.startswith('PROJECT_DIR='):
-                            env['PROJECT_DIR'] = line.split('=', 1)[1].strip().strip('"').strip("'")
-                            break
+                            project_dir = line.split('=', 1)[1].strip().strip('"').strip("'")
+                            # Проверяем, что путь существует
+                            if Path(project_dir).exists():
+                                env['PROJECT_DIR'] = project_dir
+                                break
         
         print(f"[Сервер {server_id}] Запуск сервера...")
         process = subprocess.Popen(
@@ -137,7 +141,7 @@ def wait_for_server(port: int, max_wait: int = 60) -> bool:
     """Ждать запуска сервера на порту"""
     for i in range(max_wait):
         if is_port_in_use(port) and check_http_server(port, timeout=2):
-            print(f"  ✓ Сервер запущен на порту {port} (через {i+1} сек)")
+            print(f"  [OK] Сервер запущен на порту {port} (через {i+1} сек)")
             return True
         time.sleep(1)
         if i % 5 == 0 and i > 0:
@@ -172,7 +176,7 @@ def main():
             return
         
         pid1 = get_process_on_port(port)
-        print(f"✓ Первый сервер работает, PID: {pid1}")
+        print(f"[OK] Первый сервер работает, PID: {pid1}")
         
         # Шаг 2: Ждем 15 секунд и запускаем второй сервер в потоке
         print("\n[Шаг 2] Ожидание 15 секунд перед запуском второго сервера...")
@@ -225,9 +229,9 @@ def main():
         print(f"  PID процесса на порту: {final_pid}")
         
         if port_in_use and http_available:
-            print("\n✓ ТЕСТ ПРОЙДЕН: Только один сервер работает на порту 3456")
+            print("\n[OK] ТЕСТ ПРОЙДЕН: Только один сервер работает на порту 3456")
         else:
-            print("\n✗ ТЕСТ НЕ ПРОЙДЕН: Проблемы с запуском сервера")
+            print("\n[FAIL] ТЕСТ НЕ ПРОЙДЕН: Проблемы с запуском сервера")
         
     finally:
         # Завершаем все процессы

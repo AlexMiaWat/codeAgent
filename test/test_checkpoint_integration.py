@@ -52,7 +52,7 @@ def test_checkpoint_basic_integration():
     if checkpoint.backup_file.exists():
         checkpoint.backup_file.unlink()
     
-    print("✓ Интеграционный тест checkpoint прошел успешно")
+    print("[OK] Интеграционный тест checkpoint прошел успешно")
 
 
 def test_checkpoint_recovery_simulation():
@@ -117,10 +117,10 @@ def test_checkpoint_recovery_simulation():
     if checkpoint2.backup_file.exists():
         checkpoint2.backup_file.unlink()
     
-    print("✓ Тест восстановления после сбоя прошел успешно")
+    print("[OK] Тест восстановления после сбоя прошел успешно")
 
 
 if __name__ == "__main__":
     test_checkpoint_basic_integration()
     test_checkpoint_recovery_simulation()
-    print("\n✓ Все интеграционные тесты прошли успешно!")
+    print("\n[OK] Все интеграционные тесты прошли успешно!")

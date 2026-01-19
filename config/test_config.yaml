@@ -1,0 +1,130 @@
+# Тестовая конфигурация Code Agent
+# Используется для изолированного тестирования без влияния на основную конфигурацию
+
+# Настройки проекта
+project:
+  # Базовая директория проекта (для тестов используется временная директория)
+  # В тестах PROJECT_DIR устанавливается через фикстуры
+  base_dir: ${PROJECT_DIR}
+  
+  # Пути относительно base_dir
+  docs_dir: docs                    # Директория с документацией
+  status_file: test_codeAgentProjectStatus.md  # Файл статусов проекта (с префиксом test_)
+  
+  # Формат todo-листа (txt, yaml, md)
+  todo_format: md
+
+# Настройки агента
+agent:
+  # Базовая роль агента
+  role: "Test Agent"
+  
+  # Цель агента
+  goal: "Execute test tasks"
+  
+  # История/контекст агента
+  backstory: |
+    You are a test agent for automated testing of Code Agent.
+    You execute test tasks in isolated test environments.
+  
+  # Разрешить выполнение кода
+  allow_code_execution: false  # Отключено для безопасности в тестах
+  
+  # Подробный вывод
+  verbose: false  # Меньше вывода в тестах
+  
+  # Используемые инструменты (минимальный набор для тестов)
+  tools:
+    - FileReadTool
+    - FileWriteTool
+  
+  # Модель LLM (не используется в тестах, но требуется для инициализации)
+  model: "gpt-3.5-turbo"
+  
+  # Валидация модели
+  allowed_models:
+    - "gpt-3.5-turbo"
+
+# Настройки сервера
+server:
+  # Интервал проверки задач в секундах (короткий для тестов)
+  check_interval: 5
+  
+  # Максимальное количество итераций (ограничено для тестов)
+  max_iterations: 10
+  
+  # Задержка между выполнением задач в секундах (минимальная для тестов)
+  task_delay: 1
+  
+  # Настройки HTTP сервера
+  http_enabled: false  # Отключен в тестах для изоляции
+  http_port: 3457      # Другой порт, чтобы не конфликтовать с основным
+  
+  # Настройки автоперезапуска
+  auto_reload: false              # Отключен в тестах
+  reload_on_py_changes: false     # Отключен в тестах
+  max_restarts: 1                 # Минимум перезапусков для тестов
+  
+  # Настройки автоматической генерации TODO (отключена в тестах)
+  auto_todo_generation:
+    enabled: false
+    max_generations_per_session: 1
+    output_dir: "todo"
+    session_tracker_file: ".test_codeagent_sessions.json"
+  
+  # Настройки системы контрольных точек
+  checkpoint:
+    enabled: true
+    checkpoint_file: ".test_codeagent_checkpoint.json"  # Отдельный файл для тестов
+    max_task_attempts: 2
+    keep_completed_tasks: 10  # Меньше для тестов
+
+# Настройки работы с документацией
+docs:
+  # Расширения файлов для чтения документации
+  supported_extensions: [".md", ".txt"]
+  
+  # Максимальный размер файла для чтения (меньше для тестов)
+  max_file_size: 100000  # 100 KB для тестов
+  
+  # Директории для репортов
+  results_dir: docs/results
+  reviews_dir: docs/reviews
+
+# Настройки логирования (минимальные для тестов)
+logging:
+  level: WARNING  # Только предупреждения и ошибки в тестах
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: logs/test_code_agent.log  # Отдельный лог для тестов
+  console: false  # Без вывода в консоль в тестах
+  color: false
+  cursor_interactions: false
+  screenshot_on_error: false
+
+# Настройки взаимодействия с Cursor IDE (отключены в тестах)
+cursor:
+  interface_type: "file"  # Используем файловый интерфейс для тестов
+  
+  cli:
+    cli_path: null
+    timeout: 30  # Короткий таймаут для тестов
+    headless: true
+    model: ""
+    prefer_cli: false
+    auto_approve: false
+    force_mode: false
+    approve_mcps: false
+
+# Настройки тестирования
+testing:
+  enabled: true
+  mock_cursor: true  # Использовать мок вместо реального Cursor
+  screenshot_dir: "test/screenshots"
+  save_all_screenshots: false
+
+# Настройки Git (отключены в тестах)
+git:
+  auto_commit: false
+  commit_message_template: "test: {task_name}"
+  branch: test
+  remote: origin

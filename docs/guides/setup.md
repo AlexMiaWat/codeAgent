@@ -14,18 +14,54 @@ uv pip install crewai crewai-tools pyyaml python-dotenv
 
 ### 2. Настройка переменных окружения
 
-Создайте файл `.env` в корне проекта `codeAgent/`:
+**ВАЖНО: Разделение директорий**
 
-```env
-# Директория проекта для работы агента
-PROJECT_DIR=D:\Space\life
+Code Agent работает с двумя разными директориями:
 
-# API ключи для LLM (выберите один из провайдеров)
-OPENAI_API_KEY=your_openai_api_key_here
-# или
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
-# или для локальных моделей
-# OLLAMA_API_URL=http://localhost:11434
+1. **`codeAgent/`** - директория самого агента
+   - Здесь находится код агента, конфигурация, документация
+   - Здесь создается файл `.env` с переменными окружения
+   - Пример: `D:\Space\codeAgent\`
+
+2. **`${PROJECT_DIR}`** - целевой проект для работы агента
+   - Это проект, над которым будет работать агент
+   - Здесь находятся `docs/`, `todo.md` (или `todo.txt`, `todo.yaml`), `codeAgentProjectStatus.md`
+   - Указывается в переменной `PROJECT_DIR` в `.env` файле
+   - Пример: `D:\Space\life\`
+
+**Создание `.env` файла:**
+
+1. Скопируйте шаблон:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Отредактируйте `.env` в корне `codeAgent/`:
+   ```env
+   # Директория целевого проекта для работы агента
+   # Это НЕ директория codeAgent, а проект, над которым будет работать агент
+   PROJECT_DIR=D:\Space\life
+   
+   # API ключи для LLM (выберите один из провайдеров)
+   OPENROUTER_API_KEY=your_openrouter_api_key_here
+   # или
+   OPENAI_API_KEY=your_openai_api_key_here
+   # или
+   ANTHROPIC_API_KEY=your_anthropic_api_key_here
+   ```
+
+**Пример структуры:**
+```
+D:\Space\
+├── codeAgent\              ← Директория агента (здесь .env)
+│   ├── .env               ← Файл с PROJECT_DIR
+│   ├── config\
+│   ├── src\
+│   └── docs\
+└── life\                   ← Целевой проект (PROJECT_DIR)
+    ├── docs\              ← Документация проекта
+    ├── todo.txt           ← Список задач
+    └── codeAgentProjectStatus.md  ← Статусы (создается агентом)
 ```
 
 ### 3. Настройка конфигурации
@@ -34,6 +70,8 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
 
 ```yaml
 project:
+  # base_dir использует переменную PROJECT_DIR из .env файла
+  # PROJECT_DIR должен быть установлен в .env в корне codeAgent/
   base_dir: ${PROJECT_DIR}  # Берется из .env
   docs_dir: docs
   status_file: codeAgentProjectStatus.md
@@ -43,27 +81,55 @@ server:
   task_delay: 5       # Задержка между задачами в секундах
 ```
 
-### 4. Подготовка проекта
+### 4. Подготовка целевого проекта
 
-Убедитесь, что в директории проекта (`PROJECT_DIR`) есть:
+Убедитесь, что в директории целевого проекта (`PROJECT_DIR`, например `D:\Space\life\`) есть:
 
 ```
 D:\Space\life\
 ├── docs/                    # Документация проекта
 │   ├── README.md
 │   └── ...
-└── todo.txt                 # Список задач
+└── todo.md                  # Список задач (или todo.txt, todo.yaml)
 ```
 
-#### Формат todo.txt
+#### Формат todo-листа
 
-Простой текстовый файл со списком задач:
+**Рекомендуемый формат: Markdown с чекбоксами (`todo.md`)** - формат по умолчанию:
 
+```markdown
+# Текущие задачи проекта
+
+## Высокий приоритет
+- [ ] Инициализировать проект
+- [ ] Настроить окружение разработки
+- [ ] Создать базовую структуру
+- [ ] Написать документацию
+```
+
+**Альтернативные форматы:**
+
+Текстовый формат (`todo.txt`):
 ```
 1. Инициализировать проект
 2. Настроить окружение разработки
 3. Создать базовую структуру
 4. Написать документацию
+```
+
+YAML формат (`todo.yaml`):
+```yaml
+tasks:
+  - text: "Инициализировать проект"
+    done: false
+  - text: "Настроить окружение разработки"
+    done: false
+```
+
+Формат можно изменить в `config/config.yaml`:
+```yaml
+project:
+  todo_format: md  # или txt, yaml
 ```
 
 Или с отступами для иерархии:
@@ -131,7 +197,7 @@ python -m src.server
 
 ### Использование различных провайдеров LLM
 
-⚠️ **Важно:** Code Agent использует **слабые языковые модели** для простых задач. См. [Ограничения LLM](llm_limitations.md)
+⚠️ **Важно:** Code Agent использует **слабые языковые модели** для простых задач. См. [Ограничения LLM](../integration/llm_limitations.md)
 
 **Рекомендуемые модели для Code Agent:**
 
@@ -359,5 +425,5 @@ tasks:
 ## Дополнительные ресурсы
 
 - [Документация CrewAI](https://docs.crewai.com/)
-- [Архитектура Code Agent](architecture.md)
-- [API Reference](api.md)
+- [Архитектура Code Agent](../core/architecture.md)
+- [API Reference](../core/api.md)

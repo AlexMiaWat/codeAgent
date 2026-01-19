@@ -3,6 +3,17 @@
 # Настройки проекта
 project:
   # Базовая директория проекта (устанавливается через PROJECT_DIR в .env или переменные окружения)
+  # 
+  # ВАЖНО: Разделение директорий:
+  #   - codeAgent/ - директория самого агента (где находится .env файл с PROJECT_DIR)
+  #   - ${PROJECT_DIR} - целевой проект для работы агента (например, D:\Space\life)
+  #
+  # Переменная PROJECT_DIR должна быть установлена в .env файле в корне codeAgent/:
+  #   PROJECT_DIR=D:\Space\life
+  #
+  # Примеры:
+  #   Windows: PROJECT_DIR=D:\Space\life
+  #   Linux/Mac: PROJECT_DIR=/home/user/projects/myproject
   base_dir: ${PROJECT_DIR}
   
   # Пути относительно base_dir

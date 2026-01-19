@@ -108,6 +108,21 @@ def _setup_logging():
 class CodeAgentServer:
     """Основной сервер Code Agent"""
     
+    # Константы для обработки ошибок Cursor
+    MAX_CURSOR_ERRORS = 3  # Максимальное количество последовательных ошибок перед перезапуском
+    CURSOR_ERROR_DELAY_INITIAL = 30  # Начальная задержка при ошибке (секунды)
+    CURSOR_ERROR_DELAY_INCREMENT = 30  # Увеличение задержки при каждой новой ошибке (секунды)
+    
+    # Константы таймаутов
+    DEFAULT_CURSOR_CLI_TIMEOUT = 300  # Таймаут по умолчанию для Cursor CLI (секунды)
+    
+    # Константы интервалов по умолчанию
+    DEFAULT_CHECK_INTERVAL = 60  # Интервал проверки задач по умолчанию (секунды)
+    DEFAULT_TASK_DELAY = 5  # Задержка между задачами по умолчанию (секунды)
+    
+    # Константы для работы с файлами
+    DEFAULT_MAX_FILE_SIZE = 1_000_000  # Максимальный размер файла по умолчанию (1 MB)
+    
     def __init__(self, config_path: Optional[str] = None):
         """
         Инициализация сервера агента
@@ -122,6 +137,9 @@ class CodeAgentServer:
         self.project_dir = self.config.get_project_dir()
         self.docs_dir = self.config.get_docs_dir()
         self.status_file = self.config.get_status_file()
+        
+        # Валидация конфигурации
+        self._validate_config()
         
         # Инициализация менеджеров
         self.status_manager = StatusManager(self.status_file)
@@ -142,8 +160,8 @@ class CodeAgentServer:
         
         # Настройки сервера
         server_config = self.config.get('server', {})
-        self.check_interval = server_config.get('check_interval', 60)
-        self.task_delay = server_config.get('task_delay', 5)
+        self.check_interval = server_config.get('check_interval', self.DEFAULT_CHECK_INTERVAL)
+        self.task_delay = server_config.get('task_delay', self.DEFAULT_TASK_DELAY)
         self.max_iterations = server_config.get('max_iterations')
         
         # Настройки HTTP сервера
@@ -173,7 +191,7 @@ class CodeAgentServer:
         self._cursor_error_lock = threading.Lock()
         self._last_cursor_error = None  # Последняя ошибка Cursor
         self._cursor_error_delay = 0  # Дополнительная задержка при ошибках (секунды)
-        self._max_cursor_errors = 3  # Максимальное количество ошибок перед перезапуском
+        self._max_cursor_errors = self.MAX_CURSOR_ERRORS  # Максимальное количество ошибок перед перезапуском
         
         # Инициализация Cursor интерфейсов
         cursor_config = self.config.get('cursor', {})
@@ -234,6 +252,70 @@ class CodeAgentServer:
         if self.auto_todo_enabled:
             logger.info(f"Автоматическая генерация TODO включена (макс. {self.max_todo_generations} раз за сессию)")
         logger.info(f"Checkpoint система активирована для защиты от сбоев")
+    
+    def _validate_config(self):
+        """
+        Валидация конфигурации при инициализации сервера
+        
+        Проверяет наличие обязательных параметров и их корректность.
+        Выбрасывает исключения с понятными сообщениями об ошибках.
+        
+        Raises:
+            ValueError: Если обязательные параметры не установлены или некорректны
+            FileNotFoundError: Если директории или файлы не найдены
+        """
+        errors = []
+        
+        # Проверка project_dir
+        if not self.project_dir:
+            errors.append("PROJECT_DIR не установлен в переменных окружения или .env файле")
+        elif not self.project_dir.exists():
+            errors.append(
+                f"Директория проекта не найдена: {self.project_dir}\n"
+                f"  Убедитесь, что путь указан правильно в .env файле:\n"
+                f"  PROJECT_DIR={self.project_dir}"
+            )
+        elif not self.project_dir.is_dir():
+            errors.append(f"Путь не является директорией: {self.project_dir}")
+        else:
+            # Проверка прав доступа на чтение
+            if not os.access(self.project_dir, os.R_OK):
+                errors.append(f"Нет прав на чтение директории проекта: {self.project_dir}")
+            # Проверка прав доступа на запись (для создания файлов статусов)
+            if not os.access(self.project_dir, os.W_OK):
+                errors.append(
+                    f"Нет прав на запись в директорию проекта: {self.project_dir}\n"
+                    f"  Агенту нужны права на запись для создания файлов статусов"
+                )
+        
+        # Проверка docs_dir (опционально, но желательно)
+        if self.docs_dir and self.docs_dir.exists():
+            if not os.access(self.docs_dir, os.R_OK):
+                errors.append(f"Нет прав на чтение директории документации: {self.docs_dir}")
+        
+        # Проверка конфигурационного файла
+        if not self.config.config_path.exists():
+            errors.append(f"Конфигурационный файл не найден: {self.config.config_path}")
+        
+        # Если есть ошибки, выбрасываем исключение с понятным сообщением
+        if errors:
+            error_msg = "Ошибки конфигурации:\n\n" + "\n\n".join(f"  • {e}" for e in errors)
+            error_msg += "\n\n" + "=" * 70
+            error_msg += "\n\nДля решения проблем:\n"
+            error_msg += "  1. Проверьте наличие .env файла в корне codeAgent/\n"
+            error_msg += "  2. Убедитесь, что PROJECT_DIR указан правильно\n"
+            error_msg += "  3. Проверьте права доступа к директориям\n"
+            error_msg += "  4. См. документацию: docs/guides/setup.md\n"
+            error_msg += "  5. См. шаблон: .env.example"
+            
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        # Логируем успешную валидацию
+        logger.debug("Валидация конфигурации пройдена успешно")
+        logger.debug(f"  Project dir: {self.project_dir}")
+        logger.debug(f"  Docs dir: {self.docs_dir}")
+        logger.debug(f"  Status file: {self.status_file}")
     
     def _check_recovery_needed(self):
         """
@@ -307,7 +389,7 @@ class CodeAgentServer:
             cli_config = cursor_config.get('cli', {})
             
             cli_path = cli_config.get('cli_path')
-            timeout = cli_config.get('timeout', 300)
+            timeout = cli_config.get('timeout', self.DEFAULT_CURSOR_CLI_TIMEOUT)
             headless = cli_config.get('headless', True)
             
             # Передаем директорию проекта и роль агента для настройки контекста
@@ -452,7 +534,7 @@ class CodeAgentServer:
                 # Новая ошибка - сбрасываем счетчик и задержку
                 self._cursor_error_count = 1
                 self._last_cursor_error = error_key
-                self._cursor_error_delay = 30  # Начинаем с 30 секунд для новой ошибки
+                self._cursor_error_delay = self.CURSOR_ERROR_DELAY_INITIAL  # Начинаем с начальной задержки для новой ошибки
             
             # Для критических ошибок - останавливаем сервер сразу (не ждем повторений)
             if is_critical:
@@ -469,7 +551,7 @@ class CodeAgentServer:
             # При первой ошибке задержка уже установлена в 30 секунд выше
             # При каждой следующей повторяющейся ошибке добавляем еще 30 секунд
             if self._cursor_error_count > 1:
-                self._cursor_error_delay += 30
+                self._cursor_error_delay += self.CURSOR_ERROR_DELAY_INCREMENT
             
             logger.warning(f"Ошибка Cursor #{self._cursor_error_count}: {error_message}")
             logger.warning(f"Дополнительная задержка перед следующим запросом: {self._cursor_error_delay} секунд")
@@ -993,7 +1075,7 @@ class CodeAgentServer:
         
         docs_content = []
         supported_extensions = self.config.get('docs.supported_extensions', ['.md', '.txt'])
-        max_file_size = self.config.get('docs.max_file_size', 1000000)
+        max_file_size = self.config.get('docs.max_file_size', self.DEFAULT_MAX_FILE_SIZE)
         
         for file_path in self.docs_dir.rglob('*'):
             if file_path.is_file() and file_path.suffix in supported_extensions:

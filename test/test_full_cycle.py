@@ -17,7 +17,9 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
-sys.path.insert(0, str(Path(__file__).parent))
+# Добавляем корень проекта в путь
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 from src.config_loader import ConfigLoader
 from src.todo_manager import TodoManager, TodoItem
@@ -316,18 +318,18 @@ Task ID: {task_id}
         print("[SUCCESS] Все этапы полного цикла выполнены успешно!")
         print()
         print("Этапы:")
-        print("  ✅ 1. Загрузка конфигурации")
-        print("  ✅ 2. Загрузка TODO задачи")
-        print("  ✅ 3. Определение типа задачи")
-        print("  ✅ 4. Получение шаблона инструкции")
-        print("  ✅ 5. Форматирование инструкции")
-        print("  ✅ 6. Создание файла инструкции")
-        print("  ✅ 7. Имитация выполнения в Cursor")
-        print("  ✅ 8. Обнаружение файла результата")
-        print("  ✅ 9. Проверка контрольной фразы")
-        print("  ✅ 10. Ожидание через wait_for_result")
-        print("  ✅ 11. Обновление статуса задачи")
-        print("  ✅ 12. Отметка задачи как выполненной")
+        print("  [OK] 1. Загрузка конфигурации")
+        print("  [OK] 2. Загрузка TODO задачи")
+        print("  [OK] 3. Определение типа задачи")
+        print("  [OK] 4. Получение шаблона инструкции")
+        print("  [OK] 5. Форматирование инструкции")
+        print("  [OK] 6. Создание файла инструкции")
+        print("  [OK] 7. Имитация выполнения в Cursor")
+        print("  [OK] 8. Обнаружение файла результата")
+        print("  [OK] 9. Проверка контрольной фразы")
+        print("  [OK] 10. Ожидание через wait_for_result")
+        print("  [OK] 11. Обновление статуса задачи")
+        print("  [OK] 12. Отметка задачи как выполненной")
         print()
         print(f"Созданные файлы:")
         print(f"  Инструкция: {instruction_file}")

@@ -113,6 +113,8 @@ $RECYCLE.BIN/
 .env.development
 .env.test
 .env.production
+# Исключение: .env.example должен быть в репозитории
+!.env.example
 *.key
 *.pem
 *.p12

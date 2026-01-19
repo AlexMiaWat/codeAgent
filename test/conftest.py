@@ -35,11 +35,90 @@ def temp_project_dir(tmp_path):
     (project_dir / "docs").mkdir()
     (project_dir / "src").mkdir()
     
-    # Create basic files
-    (project_dir / "todo.txt").write_text("1. Test task\n2. Another task\n")
-    (project_dir / "docs" / "README.md").write_text("# Test Project\n")
+    # Create basic files (используем todo.md как формат по умолчанию)
+    todo_content = """# Текущие задачи проекта
+
+## Высокий приоритет
+- [ ] Test task
+- [ ] Another task
+"""
+    (project_dir / "todo.md").write_text(todo_content, encoding='utf-8')
+    (project_dir / "docs" / "README.md").write_text("# Test Project\n", encoding='utf-8')
     
     return project_dir
+
+
+@pytest.fixture
+def ensure_project_dir_env(monkeypatch, tmp_path):
+    """
+    Фикстура для обеспечения наличия PROJECT_DIR в переменных окружения
+    
+    Читает PROJECT_DIR из .env файла, если он существует, или использует временную директорию.
+    """
+    project_root = Path(__file__).parent.parent
+    env_file = project_root / '.env'
+    
+    project_dir = None
+    
+    # Пробуем прочитать из .env
+    if env_file.exists():
+        try:
+            with open(env_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith('PROJECT_DIR='):
+                        project_dir = line.split('=', 1)[1].strip().strip('"').strip("'")
+                        # Проверяем, что путь существует
+                        if Path(project_dir).exists():
+                            break
+                        else:
+                            project_dir = None
+        except Exception:
+            pass
+    
+    # Если не нашли в .env или путь не существует, используем временную директорию
+    if not project_dir:
+        project_dir = str(tmp_path / "test_project")
+        Path(project_dir).mkdir(parents=True, exist_ok=True)
+    
+    monkeypatch.setenv("PROJECT_DIR", project_dir)
+    return project_dir
+
+
+@pytest.fixture
+def project_env_with_env_file(monkeypatch):
+    """
+    Фикстура для создания словаря окружения с PROJECT_DIR из .env файла
+    
+    Используется для тестов, которые запускают процессы с subprocess.
+    """
+    env = os.environ.copy()
+    project_root = Path(__file__).parent.parent
+    env_file = project_root / '.env'
+    
+    if 'PROJECT_DIR' not in env:
+        if env_file.exists():
+            try:
+                with open(env_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith('PROJECT_DIR='):
+                            project_dir = line.split('=', 1)[1].strip().strip('"').strip("'")
+                            # Проверяем, что путь существует
+                            if Path(project_dir).exists():
+                                env['PROJECT_DIR'] = project_dir
+                                break
+            except Exception:
+                pass
+    
+    return env
+
+
+@pytest.fixture
+def test_config_path(project_root_path):
+    """Return path to test configuration file."""
+    test_config = project_root_path / "config" / "test_config.yaml"
+    return test_config if test_config.exists() else None
 
 
 @pytest.fixture
@@ -49,17 +128,22 @@ def mock_config():
         "project": {
             "base_dir": "D:\\Space\\test_project",
             "docs_dir": "docs",
-            "status_file": "codeAgentProjectStatus.md",
+            "status_file": "test_codeAgentProjectStatus.md",  # Используем test_ префикс
+            "todo_format": "md",  # Формат по умолчанию
         },
         "agent": {
             "role": "Test Agent",
             "goal": "Execute test tasks",
             "backstory": "Test agent for testing",
-            "allow_code_execution": True,
+            "allow_code_execution": False,  # Отключено для безопасности в тестах
+            "verbose": False,
         },
         "server": {
-            "check_interval": 10,
-            "max_iterations": None,
+            "check_interval": 5,  # Короткий интервал для тестов
+            "max_iterations": 10,  # Ограничено для тестов
+            "task_delay": 1,
+            "http_enabled": False,  # Отключен в тестах
+            "http_port": 3457,  # Другой порт
         },
     }
     return config

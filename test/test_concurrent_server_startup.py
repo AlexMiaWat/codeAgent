@@ -139,9 +139,13 @@ def run_server_in_thread(thread_id: int, delay: float = 0) -> dict:
                 # Читаем PROJECT_DIR из .env
                 with open(env_file, 'r', encoding='utf-8') as f:
                     for line in f:
+                        line = line.strip()
                         if line.startswith('PROJECT_DIR='):
-                            env['PROJECT_DIR'] = line.split('=', 1)[1].strip().strip('"').strip("'")
-                            break
+                            project_dir = line.split('=', 1)[1].strip().strip('"').strip("'")
+                            # Проверяем, что путь существует
+                            if Path(project_dir).exists():
+                                env['PROJECT_DIR'] = project_dir
+                                break
             # Если все еще не установлен, используем значение по умолчанию из конфига
             if 'PROJECT_DIR' not in env:
                 # Пропускаем тест, если PROJECT_DIR не установлен
@@ -275,7 +279,7 @@ class TestConcurrentServerStartup:
                 assert False, "Первый сервер должен занять порт 3456"
         
         pid1 = get_process_on_port(3456)
-        print(f"✓ Первый сервер запущен, PID: {pid1}, порт 3456 занят, HTTP доступен")
+        print(f"[OK] Первый сервер запущен, PID: {pid1}, порт 3456 занят, HTTP доступен")
         
         # Шаг 2: Ждем 15 секунд и запускаем второй сервер
         print("\n[Шаг 2] Ожидание 15 секунд перед запуском второго сервера...")
@@ -302,7 +306,7 @@ class TestConcurrentServerStartup:
         # Или первый все еще работает (если второй не успел)
         assert is_port_in_use(3456), "Порт 3456 должен быть занят"
         assert check_http_server(3456), "HTTP сервер должен быть доступен"
-        print(f"✓ После запуска второго сервера: порт занят, PID: {pid2}")
+        print(f"[OK] После запуска второго сервера: порт занят, PID: {pid2}")
         
         # Шаг 3: Ждем еще 15 секунд и запускаем третий сервер
         print("\n[Шаг 3] Ожидание 15 секунд перед запуском третьего сервера...")
@@ -327,7 +331,7 @@ class TestConcurrentServerStartup:
         
         assert is_port_in_use(3456), "Порт 3456 должен быть занят"
         assert check_http_server(3456), "HTTP сервер должен быть доступен"
-        print(f"✓ После запуска третьего сервера: порт занят, PID: {pid3}")
+        print(f"[OK] После запуска третьего сервера: порт занят, PID: {pid3}")
         
         # Финальная проверка: только один процесс на порту
         print("\n[Финальная проверка] Проверка, что только один сервер работает...")
@@ -338,7 +342,7 @@ class TestConcurrentServerStartup:
         assert is_port_in_use(3456), "Порт 3456 должен быть занят"
         assert check_http_server(3456), "HTTP сервер должен быть доступен"
         
-        print(f"\n✓ Финальный результат:")
+        print(f"\n[OK] Финальный результат:")
         print(f"  - Только один процесс на порту 3456: PID {final_pid}")
         print(f"  - HTTP сервер доступен: {check_http_server(3456)}")
         

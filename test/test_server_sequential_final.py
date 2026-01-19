@@ -24,12 +24,17 @@ def start_server(server_id: int) -> subprocess.Popen:
     
     env = os.environ.copy()
     if 'PROJECT_DIR' not in env:
+        # Пробуем прочитать из .env
         env_file = project_root / '.env'
         if env_file.exists():
             with open(env_file, 'r', encoding='utf-8') as f:
                 for line in f:
+                    line = line.strip()
                     if line.startswith('PROJECT_DIR='):
-                        env['PROJECT_DIR'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+                        project_dir = line.split('=', 1)[1].strip().strip('"').strip("'")
+                        # Проверяем, что путь существует
+                        if Path(project_dir).exists():
+                            env['PROJECT_DIR'] = project_dir
                         break
     
     process = subprocess.Popen(

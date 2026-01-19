@@ -14,7 +14,9 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
-sys.path.insert(0, str(Path(__file__).parent))
+# Добавляем корень проекта в путь
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 from src.config_loader import ConfigLoader
 from src.todo_manager import TodoManager, TodoItem
@@ -241,10 +243,10 @@ def test_full_cycle_with_server():
         print("[SUCCESS] Полный цикл выполнен успешно!")
         print()
         print("Этапы:")
-        print("  ✅ 1. Инициализация TestServer")
-        print("  ✅ 2. Получение задачи из TODO")
-        print("  ✅ 3. Выполнение задачи через _execute_task_via_cursor")
-        print("  ✅ 4. Проверка статуса задачи")
+        print("  [OK] 1. Инициализация TestServer")
+        print("  [OK] 2. Получение задачи из TODO")
+        print("  [OK] 3. Выполнение задачи через _execute_task_via_cursor")
+        print("  [OK] 4. Проверка статуса задачи")
         print()
         print(f"Время завершения: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print("=" * 70)

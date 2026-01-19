@@ -1,6 +1,6 @@
 # Makefile for Code Agent project
 
-.PHONY: help install install-dev install-test test test-unit test-integration test-slow test-coverage test-watch clean lint format check
+.PHONY: help install install-dev install-test test test-unit test-integration test-slow test-coverage test-watch test-openrouter test-api test-cursor test-llm test-list clean lint format check
 
 help:
 	@echo "Code Agent - Makefile commands:"
@@ -11,13 +11,19 @@ help:
 	@echo "  make install-test     - Install test dependencies"
 	@echo ""
 	@echo "Testing:"
-	@echo "  make test             - Run all tests"
-	@echo "  make test-unit        - Run unit tests only"
-	@echo "  make test-integration - Run integration tests only"
-	@echo "  make test-slow        - Run slow tests"
-	@echo "  make test-coverage    - Run tests with coverage report"
-	@echo "  make test-watch       - Run tests in watch mode"
-	@echo "  make test-parallel    - Run tests in parallel"
+	@echo "  make test             - Run all tests (pytest)"
+	@echo "  make test-all         - Run all tests via unified runner"
+	@echo "  make test-list        - List all available test categories"
+	@echo "  make test-openrouter  - Run OpenRouter API tests"
+	@echo "  make test-api         - Run HTTP API server tests"
+	@echo "  make test-cursor      - Run Cursor integration tests"
+	@echo "  make test-llm         - Run LLM core tests"
+	@echo "  make test-unit        - Run unit tests only (pytest)"
+	@echo "  make test-integration - Run integration tests only (pytest)"
+	@echo "  make test-slow        - Run slow tests (pytest)"
+	@echo "  make test-coverage    - Run tests with coverage report (pytest)"
+	@echo "  make test-watch       - Run tests in watch mode (pytest)"
+	@echo "  make test-parallel    - Run tests in parallel (pytest)"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make lint             - Run linters"
@@ -63,6 +69,34 @@ test-watch:
 
 test-parallel:
 	pytest test/ -v -n auto
+
+# Unified test runner targets
+test-all:
+	python test/run_tests.py
+
+test-list:
+	python test/run_tests.py --list
+
+test-openrouter:
+	python test/run_tests.py --openrouter
+
+test-api:
+	python test/run_tests.py --api
+
+test-cursor:
+	python test/run_tests.py --cursor
+
+test-llm:
+	python test/run_tests.py --llm
+
+test-validation:
+	python test/run_tests.py --validation
+
+test-checkpoint:
+	python test/run_tests.py --checkpoint
+
+test-full:
+	python test/run_tests.py --full
 
 # Code quality targets
 lint:

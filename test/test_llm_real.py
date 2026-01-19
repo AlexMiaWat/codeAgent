@@ -14,8 +14,9 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
-# Добавляем текущую директорию в путь
-sys.path.insert(0, str(Path(__file__).parent))
+# Добавляем корень проекта в путь
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 from src.llm.llm_manager import LLMManager
 from src.llm.llm_test_runner import LLMTestRunner

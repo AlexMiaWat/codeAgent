@@ -25,7 +25,10 @@ class CursorFileInterface:
     Это fallback механизм, когда Cursor CLI недоступен.
     """
     
-    def __init__(self, project_dir: Path, commands_dir: str = "cursor_commands", results_dir: str = "cursor_results"):
+    # Константы
+    DEFAULT_MAX_FILE_SIZE = 10_000_000  # Максимальный размер файла результата по умолчанию (10 MB)
+    
+    def __init__(self, project_dir: Path, commands_dir: str = "cursor_commands", results_dir: str = "cursor_results", max_file_size: Optional[int] = None):
         """
         Инициализация файлового интерфейса
         
@@ -37,6 +40,7 @@ class CursorFileInterface:
         self.project_dir = Path(project_dir)
         self.commands_dir = self.project_dir / commands_dir
         self.results_dir = self.project_dir / results_dir
+        self.max_file_size = max_file_size or self.DEFAULT_MAX_FILE_SIZE
         
         # Создаем директории если их нет
         self.commands_dir.mkdir(parents=True, exist_ok=True)
@@ -170,12 +174,24 @@ class CursorFileInterface:
         if not file_path.exists():
             return None
         
+        # Проверка размера файла перед чтением
+        try:
+            file_size = file_path.stat().st_size
+            if file_size > self.max_file_size:
+                logger.error(
+                    f"Файл результата слишком большой ({file_size} байт, максимум {self.max_file_size}): {file_path}"
+                )
+                return None
+        except OSError as e:
+            logger.error(f"Ошибка проверки размера файла результата: {file_path}", exc_info=True)
+            return None
+        
         try:
             content = file_path.read_text(encoding='utf-8')
-            logger.info(f"Результат прочитан из файла: {file_path}")
+            logger.info(f"Результат прочитан из файла: {file_path} ({file_size} байт)")
             return content
         except Exception as e:
-            logger.error(f"Ошибка чтения файла результата {file_path}: {e}")
+            logger.error(f"Ошибка чтения файла результата {file_path}: {e}", exc_info=True)
             return None
     
     def check_result_exists(self, task_id: str) -> bool:
@@ -219,9 +235,37 @@ class CursorFileInterface:
         
         while time.time() - start_time < timeout:
             if file_path.exists():
+                # Проверка размера файла перед чтением
+                try:
+                    file_size = file_path.stat().st_size
+                    if file_size > self.max_file_size:
+                        logger.error(
+                            f"Файл результата слишком большой ({file_size} байт, максимум {self.max_file_size}): {file_path}"
+                        )
+                        return {
+                            "success": False,
+                            "content": "",
+                            "error": f"Файл результата слишком большой ({file_size} байт)"
+                        }
+                except OSError as e:
+                    logger.error(f"Ошибка проверки размера файла результата: {file_path}", exc_info=True)
+                    return {
+                        "success": False,
+                        "content": "",
+                        "error": f"Ошибка проверки размера файла: {str(e)}"
+                    }
+                
                 # Файл появился, проверяем контрольную фразу если указана
                 if control_phrase:
-                    content = file_path.read_text(encoding='utf-8')
+                    try:
+                        content = file_path.read_text(encoding='utf-8')
+                    except Exception as e:
+                        logger.error(f"Ошибка чтения файла результата: {file_path}", exc_info=True)
+                        return {
+                            "success": False,
+                            "content": "",
+                            "error": f"Ошибка чтения файла: {str(e)}"
+                        }
                     if control_phrase in content:
                         logger.info(f"Файл результата найден и содержит контрольную фразу")
                         return {
@@ -234,7 +278,15 @@ class CursorFileInterface:
                         logger.debug(f"Файл найден, но контрольная фраза еще не появилась")
                 else:
                     # Контрольная фраза не требуется
-                    content = file_path.read_text(encoding='utf-8')
+                    try:
+                        content = file_path.read_text(encoding='utf-8')
+                    except Exception as e:
+                        logger.error(f"Ошибка чтения файла результата: {file_path}", exc_info=True)
+                        return {
+                            "success": False,
+                            "content": "",
+                            "error": f"Ошибка чтения файла: {str(e)}"
+                        }
                     logger.info(f"Файл результата найден")
                     return {
                         "success": True,

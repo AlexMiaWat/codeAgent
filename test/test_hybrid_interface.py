@@ -82,7 +82,7 @@ def test_complexity_determination():
         determined = hybrid._determine_complexity(instruction)
         is_correct = determined == expected_complexity
         
-        status = "✅" if is_correct else "❌"
+        status = "[OK]" if is_correct else "[FAIL]"
         print(f"{status} Инструкция: {instruction[:50]}...")
         print(f"   Ожидалось: {expected_complexity.value}, Определено: {determined.value}")
         print()
@@ -144,10 +144,10 @@ def test_simple_task_execution():
     # Простая задача должна выполниться через CLI
     expected_method = "cli"
     if result.method_used == expected_method:
-        print(f"✅ Задача выполнена через ожидаемый метод: {expected_method}")
+        print(f"[OK] Задача выполнена через ожидаемый метод: {expected_method}")
         return True
     else:
-        print(f"⚠️ Задача выполнена через: {result.method_used} (ожидалось: {expected_method})")
+        print(f"[WARN] Задача выполнена через: {result.method_used} (ожидалось: {expected_method})")
         return result.success  # Все равно считаем успехом если выполнилось
 
 
@@ -209,12 +209,12 @@ def test_complex_task_execution():
     # Проверяем наличие файла
     if output_path.exists():
         content = output_path.read_text(encoding='utf-8')
-        print(f"✅ Файл создан: {output_path}")
+        print(f"[OK] Файл создан: {output_path}")
         print(f"  Содержимое: {content[:100]}...")
         print()
         return True
     else:
-        print(f"❌ Файл не создан: {output_path}")
+        print(f"[FAIL] Файл не создан: {output_path}")
         print()
         return False
 
@@ -278,21 +278,21 @@ def test_cli_with_fallback():
     
     # Проверяем метод выполнения
     if result.method_used == "cli_with_fallback":
-        print(f"✅ Fallback сработал корректно")
+        print(f"[OK] Fallback сработал корректно")
     elif result.method_used == "file":
-        print(f"✅ Выполнено через файловый интерфейс (ожидаемо)")
+        print(f"[OK] Выполнено через файловый интерфейс (ожидаемо)")
     else:
-        print(f"⚠️ Выполнено через: {result.method_used}")
+        print(f"[WARN] Выполнено через: {result.method_used}")
     
     # Проверяем наличие файла
     if output_path.exists():
         content = output_path.read_text(encoding='utf-8')
-        print(f"✅ Файл создан: {output_path}")
+        print(f"[OK] Файл создан: {output_path}")
         print(f"  Содержимое: {content[:100]}...")
         print()
         return True
     else:
-        print(f"❌ Файл не создан: {output_path}")
+        print(f"[FAIL] Файл не создан: {output_path}")
         print()
         return False
 
@@ -342,7 +342,7 @@ def main():
     total = len(results)
     
     for test_name, result in results.items():
-        status = "✅ PASS" if result else "❌ FAIL"
+        status = "[OK] PASS" if result else "[FAIL] FAIL"
         print(f"{status} - {test_name}")
     
     print()
