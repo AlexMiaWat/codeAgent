@@ -99,18 +99,13 @@ if [ -d /root/.ssh ]; then
         
         if [ -n "$SSH_CMD" ]; then
             export GIT_SSH_COMMAND="$SSH_CMD"
-            # Добавляем в .bashrc для интерактивных сессий
+            # Настраиваем git config глобально (более надежно, чем переменная окружения)
+            git config --global core.sshCommand "$SSH_CMD"
+            # Также добавляем в .bashrc для интерактивных сессий
             echo "export GIT_SSH_COMMAND=\"$SSH_CMD\"" >> /root/.bashrc
             # Добавляем в .profile для всех login shell
             echo "export GIT_SSH_COMMAND=\"$SSH_CMD\"" >> /root/.profile
-            # Создаем скрипт-обертку для git, который всегда использует правильный SSH
-            cat > /usr/local/bin/git-wrapper << 'GITWRAPPER'
-#!/bin/bash
-export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -i /root/.ssh-local/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no}"
-exec /usr/bin/git "$@"
-GITWRAPPER
-            chmod +x /usr/local/bin/git-wrapper
-            log "GIT_SSH_COMMAND configured: $SSH_CMD"
+            log "Git SSH configured globally: $SSH_CMD"
         fi
     fi
 fi
@@ -140,18 +135,27 @@ while true; do
         log "Memory usage: ${MEM_INFO}"
     fi
     
-    # Проверка cursor-agent процесса
-    if command -v pgrep >/dev/null 2>&1; then
-        if pgrep -f "cursor-agent\|agent" > /dev/null 2>&1; then
-            AGENT_PID=$(pgrep -f "cursor-agent\|agent" | head -1)
-            if [ -n "$AGENT_PID" ] && command -v ps >/dev/null 2>&1; then
-                AGENT_MEM=$(ps -p "$AGENT_PID" -o rss= 2>/dev/null | awk '{print int($1/1024)"MB"}' || echo "N/A")
-                log "Cursor Agent: Active | PID: ${AGENT_PID} | Memory: ${AGENT_MEM}"
-            else
-                log "Cursor Agent: Active | PID: ${AGENT_PID}"
+    # Проверка установки Cursor Agent CLI (команда, а не процесс)
+    if command -v /root/.local/bin/agent >/dev/null 2>&1 || command -v agent >/dev/null 2>&1; then
+        AGENT_CMD=$(command -v /root/.local/bin/agent 2>/dev/null || command -v agent 2>/dev/null)
+        if [ -n "$AGENT_CMD" ]; then
+            AGENT_VERSION=$($AGENT_CMD --version 2>/dev/null | head -1 || echo "unknown")
+            log "Cursor Agent: Installed | Path: ${AGENT_CMD} | Version: ${AGENT_VERSION}"
+        else
+            log "Cursor Agent: Not found in PATH"
+        fi
+    else
+        log "Cursor Agent: Not installed - attempting reinstall..."
+        # Попытка переустановки агента
+        if curl https://cursor.com/install -fsS | bash 2>&1 | grep -q "installed\|success"; then
+            log "Cursor Agent: Reinstalled successfully"
+            # Проверяем снова
+            if command -v /root/.local/bin/agent >/dev/null 2>&1; then
+                AGENT_VERSION=$(/root/.local/bin/agent --version 2>/dev/null | head -1 || echo "unknown")
+                log "Cursor Agent: Verified | Version: ${AGENT_VERSION}"
             fi
         else
-            log "Cursor Agent: Not detected"
+            log "Cursor Agent: Reinstall failed"
         fi
     fi
     
