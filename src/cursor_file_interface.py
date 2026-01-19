@@ -227,20 +227,97 @@ class CursorFileInterface:
         Returns:
             Словарь с результатом ожидания
         """
-        filename = f"result_{task_id}.txt"
-        file_path = self.results_dir / filename
+        # Поддерживаем несколько вариантов имен файлов для совместимости
+        possible_filenames = [
+            f"result_{task_id}.txt",  # Стандартный формат
+            f"result_{task_id}.md",   # Markdown формат
+            f"{task_id}.txt",         # Без префикса result_
+            f"{task_id}.md",          # Без префикса result_, markdown
+            f"result_full_cycle_{task_id}.txt",  # Полный цикл формат
+            f"result_full_cycle_{task_id}.md"   # Полный цикл формат, markdown
+        ]
+        
+        # Проверяем, существует ли уже файл с одним из вариантов имен
+        file_path = None
+        for filename in possible_filenames:
+            candidate_path = self.results_dir / filename
+            if candidate_path.exists():
+                file_path = candidate_path
+                logger.info(f"Найден существующий файл результата: {file_path}")
+                # Если файл уже существует, сразу проверяем его и возвращаем результат
+                try:
+                    content = file_path.read_text(encoding='utf-8')
+                    if control_phrase:
+                        if control_phrase in content:
+                            logger.info(f"Существующий файл содержит контрольную фразу: {file_path}")
+                            return {
+                                "success": True,
+                                "file_path": str(file_path),
+                                "content": content,
+                                "wait_time": 0.0
+                            }
+                        else:
+                            logger.debug(f"Существующий файл найден, но контрольная фраза '{control_phrase}' отсутствует")
+                    else:
+                        # Контрольная фраза не требуется
+                        logger.info(f"Существующий файл найден без проверки контрольной фразы: {file_path}")
+                        return {
+                            "success": True,
+                            "file_path": str(file_path),
+                            "content": content,
+                            "wait_time": 0.0
+                        }
+                except Exception as e:
+                    logger.warning(f"Ошибка чтения существующего файла {file_path}: {e}, продолжаем ожидание")
+                    file_path = None
+                    break
+        
+        # Если файл не найден, используем стандартное имя для ожидания
+        if file_path is None:
+            filename = possible_filenames[0]  # result_{task_id}.txt
+            file_path = self.results_dir / filename
         
         start_time = time.time()
-        logger.info(f"Ожидание файла результата: {file_path} (timeout: {timeout}s)")
+        logger.info(f"Ожидание файла результата в {self.results_dir} (timeout: {timeout}s)")
+        logger.debug(f"Проверяем варианты имен: {possible_filenames}")
+        
+        last_log_time = 0
+        log_interval = 10  # Логируем каждые 10 секунд
         
         while time.time() - start_time < timeout:
-            if file_path.exists():
+            elapsed = time.time() - start_time
+            
+            # Периодическое логирование для диагностики
+            if elapsed - last_log_time >= log_interval:
+                logger.info(f"Ожидание файла результата... (прошло {elapsed:.0f}s из {timeout}s)")
+                # Проверяем все возможные варианты имен
+                found_files = []
+                for filename in possible_filenames:
+                    candidate_path = self.results_dir / filename
+                    if candidate_path.exists():
+                        found_files.append(str(candidate_path))
+                if found_files:
+                    logger.info(f"Найдены файлы: {found_files}")
+                last_log_time = elapsed
+            
+            # Проверяем все возможные варианты имен файлов
+            found_file = None
+            for filename in possible_filenames:
+                candidate_path = self.results_dir / filename
+                if candidate_path.exists():
+                    found_file = candidate_path
+                    if found_file != file_path:
+                        logger.info(f"Файл результата найден с альтернативным именем: {found_file}")
+                        file_path = found_file
+                    break
+            
+            if found_file and found_file.exists():
                 # Проверка размера файла перед чтением
                 try:
-                    file_size = file_path.stat().st_size
+                    file_size = found_file.stat().st_size
                     if file_size > self.max_file_size:
                         logger.error(
-                            f"Файл результата слишком большой ({file_size} байт, максимум {self.max_file_size}): {file_path}"
+                            f"Файл результата слишком большой ({file_size} байт, максимум {self.max_file_size}): {found_file}"
                         )
                         return {
                             "success": False,
@@ -248,7 +325,7 @@ class CursorFileInterface:
                             "error": f"Файл результата слишком большой ({file_size} байт)"
                         }
                 except OSError as e:
-                    logger.error(f"Ошибка проверки размера файла результата: {file_path}", exc_info=True)
+                    logger.error(f"Ошибка проверки размера файла результата: {found_file}", exc_info=True)
                     return {
                         "success": False,
                         "content": "",
@@ -258,39 +335,39 @@ class CursorFileInterface:
                 # Файл появился, проверяем контрольную фразу если указана
                 if control_phrase:
                     try:
-                        content = file_path.read_text(encoding='utf-8')
+                        content = found_file.read_text(encoding='utf-8')
                     except Exception as e:
-                        logger.error(f"Ошибка чтения файла результата: {file_path}", exc_info=True)
+                        logger.error(f"Ошибка чтения файла результата: {found_file}", exc_info=True)
                         return {
                             "success": False,
                             "content": "",
                             "error": f"Ошибка чтения файла: {str(e)}"
                         }
                     if control_phrase in content:
-                        logger.info(f"Файл результата найден и содержит контрольную фразу")
+                        logger.info(f"Файл результата найден и содержит контрольную фразу: {found_file}")
                         return {
                             "success": True,
-                            "file_path": str(file_path),
+                            "file_path": str(found_file),
                             "content": content,
                             "wait_time": time.time() - start_time
                         }
                     else:
-                        logger.debug(f"Файл найден, но контрольная фраза еще не появилась")
+                        logger.debug(f"Файл найден, но контрольная фраза '{control_phrase}' еще не появилась в {found_file}")
                 else:
                     # Контрольная фраза не требуется
                     try:
-                        content = file_path.read_text(encoding='utf-8')
+                        content = found_file.read_text(encoding='utf-8')
                     except Exception as e:
-                        logger.error(f"Ошибка чтения файла результата: {file_path}", exc_info=True)
+                        logger.error(f"Ошибка чтения файла результата: {found_file}", exc_info=True)
                         return {
                             "success": False,
                             "content": "",
                             "error": f"Ошибка чтения файла: {str(e)}"
                         }
-                    logger.info(f"Файл результата найден")
+                    logger.info(f"Файл результата найден: {found_file}")
                     return {
                         "success": True,
-                        "file_path": str(file_path),
+                        "file_path": str(found_file),
                         "content": content,
                         "wait_time": time.time() - start_time
                     }

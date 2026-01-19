@@ -12,7 +12,8 @@ import subprocess
 import shutil
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+import time
 from dataclasses import dataclass
 from dotenv import load_dotenv
 
@@ -1074,13 +1075,13 @@ This agent role is used for automated project tasks execution.
                 model_name = cli_config.get('model', '').strip()
                 
                 if model_name:
-                    # Модель указана в конфиге - используем ее через -m флаг
-                    model_flag = f" -m {shlex.quote(model_name)}"
+                    # Модель указана в конфиге - используем ее через --model флаг
+                    model_flag = f" --model {shlex.quote(model_name)}"
                     logger.debug(f"Использование модели из конфига: {model_name}")
-                # Если модель не указана (пустая строка) - используем "Auto" (не добавляем -m флаг)
+                # Если модель не указана (пустая строка) - используем "Auto" (не добавляем --model флаг)
             except Exception as e:
-                # Если не удалось прочитать конфиг - используем "Auto" (не добавляем -m флаг)
-                logger.debug(f"Не удалось прочитать модель из конфига: {e}. Используем Auto (без -m флага).")
+                # Если не удалось прочитать конфиг - используем "Auto" (не добавляем --model флаг)
+                logger.debug(f"Не удалось прочитать модель из конфига: {e}. Используем Auto (без --model флага).")
             
             # Формируем команду agent с prompt
             agent_full_cmd = f'{agent_base_cmd}{model_flag} -p {escaped_prompt} --force --approve-mcps'
@@ -1346,6 +1347,616 @@ This agent role is used for automated project tasks execution.
                 error_message=f"Исключение: {str(e)}"
             )
     
+    def _get_model_config(self) -> Dict[str, Any]:
+        """
+        Получить конфигурацию модели из config.yaml
+        
+        Returns:
+            Словарь с основной моделью и резервными моделями
+        """
+        try:
+            from .config_loader import ConfigLoader
+            config = ConfigLoader()
+            cursor_config = config.get('cursor', {})
+            cli_config = cursor_config.get('cli', {})
+            
+            return {
+                'model': cli_config.get('model', 'auto').strip() or 'auto',
+                'fallback_models': cli_config.get('fallback_models', ['grok']),
+                'resilience': cli_config.get('resilience', {
+                    'enable_fallback': True,
+                    'max_fallback_attempts': 3,
+                    'fallback_retry_delay': 2,
+                    'fallback_on_errors': ['billing_error', 'timeout', 'model_unavailable', 'unknown_error']
+                })
+            }
+        except Exception as e:
+            logger.warning(f"Не удалось прочитать конфигурацию модели: {e}. Используем значения по умолчанию.")
+            return {
+                'model': 'auto',
+                'fallback_models': ['grok'],
+                'resilience': {
+                    'enable_fallback': True,
+                    'max_fallback_attempts': 3,
+                    'fallback_retry_delay': 2,
+                    'fallback_on_errors': ['billing_error', 'timeout', 'model_unavailable', 'unknown_error']
+                }
+            }
+    
+    def _should_trigger_fallback(self, result: CursorCLIResult, resilience_config: Dict) -> bool:
+        """
+        Определить, нужно ли активировать fallback на основе результата
+        
+        Args:
+            result: Результат выполнения команды
+            resilience_config: Конфигурация отказоустойчивости
+            
+        Returns:
+            True если нужно активировать fallback
+        """
+        if not result.success:
+            fallback_on = resilience_config.get('fallback_on_errors', [])
+            
+            # Проверяем billing error
+            if 'billing_error' in fallback_on:
+                stderr_lower = (result.stderr or '').lower()
+                if 'unpaid invoice' in stderr_lower or 'pay your invoice' in stderr_lower:
+                    logger.warning("Обнаружена billing error - активируем fallback")
+                    return True
+            
+            # Проверяем timeout
+            if 'timeout' in fallback_on:
+                if result.error_message and ('таймаут' in result.error_message.lower() or 'timeout' in result.error_message.lower()):
+                    logger.warning("Обнаружен timeout - активируем fallback")
+                    return True
+            
+            # Проверяем unknown error (код != 0 и не billing)
+            if 'unknown_error' in fallback_on:
+                if result.return_code != 0 and result.return_code != -1:
+                    stderr_lower = (result.stderr or '').lower()
+                    if 'unpaid invoice' not in stderr_lower and 'pay your invoice' not in stderr_lower:
+                        logger.warning(f"Обнаружена ошибка (код {result.return_code}) - активируем fallback")
+                        return True
+        
+        return False
+    
+    def execute_with_fallback(
+        self,
+        prompt: str,
+        working_dir: Optional[str] = None,
+        timeout: Optional[int] = None,
+        additional_args: Optional[list[str]] = None,
+        new_chat: bool = True,
+        chat_id: Optional[str] = None
+    ) -> CursorCLIResult:
+        """
+        Выполнить команду с автоматическим fallback на резервные модели
+        
+        Сначала пытается выполнить с основной моделью (auto).
+        При ошибках (billing, timeout, и т.д.) автоматически пробует резервные модели.
+        
+        Args:
+            prompt: Инструкция/промпт для выполнения
+            working_dir: Рабочая директория
+            timeout: Таймаут выполнения
+            additional_args: Дополнительные аргументы
+            new_chat: Создать новый чат
+            chat_id: ID чата для продолжения
+            
+        Returns:
+            CursorCLIResult с результатом выполнения (последняя попытка)
+        """
+        # Получаем конфигурацию
+        model_config = self._get_model_config()
+        primary_model = model_config['model']
+        fallback_models = model_config.get('fallback_models', [])
+        resilience = model_config.get('resilience', {})
+        
+        enable_fallback = resilience.get('enable_fallback', True)
+        max_attempts = resilience.get('max_fallback_attempts', 3)
+        retry_delay = resilience.get('fallback_retry_delay', 2)
+        
+        # Формируем список моделей для попыток
+        models_to_try = [primary_model]
+        if enable_fallback and fallback_models:
+            models_to_try.extend(fallback_models[:max_attempts - 1])
+        
+        logger.info(f"Выполнение с fallback: основная модель '{primary_model}', резервные: {fallback_models}")
+        
+        last_result = None
+        
+        # Пробуем каждую модель по очереди
+        for attempt, model in enumerate(models_to_try, 1):
+            logger.info(f"Попытка {attempt}/{len(models_to_try)} с моделью '{model}'")
+            
+            # Выполняем команду с текущей моделью
+            result = self._execute_with_specific_model(
+                prompt=prompt,
+                model=model,
+                working_dir=working_dir,
+                timeout=timeout,
+                additional_args=additional_args,
+                new_chat=new_chat,
+                chat_id=chat_id
+            )
+            
+            last_result = result
+            
+            # Если успешно - возвращаем результат
+            if result.success:
+                if attempt > 1:
+                    logger.info(f"✅ Успешно выполнено с резервной моделью '{model}' (попытка {attempt})")
+                else:
+                    logger.info(f"✅ Успешно выполнено с основной моделью '{model}'")
+                return result
+            
+            # Проверяем, нужно ли продолжать fallback
+            if not enable_fallback or attempt >= len(models_to_try):
+                break
+            
+            # Проверяем, нужно ли активировать fallback для этой ошибки
+            if not self._should_trigger_fallback(result, resilience):
+                logger.info(f"Ошибка не требует fallback, останавливаем попытки")
+                break
+            
+            # Задержка перед следующей попыткой
+            if attempt < len(models_to_try):
+                logger.info(f"Ожидание {retry_delay}с перед следующей попыткой...")
+                time.sleep(retry_delay)
+        
+        # Все попытки неудачны
+        if last_result:
+            logger.error(f"❌ Все попытки ({len(models_to_try)}) неудачны. Последняя ошибка: {last_result.error_message}")
+        else:
+            logger.error("❌ Не удалось выполнить команду")
+            last_result = CursorCLIResult(
+                success=False,
+                stdout="",
+                stderr="",
+                return_code=-1,
+                cli_available=True,
+                error_message="Не удалось выполнить команду с любой из моделей"
+            )
+        
+        return last_result
+    
+    def _execute_with_specific_model(
+        self,
+        prompt: str,
+        model: str,
+        working_dir: Optional[str] = None,
+        timeout: Optional[int] = None,
+        additional_args: Optional[list[str]] = None,
+        new_chat: bool = True,
+        chat_id: Optional[str] = None
+    ) -> CursorCLIResult:
+        """
+        Внутренний метод для выполнения команды с конкретной моделью
+        
+        Это копия логики из execute, но с явным указанием модели
+        """
+        if not self.cli_available:
+            return CursorCLIResult(
+                success=False,
+                stdout="",
+                stderr="",
+                return_code=-1,
+                cli_available=False,
+                error_message="Cursor CLI недоступен в системе"
+            )
+        
+        # Определяем рабочую директорию
+        effective_working_dir = working_dir or (str(self.project_dir) if self.project_dir else None)
+        
+        # Определяем, используется ли Docker или WSL
+        use_docker = self.cli_command == "docker-compose-agent"
+        use_wsl = self.cli_command and self.cli_command.startswith("wsl")
+        
+        # Получаем CURSOR_API_KEY из .env
+        cursor_api_key = os.getenv("CURSOR_API_KEY")
+        
+        import shlex
+        
+        if use_docker:
+            # Docker команда
+            compose_file = Path(__file__).parent.parent / "docker" / "docker-compose.agent.yml"
+            agent_base_cmd = "/root/.local/bin/agent"
+            
+            escaped_prompt = shlex.quote(prompt)
+            
+            # Используем указанную модель
+            model_flag = f" --model {shlex.quote(model)}" if model else ""
+            
+            agent_full_cmd = f'{agent_base_cmd}{model_flag} -p {escaped_prompt} --force --approve-mcps'
+            
+            cmd = ["docker", "exec"]
+            
+            if cursor_api_key:
+                cmd.extend(["-e", f"CURSOR_API_KEY={cursor_api_key}"])
+                bash_env_export = f'export CURSOR_API_KEY={shlex.quote(cursor_api_key)} && export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && {agent_full_cmd}'
+            else:
+                bash_env_export = f'export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && {agent_full_cmd}'
+            
+            cmd.extend([
+                "cursor-agent-life",
+                "bash", "-c",
+                bash_env_export
+            ])
+            
+            exec_cwd = None
+        else:
+            # Для локального/WSL - используем стандартный execute
+            # Временно сохраняем оригинальную модель в конфиге
+            # и вызываем execute, который прочитает её
+            # Но это сложно, поэтому просто вызываем execute с модифицированным конфигом
+            return self.execute(
+                prompt=prompt,
+                working_dir=working_dir,
+                timeout=timeout,
+                additional_args=additional_args,
+                new_chat=new_chat,
+                chat_id=chat_id
+            )
+        
+        # Выполняем команду (упрощенная версия логики из execute)
+        exec_timeout = timeout if timeout is not None else self.default_timeout
+        if use_docker:
+            exec_timeout = max(exec_timeout, 600)
+        
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=exec_timeout,
+                text=True,
+                encoding='utf-8',
+                errors='replace'
+            )
+            
+            success = result.returncode == 0
+            result_stdout = result.stdout if result.stdout else ""
+            result_stderr = result.stderr if result.stderr else ""
+            
+            # Проверяем billing error
+            stderr_lower = result_stderr.lower()
+            billing_error = "unpaid invoice" in stderr_lower or "pay your invoice" in stderr_lower
+            
+            if billing_error:
+                error_msg = "Неоплаченный счет в Cursor. Требуется оплата: https://cursor.com/dashboard"
+            elif not success:
+                error_msg = f"CLI вернул код {result.returncode}"
+            else:
+                error_msg = None
+            
+            return CursorCLIResult(
+                success=success,
+                stdout=result_stdout,
+                stderr=result_stderr,
+                return_code=result.returncode,
+                cli_available=True,
+                error_message=error_msg
+            )
+            
+        except subprocess.TimeoutExpired:
+            return CursorCLIResult(
+                success=False,
+                stdout="",
+                stderr="",
+                return_code=-1,
+                cli_available=True,
+                error_message=f"Таймаут выполнения ({exec_timeout} секунд)"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка при выполнении команды: {e}", exc_info=True)
+            return CursorCLIResult(
+                success=False,
+                stdout="",
+                stderr=str(e),
+                return_code=-1,
+                cli_available=True,
+                error_message=f"Исключение: {str(e)}"
+            )
+    
+    def _get_model_config(self) -> Dict[str, Any]:
+        """
+        Получить конфигурацию модели из config.yaml
+        
+        Returns:
+            Словарь с основной моделью и резервными моделями
+        """
+        try:
+            from .config_loader import ConfigLoader
+            config = ConfigLoader()
+            cursor_config = config.get('cursor', {})
+            cli_config = cursor_config.get('cli', {})
+            
+            return {
+                'model': cli_config.get('model', 'auto').strip() or 'auto',
+                'fallback_models': cli_config.get('fallback_models', ['grok']),
+                'resilience': cli_config.get('resilience', {
+                    'enable_fallback': True,
+                    'max_fallback_attempts': 3,
+                    'fallback_retry_delay': 2,
+                    'fallback_on_errors': ['billing_error', 'timeout', 'model_unavailable', 'unknown_error']
+                })
+            }
+        except Exception as e:
+            logger.warning(f"Не удалось прочитать конфигурацию модели: {e}. Используем значения по умолчанию.")
+            return {
+                'model': 'auto',
+                'fallback_models': ['grok'],
+                'resilience': {
+                    'enable_fallback': True,
+                    'max_fallback_attempts': 3,
+                    'fallback_retry_delay': 2,
+                    'fallback_on_errors': ['billing_error', 'timeout', 'model_unavailable', 'unknown_error']
+                }
+            }
+    
+    def _should_trigger_fallback(self, result: CursorCLIResult, resilience_config: Dict) -> bool:
+        """
+        Определить, нужно ли активировать fallback на основе результата
+        
+        Args:
+            result: Результат выполнения команды
+            resilience_config: Конфигурация отказоустойчивости
+            
+        Returns:
+            True если нужно активировать fallback
+        """
+        if not result.success:
+            fallback_on = resilience_config.get('fallback_on_errors', [])
+            
+            # Проверяем billing error
+            if 'billing_error' in fallback_on:
+                stderr_lower = (result.stderr or '').lower()
+                if 'unpaid invoice' in stderr_lower or 'pay your invoice' in stderr_lower:
+                    logger.warning("Обнаружена billing error - активируем fallback")
+                    return True
+            
+            # Проверяем timeout
+            if 'timeout' in fallback_on:
+                if result.error_message and ('таймаут' in result.error_message.lower() or 'timeout' in result.error_message.lower()):
+                    logger.warning("Обнаружен timeout - активируем fallback")
+                    return True
+            
+            # Проверяем unknown error (код != 0 и не billing)
+            if 'unknown_error' in fallback_on:
+                if result.return_code != 0 and result.return_code != -1:
+                    stderr_lower = (result.stderr or '').lower()
+                    if 'unpaid invoice' not in stderr_lower and 'pay your invoice' not in stderr_lower:
+                        logger.warning(f"Обнаружена ошибка (код {result.return_code}) - активируем fallback")
+                        return True
+        
+        return False
+    
+    def _execute_with_specific_model(
+        self,
+        prompt: str,
+        model: str,
+        working_dir: Optional[str] = None,
+        timeout: Optional[int] = None,
+        additional_args: Optional[list[str]] = None,
+        new_chat: bool = True,
+        chat_id: Optional[str] = None
+    ) -> CursorCLIResult:
+        """
+        Внутренний метод для выполнения команды с конкретной моделью
+        
+        Это упрощенная версия execute, но с явным указанием модели
+        """
+        if not self.cli_available:
+            return CursorCLIResult(
+                success=False,
+                stdout="",
+                stderr="",
+                return_code=-1,
+                cli_available=False,
+                error_message="Cursor CLI недоступен в системе"
+            )
+        
+        # Определяем рабочую директорию
+        effective_working_dir = working_dir or (str(self.project_dir) if self.project_dir else None)
+        
+        # Определяем, используется ли Docker
+        use_docker = self.cli_command == "docker-compose-agent"
+        
+        if not use_docker:
+            # Для локального/WSL используем стандартный execute
+            # Временно модифицируем конфиг (но это сложно)
+            # Поэтому просто вызываем execute - он прочитает модель из конфига
+            return self.execute(
+                prompt=prompt,
+                working_dir=working_dir,
+                timeout=timeout,
+                additional_args=additional_args,
+                new_chat=new_chat,
+                chat_id=chat_id
+            )
+        
+        # Docker команда
+        import shlex
+        compose_file = Path(__file__).parent.parent / "docker" / "docker-compose.agent.yml"
+        agent_base_cmd = "/root/.local/bin/agent"
+        
+        escaped_prompt = shlex.quote(prompt)
+        model_flag = f" --model {shlex.quote(model)}" if model else ""
+        agent_full_cmd = f'{agent_base_cmd}{model_flag} -p {escaped_prompt} --force --approve-mcps'
+        
+        cursor_api_key = os.getenv("CURSOR_API_KEY")
+        cmd = ["docker", "exec"]
+        
+        if cursor_api_key:
+            cmd.extend(["-e", f"CURSOR_API_KEY={cursor_api_key}"])
+            bash_env_export = f'export CURSOR_API_KEY={shlex.quote(cursor_api_key)} && export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && {agent_full_cmd}'
+        else:
+            bash_env_export = f'export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && {agent_full_cmd}'
+        
+        cmd.extend([
+            "cursor-agent-life",
+            "bash", "-c",
+            bash_env_export
+        ])
+        
+        exec_timeout = timeout if timeout is not None else self.default_timeout
+        exec_timeout = max(exec_timeout, 600)  # Минимум 10 минут для Docker
+        
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=exec_timeout,
+                text=True,
+                encoding='utf-8',
+                errors='replace'
+            )
+            
+            success = result.returncode == 0
+            result_stdout = result.stdout if result.stdout else ""
+            result_stderr = result.stderr if result.stderr else ""
+            
+            # Проверяем billing error
+            stderr_lower = result_stderr.lower()
+            billing_error = "unpaid invoice" in stderr_lower or "pay your invoice" in stderr_lower
+            
+            if billing_error:
+                error_msg = "Неоплаченный счет в Cursor. Требуется оплата: https://cursor.com/dashboard"
+            elif not success:
+                error_msg = f"CLI вернул код {result.returncode}"
+            else:
+                error_msg = None
+            
+            return CursorCLIResult(
+                success=success,
+                stdout=result_stdout,
+                stderr=result_stderr,
+                return_code=result.returncode,
+                cli_available=True,
+                error_message=error_msg
+            )
+            
+        except subprocess.TimeoutExpired:
+            return CursorCLIResult(
+                success=False,
+                stdout="",
+                stderr="",
+                return_code=-1,
+                cli_available=True,
+                error_message=f"Таймаут выполнения ({exec_timeout} секунд)"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка при выполнении команды: {e}", exc_info=True)
+            return CursorCLIResult(
+                success=False,
+                stdout="",
+                stderr=str(e),
+                return_code=-1,
+                cli_available=True,
+                error_message=f"Исключение: {str(e)}"
+            )
+    
+    def execute_with_fallback(
+        self,
+        prompt: str,
+        working_dir: Optional[str] = None,
+        timeout: Optional[int] = None,
+        additional_args: Optional[list[str]] = None,
+        new_chat: bool = True,
+        chat_id: Optional[str] = None
+    ) -> CursorCLIResult:
+        """
+        Выполнить команду с автоматическим fallback на резервные модели
+        
+        Сначала пытается выполнить с основной моделью (auto).
+        При ошибках (billing, timeout, и т.д.) автоматически пробует резервные модели.
+        
+        Args:
+            prompt: Инструкция/промпт для выполнения
+            working_dir: Рабочая директория
+            timeout: Таймаут выполнения
+            additional_args: Дополнительные аргументы
+            new_chat: Создать новый чат
+            chat_id: ID чата для продолжения
+            
+        Returns:
+            CursorCLIResult с результатом выполнения (последняя попытка)
+        """
+        # Получаем конфигурацию
+        model_config = self._get_model_config()
+        primary_model = model_config['model']
+        fallback_models = model_config.get('fallback_models', [])
+        resilience = model_config.get('resilience', {})
+        
+        enable_fallback = resilience.get('enable_fallback', True)
+        max_attempts = resilience.get('max_fallback_attempts', 3)
+        retry_delay = resilience.get('fallback_retry_delay', 2)
+        
+        # Формируем список моделей для попыток
+        models_to_try = [primary_model]
+        if enable_fallback and fallback_models:
+            models_to_try.extend(fallback_models[:max_attempts - 1])
+        
+        logger.info(f"Выполнение с fallback: основная модель '{primary_model}', резервные: {fallback_models}")
+        
+        last_result = None
+        
+        # Пробуем каждую модель по очереди
+        for attempt, model in enumerate(models_to_try, 1):
+            logger.info(f"Попытка {attempt}/{len(models_to_try)} с моделью '{model}'")
+            
+            # Выполняем команду с текущей моделью
+            result = self._execute_with_specific_model(
+                prompt=prompt,
+                model=model,
+                working_dir=working_dir,
+                timeout=timeout,
+                additional_args=additional_args,
+                new_chat=new_chat,
+                chat_id=chat_id
+            )
+            
+            last_result = result
+            
+            # Если успешно - возвращаем результат
+            if result.success:
+                if attempt > 1:
+                    logger.info(f"✅ Успешно выполнено с резервной моделью '{model}' (попытка {attempt})")
+                else:
+                    logger.info(f"✅ Успешно выполнено с основной моделью '{model}'")
+                return result
+            
+            # Проверяем, нужно ли продолжать fallback
+            if not enable_fallback or attempt >= len(models_to_try):
+                break
+            
+            # Проверяем, нужно ли активировать fallback для этой ошибки
+            if not self._should_trigger_fallback(result, resilience):
+                logger.info(f"Ошибка не требует fallback, останавливаем попытки")
+                break
+            
+            # Задержка перед следующей попыткой
+            if attempt < len(models_to_try):
+                logger.info(f"Ожидание {retry_delay}с перед следующей попыткой...")
+                time.sleep(retry_delay)
+        
+        # Все попытки неудачны
+        if last_result:
+            logger.error(f"❌ Все попытки ({len(models_to_try)}) неудачны. Последняя ошибка: {last_result.error_message}")
+        else:
+            logger.error("❌ Не удалось выполнить команду")
+            last_result = CursorCLIResult(
+                success=False,
+                stdout="",
+                stderr="",
+                return_code=-1,
+                cli_available=True,
+                error_message="Не удалось выполнить команду с любой из моделей"
+            )
+        
+        return last_result
+    
     def execute_instruction(
         self,
         instruction: str,
@@ -1354,9 +1965,9 @@ This agent role is used for automated project tasks execution.
         timeout: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        Выполнить инструкцию для задачи через Cursor CLI
+        Выполнить инструкцию для задачи через Cursor CLI с fallback
         
-        Удобный метод для выполнения инструкций с логированием.
+        Удобный метод для выполнения инструкций с логированием и автоматическим fallback.
         
         Args:
             instruction: Текст инструкции для выполнения
@@ -1367,9 +1978,10 @@ This agent role is used for automated project tasks execution.
         Returns:
             Словарь с результатом выполнения
         """
-        logger.info(f"Выполнение инструкции для задачи {task_id} через Cursor CLI")
+        logger.info(f"Выполнение инструкции для задачи {task_id} через Cursor CLI (с fallback)")
         
-        result = self.execute(
+        # Используем execute_with_fallback вместо execute
+        result = self.execute_with_fallback(
             prompt=instruction,
             working_dir=working_dir,
             timeout=timeout,

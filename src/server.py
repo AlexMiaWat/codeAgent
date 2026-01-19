@@ -186,6 +186,10 @@ class CodeAgentServer:
         self._current_iteration = 0
         self._is_running = False
         
+        # Флаг отслеживания активной задачи (для отложенного перезапуска)
+        self._task_in_progress = False
+        self._task_in_progress_lock = threading.Lock()
+        
         # Отслеживание повторяющихся ошибок Cursor
         self._cursor_error_count = 0  # Счетчик последовательных ошибок
         self._cursor_error_lock = threading.Lock()
@@ -913,12 +917,43 @@ class CodeAgentServer:
         
         file_path = self.project_dir / wait_for_file
         
+        # ДОПОЛНИТЕЛЬНО: Проверяем также cursor_results/ на случай, если файл создан через файловый интерфейс
+        cursor_results_dir = self.project_dir / "cursor_results"
+        cursor_result_patterns = [
+            f"result_{task_id}.txt",
+            f"result_{task_id}.md",
+            f"{task_id}.txt",
+            f"{task_id}.md",
+            f"result_full_cycle_{task_id}.txt",
+            f"result_full_cycle_{task_id}.md"
+        ]
+        
         logger.info(f"Ожидание файла результата: {file_path} (timeout: {timeout}s)")
+        logger.debug(f"Контрольная фраза: '{control_phrase}'")
+        logger.debug(f"Также проверяем cursor_results/ на наличие файлов: {cursor_result_patterns}")
         
         start_time = time.time()
         check_interval = 2
+        last_log_time = 0
+        log_interval = 10  # Логируем каждые 10 секунд
         
         while time.time() - start_time < timeout:
+            elapsed = time.time() - start_time
+            
+            # Периодическое логирование для диагностики
+            if elapsed - last_log_time >= log_interval:
+                logger.info(f"Ожидание файла {file_path.name}... (прошло {elapsed:.0f}s из {timeout}s)")
+                # Проверяем также cursor_results/
+                if cursor_results_dir.exists():
+                    found_in_cursor_results = []
+                    for pattern in cursor_result_patterns:
+                        candidate = cursor_results_dir / pattern
+                        if candidate.exists():
+                            found_in_cursor_results.append(str(candidate))
+                    if found_in_cursor_results:
+                        logger.info(f"Найдены файлы в cursor_results/: {found_in_cursor_results}")
+                last_log_time = elapsed
+            
             # Проверяем запрос на остановку
             with self._stop_lock:
                 if self._should_stop:
@@ -942,6 +977,38 @@ class CodeAgentServer:
                     "error": "Перезапуск сервера из-за изменения кода"
                 }
             
+            # Сначала проверяем cursor_results/ (файловый интерфейс)
+            if cursor_results_dir.exists():
+                for pattern in cursor_result_patterns:
+                    cursor_result_path = cursor_results_dir / pattern
+                    if cursor_result_path.exists():
+                        logger.info(f"Найден файл результата в cursor_results/: {cursor_result_path}")
+                        try:
+                            content = cursor_result_path.read_text(encoding='utf-8')
+                            if control_phrase:
+                                if control_phrase in content:
+                                    logger.info(f"Файл из cursor_results/ содержит контрольную фразу")
+                                    return {
+                                        "success": True,
+                                        "file_path": str(cursor_result_path),
+                                        "content": content,
+                                        "wait_time": time.time() - start_time
+                                    }
+                                else:
+                                    logger.debug(f"Файл найден в cursor_results/, но контрольная фраза еще не появилась")
+                            else:
+                                # Контрольная фраза не требуется
+                                logger.info(f"Файл результата найден в cursor_results/")
+                                return {
+                                    "success": True,
+                                    "file_path": str(cursor_result_path),
+                                    "content": content,
+                                    "wait_time": time.time() - start_time
+                                }
+                        except Exception as e:
+                            logger.warning(f"Ошибка чтения файла из cursor_results/ {cursor_result_path}: {e}")
+            
+            # Затем проверяем основной путь (docs/results/)
             if file_path.exists():
                 try:
                     content = file_path.read_text(encoding='utf-8')
@@ -1248,6 +1315,10 @@ class CodeAgentServer:
         self.server_logger.log_task_start(task_number, total_tasks, todo_item.text)
         logger.info(f"Выполнение задачи: {todo_item.text}")
         
+        # Устанавливаем флаг активной задачи
+        with self._task_in_progress_lock:
+            self._task_in_progress = True
+        
         # Генерируем ID задачи
         task_id = f"task_{int(time.time())}"
         
@@ -1333,6 +1404,9 @@ class CodeAgentServer:
                 status="Прервано",
                 details="Задача прервана из-за перезапуска сервера"
             )
+            # Сбрасываем флаг активной задачи
+            with self._task_in_progress_lock:
+                self._task_in_progress = False
             raise  # Пробрасываем исключение дальше
             
         except Exception as e:
@@ -1352,7 +1426,21 @@ class CodeAgentServer:
                 status="Ошибка",
                 details=f"Ошибка: {str(e)}"
             )
+            # Сбрасываем флаг активной задачи
+            with self._task_in_progress_lock:
+                self._task_in_progress = False
             return False
+        finally:
+            # Всегда сбрасываем флаг активной задачи при завершении
+            with self._task_in_progress_lock:
+                self._task_in_progress = False
+            
+            # Проверяем, был ли запрошен перезапуск во время выполнения задачи
+            # Если да, инициируем его после завершения задачи
+            with self._reload_lock:
+                if self._should_reload:
+                    logger.info("Обнаружен отложенный перезапуск - задача завершена, инициируем перезапуск")
+                    # Не сбрасываем флаг здесь - он будет обработан в run_iteration или start()
     
     def _execute_task_via_cursor(self, todo_item: TodoItem, task_type: str, task_logger: TaskLogger) -> bool:
         """
@@ -1456,10 +1544,14 @@ class CodeAgentServer:
             timeout = template.get('timeout', 600)
             
             # Подстановка переменных в wait_for_file
+            original_wait_for_file = wait_for_file
             if wait_for_file:
                 wait_for_file = wait_for_file.replace('{task_id}', task_id)
                 wait_for_file = wait_for_file.replace('{date}', datetime.now().strftime('%Y%m%d'))
                 wait_for_file = wait_for_file.replace('{plan_item_number}', str(instruction_num))
+                logger.debug(f"Инструкция {instruction_num}: wait_for_file '{original_wait_for_file}' -> '{wait_for_file}'")
+            else:
+                logger.warning(f"⚠️ Инструкция {instruction_num}: wait_for_file не указан в шаблоне!")
             
             # Логируем инструкцию
             task_logger.log_instruction(instruction_num, instruction_text, task_type)
@@ -1479,6 +1571,9 @@ class CodeAgentServer:
             
             # Логируем ответ от Cursor
             task_logger.log_cursor_response(result, brief=True)
+            
+            # ДОПОЛНИТЕЛЬНОЕ ЛОГИРОВАНИЕ для диагностики
+            logger.debug(f"Результат выполнения инструкции {instruction_num}: success={result.get('success')}, wait_for_file='{wait_for_file}', control_phrase='{control_phrase}'")
             
             if not result.get("success"):
                 failed_instructions += 1
@@ -1575,7 +1670,9 @@ class CodeAgentServer:
                 raise ServerReloadException("Перезапуск из-за изменения кода перед ожиданием результата")
             
             # Фаза: Ожидание результата (если указан wait_for_file)
+            wait_result = None
             if wait_for_file:
+                logger.info(f"Начинаем ожидание файла результата для инструкции {instruction_num}: {wait_for_file}")
                 task_logger.set_phase(TaskPhase.WAITING_RESULT)
                 task_logger.log_waiting_result(wait_for_file, timeout)
                 
@@ -1585,6 +1682,8 @@ class CodeAgentServer:
                     control_phrase=control_phrase,
                     timeout=timeout
                 )
+                
+                logger.debug(f"Результат ожидания файла для инструкции {instruction_num}: success={wait_result.get('success')}, error={wait_result.get('error')}")
                 
                 # Проверяем, была ли остановка или перезапуск во время ожидания
                 if wait_result.get("error") == "Остановка сервера по запросу":
@@ -1596,7 +1695,7 @@ class CodeAgentServer:
                     task_logger.log_warning("Ожидание результата прервано - требуется перезапуск")
                     raise ServerReloadException("Перезапуск из-за изменения кода во время ожидания результата")
                 
-                if wait_result["success"]:
+                if wait_result and wait_result.get("success"):
                     result_content = wait_result.get("content", "")
                     task_logger.log_result_received(
                         wait_result['file_path'],
@@ -2420,6 +2519,63 @@ class CodeAgentServer:
                 self.server = server_instance
                 self.last_reload_time = 0
                 self.reload_cooldown = 5  # Минимальный интервал между перезапусками (секунды)
+                self.file_hashes = {}  # Кэш хешей файлов для проверки реальных изменений
+                self.ignored_patterns = [
+                    # Игнорируемые директории и паттерны
+                    '__pycache__',
+                    '.pyc',
+                    '/test/',
+                    '\\test\\',
+                    'test_cursor_cli',
+                    'test_',
+                    '/examples/',
+                    '\\examples\\',
+                    '/docs/',
+                    '\\docs\\',
+                    '/logs/',
+                    '\\logs\\',
+                    '.git',
+                    'venv',
+                    'env',
+                    'node_modules'
+                ]
+            
+            def _should_ignore_file(self, file_path: str) -> bool:
+                """Проверка, нужно ли игнорировать файл"""
+                file_path_lower = file_path.lower()
+                
+                # Проверяем игнорируемые паттерны
+                for pattern in self.ignored_patterns:
+                    if pattern in file_path_lower:
+                        return True
+                
+                # Игнорируем файлы, которые не в src/ директории (если это не main.py или другие важные файлы в корне)
+                src_dir = str(Path(__file__).parent).lower()
+                root_dir = str(Path(__file__).parent.parent).lower()
+                file_path_normalized = file_path.lower()
+                
+                # Разрешаем только файлы в src/ или важные файлы в корне (main.py, setup.py и т.д.)
+                if not file_path_normalized.startswith(src_dir):
+                    # Разрешаем только main.py и другие критичные файлы в корне
+                    filename = Path(file_path).name.lower()
+                    allowed_root_files = ['main.py', 'setup.py', 'setup.cfg']
+                    if filename not in allowed_root_files:
+                        return True
+                
+                return False
+            
+            def _get_file_hash(self, file_path: str) -> Optional[str]:
+                """Получить хеш файла для проверки реальных изменений"""
+                try:
+                    import hashlib
+                    file = Path(file_path)
+                    if not file.exists():
+                        return None
+                    # Используем размер и время модификации как простой хеш
+                    stat = file.stat()
+                    return f"{stat.st_size}_{stat.st_mtime}"
+                except Exception:
+                    return None
             
             def on_modified(self, event):
                 if event.is_directory:
@@ -2429,8 +2585,9 @@ class CodeAgentServer:
                 if not event.src_path.endswith('.py'):
                     return
                 
-                # Игнорируем изменения в __pycache__ и других служебных директориях
-                if '__pycache__' in event.src_path or '.pyc' in event.src_path:
+                # Проверяем, нужно ли игнорировать файл
+                if self._should_ignore_file(event.src_path):
+                    logger.debug(f"Игнорируем изменение файла (в игнорируемой директории): {event.src_path}")
                     return
                 
                 # Проверяем cooldown
@@ -2438,20 +2595,37 @@ class CodeAgentServer:
                 if current_time - self.last_reload_time < self.reload_cooldown:
                     return
                 
-                # Игнорируем изменения в test директориях
-                if '/test/' in event.src_path or '\\test\\' in event.src_path:
-                    return
+                # Проверяем, действительно ли файл изменился (сравниваем хеш)
+                file_hash = self._get_file_hash(event.src_path)
+                if file_hash is not None:
+                    if event.src_path in self.file_hashes:
+                        if self.file_hashes[event.src_path] == file_hash:
+                            # Файл не изменился - ложное срабатывание
+                            logger.debug(f"Игнорируем ложное срабатывание для файла: {event.src_path}")
+                            return
+                    # Сохраняем новый хеш
+                    self.file_hashes[event.src_path] = file_hash
                 
                 logger.info(f"Обнаружено изменение файла: {event.src_path}")
                 self.last_reload_time = current_time
                 
-                # Устанавливаем флаг перезапуска
-                with self.server._reload_lock:
-                    self.server._should_reload = True
-                    logger.warning("=" * 80)
-                    logger.warning("ОБНАРУЖЕНО ИЗМЕНЕНИЕ .py ФАЙЛА - ТРЕБУЕТСЯ ПЕРЕЗАПУСК")
-                    logger.warning(f"Изменен файл: {event.src_path}")
-                    logger.warning("=" * 80)
+                # Проверяем, выполняется ли сейчас задача
+                with self.server._task_in_progress_lock:
+                    task_in_progress = self.server._task_in_progress
+                
+                if task_in_progress:
+                    # Если задача выполняется, откладываем перезапуск
+                    logger.info(f"Обнаружено изменение кода во время выполнения задачи - перезапуск будет выполнен после завершения задачи")
+                    with self.server._reload_lock:
+                        self.server._should_reload = True
+                else:
+                    # Если задачи нет, перезапускаем немедленно
+                    with self.server._reload_lock:
+                        self.server._should_reload = True
+                        logger.warning("=" * 80)
+                        logger.warning("ОБНАРУЖЕНО ИЗМЕНЕНИЕ .py ФАЙЛА - ТРЕБУЕТСЯ ПЕРЕЗАПУСК")
+                        logger.warning(f"Изменен файл: {event.src_path}")
+                        logger.warning("=" * 80)
         
         # Определяем директории для отслеживания
         watch_dirs = []
@@ -2494,6 +2668,14 @@ class CodeAgentServer:
         """
         with self._reload_lock:
             if self._should_reload:
+                # Проверяем, выполняется ли сейчас задача
+                with self._task_in_progress_lock:
+                    if self._task_in_progress:
+                        # Задача выполняется - откладываем перезапуск
+                        logger.debug("Перезапуск отложен - выполняется задача")
+                        return False
+                
+                # Задачи нет - можно перезапускать
                 self._should_reload = False
                 return True
             return False

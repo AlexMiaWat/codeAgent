@@ -1,0 +1,9 @@
+model,prompt_type,flags,command,success,return_code,duration,stdout,stderr,billing_error,timeout,error
+gemini-3-flash,simple,-p,"cd /workspace && /root/.local/bin/agent --model gemini-3-flash -p ""Создай файл test.txt с текстом 'Hello'""",False,1,4.53856897354126,,"NonRetriableError: You have an unpaid invoice Visit [cursor.com/dashboard](https://cursor.com/dashboard) and pay your invoice in Stripe to resume requests.
+",True,False,
+gemini-3-flash,simple,-p --force,"cd /workspace && /root/.local/bin/agent --model gemini-3-flash -p --force ""Создай файл test.txt с текстом 'Hello'""",False,1,4.949164152145386,,"NonRetriableError: You have an unpaid invoice Visit [cursor.com/dashboard](https://cursor.com/dashboard) and pay your invoice in Stripe to resume requests.
+",True,False,
+gemini-3-flash,simple,-p --force --approve-mcps,"cd /workspace && /root/.local/bin/agent --model gemini-3-flash -p --force --approve-mcps ""Создай файл test.txt с текстом 'Hello'""",False,1,4.850753545761108,,"NonRetriableError: You have an unpaid invoice Visit [cursor.com/dashboard](https://cursor.com/dashboard) and pay your invoice in Stripe to resume requests.
+",True,False,
+gemini-3-flash,simple,-p --force --approve-mcps --verbose,"cd /workspace && /root/.local/bin/agent --model gemini-3-flash -p --force --approve-mcps --verbose ""Создай файл test.txt с текстом 'Hello'""",False,1,1.3987493515014648,,"error: unknown option '--verbose'
+",False,False,

@@ -1,0 +1,20 @@
+model,prompt_type,flags,command,success,return_code,duration,stdout,stderr,billing_error,timeout,error
+auto,simple,-p --force --approve-mcps,"cd /workspace && /root/.local/bin/agent -p --force --approve-mcps ""Создай файл test.txt с текстом 'Hello'""",False,1,5.036566972732544,,"NonRetriableError: You have an unpaid invoice Visit [cursor.com/dashboard](https://cursor.com/dashboard) and pay your invoice in Stripe to resume requests.
+",True,False,
+auto,simple,-p --force --approve-mcps,"cd /workspace && /root/.local/bin/agent --model auto -p --force --approve-mcps ""Создай файл test.txt с текстом 'Hello'""",True,0,19.032238483428955,"
+Файл `test.txt` создан с текстом 'Hello'.
+",,False,False,
+gemini-3-flash,simple,-p --force --approve-mcps,"cd /workspace && /root/.local/bin/agent --model gemini-3-flash -p --force --approve-mcps ""Создай файл test.txt с текстом 'Hello'""",False,1,5.215219497680664,,"NonRetriableError: You have an unpaid invoice Visit [cursor.com/dashboard](https://cursor.com/dashboard) and pay your invoice in Stripe to resume requests.
+",True,False,
+gemini-3-pro,simple,-p --force --approve-mcps,"cd /workspace && /root/.local/bin/agent --model gemini-3-pro -p --force --approve-mcps ""Создай файл test.txt с текстом 'Hello'""",False,1,5.355365753173828,,"NonRetriableError: You have an unpaid invoice Visit [cursor.com/dashboard](https://cursor.com/dashboard) and pay your invoice in Stripe to resume requests.
+",True,False,
+sonnet-4.5,simple,-p --force --approve-mcps,"cd /workspace && /root/.local/bin/agent --model sonnet-4.5 -p --force --approve-mcps ""Создай файл test.txt с текстом 'Hello'""",False,1,4.961290121078491,,"NonRetriableError: You have an unpaid invoice Visit [cursor.com/dashboard](https://cursor.com/dashboard) and pay your invoice in Stripe to resume requests.
+",True,False,
+opus-4.5,simple,-p --force --approve-mcps,"cd /workspace && /root/.local/bin/agent --model opus-4.5 -p --force --approve-mcps ""Создай файл test.txt с текстом 'Hello'""",False,1,7.940967798233032,,"NonRetriableError: You have an unpaid invoice Visit [cursor.com/dashboard](https://cursor.com/dashboard) and pay your invoice in Stripe to resume requests.
+",True,False,
+gpt-5.2,simple,-p --force --approve-mcps,"cd /workspace && /root/.local/bin/agent --model gpt-5.2 -p --force --approve-mcps ""Создай файл test.txt с текстом 'Hello'""",False,1,7.157546758651733,,"NonRetriableError: You have an unpaid invoice Visit [cursor.com/dashboard](https://cursor.com/dashboard) and pay your invoice in Stripe to resume requests.
+",True,False,
+gpt-5.2-codex,simple,-p --force --approve-mcps,"cd /workspace && /root/.local/bin/agent --model gpt-5.2-codex -p --force --approve-mcps ""Создай файл test.txt с текстом 'Hello'""",False,1,4.65404748916626,,"NonRetriableError: You have an unpaid invoice Visit [cursor.com/dashboard](https://cursor.com/dashboard) and pay your invoice in Stripe to resume requests.
+",True,False,
+grok,simple,-p --force --approve-mcps,"cd /workspace && /root/.local/bin/agent --model grok -p --force --approve-mcps ""Создай файл test.txt с текстом 'Hello'""",True,0,16.58741068840027,"Done! I've created the file test.txt with the text 'Hello'.
+",,False,False,

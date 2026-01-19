@@ -391,24 +391,26 @@ python -c "from test_runner import CursorCLITester; t = CursorCLITester(); t.tes
 
 **Формат команды для тестирования:**
 ```bash
-docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent -m "<model>" -p "Создай файл test.txt" --force --approve-mcps'
+docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent --model "<model>" -p "Создай файл test.txt" --force --approve-mcps'
 ```
 
-**Таблица результатов тестирования `-m`:**
+**ВАЖНО:** Используется флаг `--model`, а не `-m`!
+
+**Таблица результатов тестирования `--model`:**
 
 | № | Модель | Команда | Результат | Код возврата | Время (сек) | Billing Error | Примечания |
 |---|--------|---------|-----------|--------------|-------------|---------------|------------|
-| 1 | `""` (Auto) | `agent -p "..."` | ⏳ | - | - | - | Без флага -m |
-| 2 | `auto` | `agent -m auto -p "..."` | ⏳ | - | - | - | Явный auto |
-| 3 | `claude-haiku` | `agent -m claude-haiku -p "..."` | ⏳ | - | - | - | Дешевая |
-| 4 | `gpt-4o-mini` | `agent -m gpt-4o-mini -p "..."` | ⏳ | - | - | - | Дешевая |
-| 5 | `gemini-flash` | `agent -m gemini-flash -p "..."` | ⏳ | - | - | - | Дешевая |
-| 6 | `sonnet-3.5` | `agent -m sonnet-3.5 -p "..."` | ⏳ | - | - | - | Средняя |
-| 7 | `sonnet-4.5` | `agent -m sonnet-4.5 -p "..."` | ⏳ | - | - | - | Премиальная |
-| 8 | `gpt-5` | `agent -m gpt-5 -p "..."` | ⏳ | - | - | - | Премиальная |
-| 9 | `gpt-5.2` | `agent -m gpt-5.2 -p "..."` | ⏳ | - | - | - | Премиальная |
-| 10 | `opus-4.5` | `agent -m opus-4.5 -p "..."` | ⏳ | - | - | - | Премиальная |
-| 11 | `grok` | `agent -m grok -p "..."` | ⏳ | - | - | - | Альтернативная |
+| 1 | `""` (Auto) | `agent -p "..."` | ⚠️ | 1 | 5.04 | ✅ Да | Без флага --model, billing error |
+| 2 | `auto` | `agent --model auto -p "..."` | ✅ | 0 | 19.03 | ❌ Нет | Явный auto - работает! |
+| 3 | `gemini-3-flash` | `agent --model gemini-3-flash -p "..."` | ⚠️ | 1 | 5.22 | ✅ Да | Дешевая, но billing error |
+| 4 | `gemini-3-pro` | `agent --model gemini-3-pro -p "..."` | ⚠️ | 1 | 5.36 | ✅ Да | Средняя, billing error |
+| 5 | `sonnet-4.5` | `agent --model sonnet-4.5 -p "..."` | ⚠️ | 1 | 4.96 | ✅ Да | Премиальная, billing error |
+| 6 | `opus-4.5` | `agent --model opus-4.5 -p "..."` | ⚠️ | 1 | 7.94 | ✅ Да | Премиальная, billing error |
+| 7 | `gpt-5.2` | `agent --model gpt-5.2 -p "..."` | ⚠️ | 1 | 7.16 | ✅ Да | Премиальная, billing error |
+| 8 | `gpt-5.2-codex` | `agent --model gpt-5.2-codex -p "..."` | ⚠️ | 1 | 4.65 | ✅ Да | Премиальная, billing error |
+| 9 | `grok` | `agent --model grok -p "..."` | ✅ | 0 | 16.59 | ❌ Нет | Альтернативная - работает! |
+
+**ВАЖНО:** Флаг должен быть `--model`, а не `-m`! Исправлено в коде.
 
 **Легенда:**
 - ✅ Успешно
@@ -424,7 +426,7 @@ docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent -
 | Флаг | Описание | Обязательность | Варианты тестирования |
 |------|-----------|----------------|------------------------|
 | `-p` | Prompt (инструкция) | Обязательный | Всегда используется |
-| `-m` | Модель | Опциональный | См. таблицу выше |
+| `--model` | Модель | Опциональный | См. таблицу выше (НЕ `-m`!) |
 | `--force` | Принудительное выполнение | Рекомендуется | С/без |
 | `--approve-mcps` | Авто-одобрение MCP | Рекомендуется | С/без |
 | `--resume` | Продолжение чата | Опциональный | С chat_id/без |
@@ -439,10 +441,10 @@ docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent -
 | 1 | `-p "..."` | Минимальная (только prompt) | Высокий |
 | 2 | `-p "..." --force` | С force | Высокий |
 | 3 | `-p "..." --force --approve-mcps` | Текущая (рекомендуемая) | Высокий |
-| 4 | `-m <model> -p "..." --force --approve-mcps` | С моделью | Высокий |
+| 4 | `--model <model> -p "..." --force --approve-mcps` | С моделью | Высокий |
 | 5 | `-p "..." --force --approve-mcps --verbose` | С verbose | Средний |
 | 6 | `--resume <chat_id> -p "..." --force --approve-mcps` | Продолжение чата | Средний |
-| 7 | `-m <model> -p "..." --force --approve-mcps --verbose` | Полная комбинация | Низкий |
+| 7 | `--model <model> -p "..." --force --approve-mcps --verbose` | Полная комбинация | Низкий |
 
 **Таблица результатов тестирования комбинаций:**
 
@@ -451,8 +453,8 @@ docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent -
 | 1 | `-p "..."` | Auto | ⏳ | - | - | - | - | Минимальная |
 | 2 | `-p "..." --force` | Auto | ⏳ | - | - | - | - | С force |
 | 3 | `-p "..." --force --approve-mcps` | Auto | ⏳ | - | - | - | - | Текущая |
-| 4 | `-m claude-haiku -p "..." --force --approve-mcps` | claude-haiku | ⏳ | - | - | - | - | Дешевая модель |
-| 5 | `-m gpt-4o-mini -p "..." --force --approve-mcps` | gpt-4o-mini | ⏳ | - | - | - | - | Дешевая модель |
+| 4 | `--model auto -p "..." --force --approve-mcps` | auto | ✅ | 0 | 19.03 | ❌ | - | Работает! |
+| 5 | `--model grok -p "..." --force --approve-mcps` | grok | ✅ | 0 | 16.59 | ❌ | - | Работает! |
 | 6 | `-p "..." --force --approve-mcps --verbose` | Auto | ⏳ | - | - | - | - | С verbose |
 | 7 | `--resume <id> -p "..." --force --approve-mcps` | Auto | ⏳ | - | - | - | - | Продолжение |
 
@@ -691,20 +693,20 @@ result2 = cli.execute(prompt="test", new_chat=True)
 # Для локального CLI (строка 1140)
 model_name = cli_config.get('model', '').strip()
 if model_name:
-    cmd.extend(["-m", model_name])
+    cmd.extend(["--model", model_name])
 cmd.extend(["-p", prompt, "--force", "--approve-mcps"])
 
 # Для WSL (строка 1122)
 model_name = cli_config.get('model', '').strip()
 if model_name:
-    cmd.extend(["-m", model_name])
+    cmd.extend(["--model", model_name])
 cmd.extend(["-p", prompt, "--force", "--approve-mcps"])
 ```
 
 **Тестирование:**
 - [ ] Протестировать локальный CLI с model: "claude-haiku"
 - [ ] Протестировать WSL с model: "gpt-4o-mini"
-- [ ] Проверить, что флаг -m добавляется корректно
+- [ ] Проверить, что флаг --model добавляется корректно
 
 ### 3.2 Реализация fallback стратегии
 
@@ -1130,11 +1132,11 @@ logger.debug(f"Флаг модели в команде: {model_flag or 'не д�
 # Тест с Auto (без флага -m)
 docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent -p "Создай файл test.txt" --force --approve-mcps'
 
-# Тест с дешевой моделью
-docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent -m claude-haiku -p "Создай файл test2.txt" --force --approve-mcps'
+# Тест с явной моделью auto (работает!)
+docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent --model auto -p "Создай файл test2.txt" --force --approve-mcps'
 
-# Тест с другой дешевой моделью
-docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent -m gpt-4o-mini -p "Создай файл test3.txt" --force --approve-mcps'
+# Тест с моделью grok (работает!)
+docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent --model grok -p "Создай файл test3.txt" --force --approve-mcps'
 ```
 
 **Проверка результатов:**
