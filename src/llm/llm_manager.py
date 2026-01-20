@@ -221,7 +221,8 @@ class LLMManager:
         prompt: str,
         model_name: Optional[str] = None,
         use_fastest: bool = True,
-        use_parallel: bool = False
+        use_parallel: bool = False,
+        response_format: Optional[Dict[str, Any]] = None
     ) -> ModelResponse:
         """
         Генерация ответа через модель
@@ -231,6 +232,7 @@ class LLMManager:
             model_name: Имя модели (если None - выбирается автоматически)
             use_fastest: Использовать самую быструю модель
             use_parallel: Использовать параллельное выполнение (best_of_two)
+            response_format: Формат ответа (например, {"type": "json_object"} для JSON mode)
         
         Returns:
             ModelResponse с ответом модели
@@ -240,15 +242,16 @@ class LLMManager:
         
         # Определяем стратегию использования
         if use_parallel or strategy == 'best_of_two':
-            return await self._generate_parallel(prompt)
+            return await self._generate_parallel(prompt, response_format=response_format)
         else:
-            return await self._generate_single(prompt, model_name, use_fastest)
+            return await self._generate_single(prompt, model_name, use_fastest, response_format=response_format)
     
     async def _generate_single(
         self,
         prompt: str,
         model_name: Optional[str] = None,
-        use_fastest: bool = True
+        use_fastest: bool = True,
+        response_format: Optional[Dict[str, Any]] = None
     ) -> ModelResponse:
         """Генерация ответа через одну модель"""
         # Выбираем модель
@@ -265,21 +268,35 @@ class LLMManager:
             model_config = primary_models[0]
         
         # Пробуем с fallback
-        return await self._generate_with_fallback(prompt, model_config)
+        return await self._generate_with_fallback(prompt, model_config, response_format=response_format)
     
     async def _generate_with_fallback(
         self,
         prompt: str,
-        primary_model: ModelConfig
+        primary_model: ModelConfig,
+        response_format: Optional[Dict[str, Any]] = None
     ) -> ModelResponse:
         """Генерация с fallback на резервные модели"""
         models_to_try = [primary_model] + self.get_fallback_models()
         
         for model_config in models_to_try:
             try:
-                response = await self._call_model(prompt, model_config)
+                response = await self._call_model(prompt, model_config, response_format=response_format)
                 if response.success:
-                    return response
+                    # Если запрашивался JSON mode, проверяем что ответ действительно JSON
+                    if response_format and response_format.get("type") == "json_object":
+                        if self._validate_json_response(response.content):
+                            return response
+                        else:
+                            logger.warning(
+                                f"Model {model_config.name} returned invalid JSON in JSON mode. "
+                                f"Content: {response.content[:200]}... Trying next model."
+                            )
+                            model_config.error_count += 1
+                            continue
+                    else:
+                        # Не JSON mode - просто возвращаем успешный ответ
+                        return response
                 else:
                     logger.warning(f"Model {model_config.name} failed: {response.error}")
                     model_config.error_count += 1
@@ -291,7 +308,56 @@ class LLMManager:
         # Все модели провалились
         raise RuntimeError("All models failed to generate response")
     
-    async def _generate_parallel(self, prompt: str) -> ModelResponse:
+    def _validate_json_response(self, content: str) -> bool:
+        """
+        Проверяет что ответ является валидным JSON объектом
+        
+        Args:
+            content: Содержимое ответа модели
+        
+        Returns:
+            True если ответ валидный JSON объект, False иначе
+        """
+        if not content or not content.strip():
+            return False
+        
+        import json
+        import re
+        
+        text = content.strip()
+        
+        # Убираем markdown code fences если есть
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+            text = re.sub(r"\s*```$", "", text)
+            text = text.strip()
+        
+        # Пытаемся распарсить как JSON
+        try:
+            decoder = json.JSONDecoder()
+            # Ищем первый валидный JSON объект
+            for i, ch in enumerate(text):
+                if ch not in "{[":
+                    continue
+                try:
+                    obj, _end = decoder.raw_decode(text[i:])
+                    # Проверяем что это объект (dict), а не массив
+                    if isinstance(obj, dict):
+                        return True
+                except json.JSONDecodeError:
+                    continue
+            
+            # Последняя попытка - прямой парсинг всего текста
+            obj = json.loads(text)
+            return isinstance(obj, dict)
+        except json.JSONDecodeError:
+            return False
+    
+    async def _generate_parallel(
+        self, 
+        prompt: str,
+        response_format: Optional[Dict[str, Any]] = None
+    ) -> ModelResponse:
         """Параллельная генерация через две модели с выбором лучшего ответа"""
         llm_config = self.config.get('llm', {})
         parallel_config = llm_config.get('parallel', {})
@@ -305,15 +371,15 @@ class LLMManager:
         
         if len(parallel_models) < 2:
             # Недостаточно моделей для параллельного использования
-            return await self._generate_single(prompt)
+            return await self._generate_single(prompt, response_format=response_format)
         
         # Используем первые две модели
         model1, model2 = parallel_models[0], parallel_models[1]
         
         # Генерируем ответы параллельно
         responses = await asyncio.gather(
-            self._call_model(prompt, model1),
-            self._call_model(prompt, model2),
+            self._call_model(prompt, model1, response_format=response_format),
+            self._call_model(prompt, model2, response_format=response_format),
             return_exceptions=True
         )
         
@@ -324,14 +390,25 @@ class LLMManager:
                 logger.error(f"Parallel generation error: {resp}")
                 continue
             if resp.success:
-                valid_responses.append(resp)
+                # Если запрашивался JSON mode, проверяем что ответ действительно JSON
+                if response_format and response_format.get("type") == "json_object":
+                    if self._validate_json_response(resp.content):
+                        valid_responses.append(resp)
+                    else:
+                        logger.warning(
+                            f"Model {resp.model_name} returned invalid JSON in parallel mode. "
+                            f"Content: {resp.content[:200]}..."
+                        )
+                else:
+                    # Не JSON mode - просто добавляем успешный ответ
+                    valid_responses.append(resp)
         
         if not valid_responses:
-            # Обе модели провалились - используем fallback
-            return await self._generate_with_fallback(prompt, model1)
+            # Обе модели провалились или вернули невалидный JSON - используем fallback
+            return await self._generate_with_fallback(prompt, model1, response_format=response_format)
         
         if len(valid_responses) == 1:
-            # Только одна модель сработала
+            # Только одна модель сработала и вернула валидный ответ
             return valid_responses[0]
         
         # Обе модели сработали - выбираем лучший ответ
@@ -399,7 +476,12 @@ class LLMManager:
         
         return 5.0  # Средняя оценка по умолчанию
     
-    async def _call_model(self, prompt: str, model_config: ModelConfig) -> ModelResponse:
+    async def _call_model(
+        self, 
+        prompt: str, 
+        model_config: ModelConfig,
+        response_format: Optional[Dict[str, Any]] = None
+    ) -> ModelResponse:
         """Вызов модели для генерации ответа"""
         start_time = time.time()
         
@@ -407,16 +489,33 @@ class LLMManager:
             # Получаем клиент (пока только openrouter)
             client = list(self.clients.values())[0]
             
-            response = await client.chat.completions.create(
-                model=model_config.name,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
-                top_p=model_config.top_p
-            )
+            # Формируем параметры запроса
+            request_params = {
+                "model": model_config.name,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": model_config.max_tokens,
+                "temperature": model_config.temperature,
+                "top_p": model_config.top_p
+            }
+            
+            # Добавляем response_format если указан (для JSON mode)
+            if response_format:
+                request_params["response_format"] = response_format
+            
+            response = await client.chat.completions.create(**request_params)
             
             response_time = time.time() - start_time
-            content = response.choices[0].message.content.strip()
+            
+            # Проверяем что ответ содержит choices
+            if not response.choices or len(response.choices) == 0:
+                raise ValueError("Empty choices in API response")
+            
+            # Некоторые провайдеры/модели могут вернуть None в message.content
+            message = response.choices[0].message
+            if message is None:
+                raise ValueError("Message is None in API response")
+            
+            content = (message.content or "").strip()
             
             # Обновляем статистику модели
             model_config.last_response_time = response_time

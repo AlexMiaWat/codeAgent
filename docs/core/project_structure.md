@@ -19,13 +19,12 @@ codeAgent/
 │   │   └── workflow_detailed.md # Детальный workflow
 │   ├── guides/              # Руководства пользователя
 │   │   ├── setup.md         # Руководство по настройке
-│   │   ├── API_KEYS_SETUP.md # Настройка API ключей
-│   │   └── testing.md       # Руководство по тестированию
+│   │   └── API_KEYS_SETUP.md # Настройка API ключей
 │   ├── integration/         # Документация интеграций
 │   │   ├── cursor_integration.md
 │   │   └── llm_integration.md
 │   ├── testing/             # Документация тестирования
-│   │   └── TESTING.md       # Полное руководство
+│   │   └── TESTING_GUIDE.md # Полное руководство
 │   └── ...                  # Другие категории документации
 ├── src/                     # Исходный код
 │   ├── __init__.py
@@ -89,7 +88,6 @@ codeAgent/
 #### guides/ - Руководства пользователя
 - **setup.md** - Пошаговое руководство по установке и настройке
 - **API_KEYS_SETUP.md** - Безопасная настройка API ключей
-- **testing.md** - Руководство по тестированию
 - **SERVER_MONITORING_GUIDE.md** - Руководство по мониторингу сервера
 
 #### integration/ - Документация интеграций
@@ -98,7 +96,7 @@ codeAgent/
 - **llm_limitations.md** - Ограничения LLM моделей
 
 #### testing/ - Документация тестирования
-- **TESTING.md** - Полное руководство по тестированию
+- **TESTING_GUIDE.md** - Полное руководство по тестированию
 - **TEST_SUMMARY.md** - Сводка тестирования
 - **OPENROUTER_API_TEST_REPORT.md** - Отчет о тестировании OpenRouter API
 
@@ -205,30 +203,13 @@ codeAgent/
 
 ## Расширение проекта
 
-### Добавление нового агента
-
-1. Создать файл в `src/agents/` (например, `documentation_agent.py`)
-2. Определить агента с помощью `Agent` из CrewAI
-3. Добавить агента в `src/agents/__init__.py`
-4. Использовать в `server.py` при необходимости
-
-### Добавление нового инструмента
-
-1. Создать класс инструмента в `src/tools/`
-2. Наследовать от `BaseTool` из `crewai_tools`
-3. Реализовать метод `_run()`
-4. Добавить инструмент к агенту в `executor_agent.py`
-
-### Добавление нового формата todo
-
-1. Добавить метод парсинга в `todo_manager.py`
-2. Обновить `_load_todos()` для поддержки нового формата
-3. Обновить документацию в `docs/guides/setup.md`
+**Добавление агента:** Создать файл в `src/agents/`, определить через `Agent` из CrewAI  
+**Добавление инструмента:** Создать класс в `src/tools/`, наследовать от `BaseTool`  
+**Новый формат todo:** Добавить метод парсинга в `todo_manager.py`
 
 ## Следующие шаги
 
-1. Изучите [README.md](../../README.md) для общего понимания проекта
-2. Прочитайте [architecture.md](architecture.md) для понимания архитектуры
-3. Следуйте [guides/setup.md](../guides/setup.md) для настройки и запуска
-4. Обратитесь к [api.md](api.md) для работы с API
-5. Изучите [docs/README.md](../README.md) для обзора всей документации
+1. [../../README.md](../../README.md) - Общее понимание
+2. [architecture.md](architecture.md) - Архитектура
+3. [../guides/setup.md](../guides/setup.md) - Настройка
+4. [api.md](api.md) - API

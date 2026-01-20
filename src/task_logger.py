@@ -216,9 +216,7 @@ ID: {self.task_id}
         self.current_phase = phase
         self.current_stage = stage
         
-        # Формируем сообщение о фазе
-        separator = '-' * 80
-        
+        # Формируем сообщение о фазе (без рамок, только цвет)
         if stage and instruction_num:
             phase_text = f"📍 ЭТАП {stage}, ИНСТРУКЦИЯ {instruction_num} - {phase.value}"
         elif stage:
@@ -236,7 +234,8 @@ ID: {self.task_id}
         else:
             color = Colors.BRIGHT_BLUE
         
-        phase_msg = f"{Colors.colorize(separator, Colors.BRIGHT_BLACK)}\n{Colors.colorize(phase_text, color)}\n{Colors.colorize(separator, Colors.BRIGHT_BLACK)}"
+        # Используем только цветовое выделение, без разделителей
+        phase_msg = Colors.colorize(phase_text, color)
         
         self.logger.info(phase_msg)
         self.logger.debug(f"Фаза изменена: {phase.value}")
@@ -252,11 +251,24 @@ ID: {self.task_id}
         """
         self.instruction_count += 1
         
-        # Краткий вывод в консоль с цветом (запрос)
+        # Вывод в консоль с цветом (запрос - желтый)
         instruction_header = Colors.colorize(f"📝 Инструкция {instruction_num} (тип: {task_type})", Colors.BRIGHT_MAGENTA)
-        preview = instruction_text[:100] + ('...' if len(instruction_text) > 100 else '')
         self.logger.info(instruction_header)
-        self.logger.info(f"   {preview}")
+        
+        # Показываем несколько строк инструкции (не сокращаем до 100 символов)
+        # Разбиваем на строки и показываем первые 5 строк
+        lines = instruction_text.split('\n')
+        preview_lines = lines[:5]  # Первые 5 строк
+        
+        # Выделяем каждую строку инструкции желтым цветом (вопрос)
+        for line in preview_lines:
+            colored_line = Colors.colorize(f"   {line}", Colors.BRIGHT_YELLOW)
+            self.logger.info(colored_line)
+        
+        # Если инструкция длиннее 5 строк, добавляем индикатор
+        if len(lines) > 5:
+            indicator = Colors.colorize(f"   ... (еще {len(lines) - 5} строк)", Colors.BRIGHT_BLACK)
+            self.logger.info(indicator)
         
         # Полный вывод в файл
         self.logger.debug(f"\nИнструкция {instruction_num}:")
@@ -273,7 +285,7 @@ ID: {self.task_id}
         """
         success = response.get('success', False)
         
-        # Краткий вывод в консоль с цветом (ответ)
+        # Вывод в консоль с цветом (ответ - зеленый для успеха)
         if brief:
             if success:
                 status_icon = emoji("✅", "[OK]")
@@ -287,13 +299,28 @@ ID: {self.task_id}
             response_header = Colors.colorize(f"{status_icon} Ответ от Cursor: {status_text}", color)
             self.logger.info(response_header)
             
-            # Извлекаем краткую информацию
+            # Извлекаем информацию из ответа
+            stdout = response.get('stdout', '')
+            stderr = response.get('stderr', '')
+            
             if success:
-                # Пытаемся найти информацию о созданных/измененных файлах
-                stdout = response.get('stdout', '')
-                stderr = response.get('stderr', '')
+                # Показываем первые несколько строк ответа (не сокращаем до минимума)
+                if stdout:
+                    # Разбиваем на строки и показываем первые 5 строк
+                    stdout_lines = stdout.strip().split('\n')
+                    preview_lines = stdout_lines[:5]  # Первые 5 строк
+                    
+                    # Выделяем каждую строку ответа зеленым цветом
+                    for line in preview_lines:
+                        colored_line = Colors.colorize(f"   {line}", Colors.BRIGHT_GREEN)
+                        self.logger.info(colored_line)
+                    
+                    # Если ответ длиннее 5 строк, добавляем индикатор
+                    if len(stdout_lines) > 5:
+                        indicator = Colors.colorize(f"   ... (еще {len(stdout_lines) - 5} строк)", Colors.BRIGHT_BLACK)
+                        self.logger.info(indicator)
                 
-                # Простой парсинг для поиска упоминаний файлов
+                # Пытаемся найти информацию о созданных/измененных файлах
                 created_files = self._extract_file_mentions(stdout, ['created', 'создан', 'создано'])
                 modified_files = self._extract_file_mentions(stdout, ['modified', 'изменен', 'обновлен'])
                 tested = 'test' in stdout.lower() or 'тест' in stdout.lower()
@@ -305,8 +332,23 @@ ID: {self.task_id}
                 if tested:
                     self.logger.info(Colors.colorize(f"   🧪 Выполнено тестирование", Colors.CYAN))
             else:
+                # Для ошибок показываем больше информации
                 error_msg = response.get('error_message', 'Неизвестная ошибка')
                 self.logger.info(Colors.colorize(f"   Причина: {error_msg}", Colors.RED))
+                
+                # Показываем первые строки stderr если есть
+                if stderr:
+                    stderr_lines = stderr.strip().split('\n')
+                    preview_lines = stderr_lines[:3]  # Первые 3 строки ошибки
+                    
+                    # Выделяем каждую строку ошибки красным цветом
+                    for line in preview_lines:
+                        colored_line = Colors.colorize(f"   {line}", Colors.RED)
+                        self.logger.info(colored_line)
+                    
+                    if len(stderr_lines) > 3:
+                        indicator = Colors.colorize(f"   ... (еще {len(stderr_lines) - 3} строк)", Colors.BRIGHT_BLACK)
+                        self.logger.info(indicator)
         
         # Полный вывод в файл
         self.logger.debug("\n" + "=" * 40)
@@ -546,17 +588,10 @@ class ServerLogger:
             total_tasks: Общее количество задач
             task_name: Название задачи
         """
-        top_line = '╔' + '═' * 78 + '╗'
-        middle_line = f"║ ЗАДАЧА {task_number}/{total_tasks}: {task_name[:60]}"
-        bottom_line = '╚' + '═' * 78 + '╝'
+        # Используем цветовое выделение вместо рамок
+        task_text = f"ЗАДАЧА {task_number}/{total_tasks}: {task_name[:60]}"
         
-        msg_lines = [
-            Colors.colorize(top_line, Colors.BRIGHT_BLACK),
-            Colors.colorize(middle_line, Colors.BOLD + Colors.BRIGHT_YELLOW),
-            Colors.colorize(bottom_line, Colors.BRIGHT_BLACK)
-        ]
-        
-        msg = '\n'.join(msg_lines)
+        msg = Colors.colorize(task_text, Colors.BOLD + Colors.BRIGHT_YELLOW)
         self.logger.info(msg)
     
     def log_server_shutdown(self, reason: str = "Остановка пользователем"):

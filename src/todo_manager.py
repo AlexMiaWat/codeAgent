@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class TodoItem:
     """Элемент todo-листа"""
     
-    def __init__(self, text: str, level: int = 0, done: bool = False, parent: Optional['TodoItem'] = None):
+    def __init__(self, text: str, level: int = 0, done: bool = False, parent: Optional['TodoItem'] = None, comment: Optional[str] = None):
         """
         Инициализация элемента todo
         
@@ -24,12 +24,14 @@ class TodoItem:
             level: Уровень вложенности (0 - корень)
             done: Выполнена ли задача
             parent: Родительский элемент
+            comment: Комментарий к задаче (например, причина пропуска или краткое описание выполнения)
         """
         self.text = text.strip()
         self.level = level
         self.done = done
         self.parent = parent
         self.children: List['TodoItem'] = []
+        self.comment = comment
     
     def __repr__(self) -> str:
         status = "✓" if self.done else "○"
@@ -267,10 +269,19 @@ class TodoManager:
             # Убираем номера и маркеры списка
             text = re.sub(r'^\d+[.)]\s*', '', line)
             text = re.sub(r'^[-*+]\s+', '', text)
+            
+            # Парсим комментарий (формат: текст  # комментарий)
+            comment = None
+            if '  # ' in text or ' # ' in text:
+                parts = re.split(r'\s+#\s+', text, 1)
+                if len(parts) == 2:
+                    text = parts[0].strip()
+                    comment = parts[1].strip()
+            
             text = text.strip()
             
             if text:
-                items.append(TodoItem(text, level=level))
+                items.append(TodoItem(text, level=level, comment=comment))
         
         self.items = items
     
@@ -308,21 +319,28 @@ class TodoManager:
             if not line:
                 continue
             
-            # Парсинг чекбоксов: - [ ] или - [x]
-            checkbox_match = re.match(r'^(\s*)- \[([ xX])\]\s*(.+)$', line)
+            # Парсинг чекбоксов: - [ ] или - [x] с возможным комментарием
+            # Формат: - [x] Текст задачи <!-- комментарий -->
+            # Используем более гибкий regex для парсинга комментариев
+            checkbox_match = re.match(r'^(\s*)- \[([ xX])\]\s*(.+?)(?:\s*<!--\s*(.+?)\s*-->)?\s*$', line)
             if checkbox_match:
                 indent = len(checkbox_match.group(1))
                 checked = checkbox_match.group(2).lower() == 'x'
                 text = checkbox_match.group(3).strip()
+                comment = checkbox_match.group(4) if checkbox_match.group(4) else None
                 
                 level = indent // 2
-                items.append(TodoItem(text, level=level, done=checked))
+                items.append(TodoItem(text, level=level, done=checked, comment=comment))
             # Парсинг обычных списков
             elif re.match(r'^\s*[-*+]\s+', line):
                 level = (len(line) - len(line.lstrip())) // 2
-                text = re.sub(r'^\s*[-*+]\s+', '', line).strip()
-                if text:
-                    items.append(TodoItem(text, level=level))
+                # Парсинг с возможным комментарием
+                text_match = re.match(r'^\s*[-*+]\s+(.+?)(?:\s*<!--\s*(.+?)\s*-->)?$', line)
+                if text_match:
+                    text = text_match.group(1).strip()
+                    comment = text_match.group(2) if text_match.group(2) else None
+                    if text:
+                        items.append(TodoItem(text, level=level, comment=comment))
         
         self.items = items
     
@@ -373,7 +391,8 @@ class TodoManager:
                 if isinstance(item_data, dict):
                     text = item_data.get('text', item_data.get('task', ''))
                     done = item_data.get('done', False)
-                    items.append(TodoItem(text, level=level, done=done))
+                    comment = item_data.get('comment', None)
+                    items.append(TodoItem(text, level=level, done=done, comment=comment))
                     
                     if 'children' in item_data:
                         parse_items(item_data['children'], level + 1)
@@ -407,19 +426,30 @@ class TodoManager:
         """
         return self.items
     
-    def mark_task_done(self, task_text: str) -> bool:
+    def mark_task_done(self, task_text: str, comment: Optional[str] = None) -> bool:
         """
         Отметка задачи как выполненной
         
         Args:
             task_text: Текст задачи для отметки
+            comment: Комментарий к выполнению (опционально, дата/время добавляется автоматически)
         
         Returns:
             True если задача найдена и отмечена
         """
+        from datetime import datetime
+        
         for item in self.items:
             if item.text == task_text or item.text.startswith(task_text):
                 item.done = True
+                # Добавляем комментарий с датой/временем
+                if comment:
+                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    item.comment = f"{comment} - {timestamp}"
+                elif not item.comment:
+                    # Если комментария нет, добавляем только дату/время
+                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    item.comment = f"Выполнено - {timestamp}"
                 self._save_todos()
                 return True
         return False
@@ -470,7 +500,11 @@ class TodoManager:
         for item in self.items:
             indent = "  " * item.level
             status = "[x]" if item.done else "[ ]"
-            lines.append(f"{indent}{status} {item.text}")
+            # Добавляем комментарий если есть
+            if item.comment:
+                lines.append(f"{indent}{status} {item.text}  # {item.comment}")
+            else:
+                lines.append(f"{indent}{status} {item.text}")
         
         content = "\n".join(lines)
         if lines:
@@ -487,7 +521,11 @@ class TodoManager:
         for item in self.items:
             indent = "  " * item.level
             checkbox = "[x]" if item.done else "[ ]"
-            lines.append(f"{indent}- {checkbox} {item.text}")
+            # Добавляем комментарий если есть
+            if item.comment:
+                lines.append(f"{indent}- {checkbox} {item.text} <!-- {item.comment} -->")
+            else:
+                lines.append(f"{indent}- {checkbox} {item.text}")
         
         content = "\n".join(lines)
         if lines:
@@ -508,6 +546,8 @@ class TodoManager:
             }
             if item.level > 0:
                 task_data["level"] = item.level
+            if item.comment:
+                task_data["comment"] = item.comment
             tasks.append(task_data)
         
         data = {"tasks": tasks}

@@ -84,6 +84,8 @@ class CursorCLIInterface:
         self.agent_role = agent_role
         self.current_chat_id: Optional[str] = None  # Текущий активный chat_id для продолжения диалога
         
+        logger.debug(f"Инициализация CursorCLIInterface: default_timeout={default_timeout} секунд")
+        
         # Поиск доступного CLI
         if cli_path:
             # Специальный маркер для Docker
@@ -725,7 +727,7 @@ This agent role is used for automated project tasks execution.
             
             if use_docker:
                 # Останавливаем все процессы agent в контейнере
-                logger.info("Остановка активных процессов agent в Docker контейнере...")
+                logger.debug("Остановка активных процессов agent в Docker контейнере...")
                 
                 # Находим и убиваем все процессы agent
                 # pkill возвращает 1 если процессов не найдено - это нормально
@@ -763,10 +765,10 @@ This agent role is used for automated project tasks execution.
                         
                         # Если pgrep ничего не нашел (процессы остановлены) или нашел что-то (значит остановка частичная)
                         if not check_result.stdout.strip():
-                            logger.info("✓ Активные процессы agent остановлены (или их не было)")
+                            logger.debug("✓ Активные процессы agent остановлены (или их не было)")
                         else:
                             remaining_pids = check_result.stdout.strip().split()
-                            logger.warning(f"⚠ После остановки осталось {len(remaining_pids)} процессов: {', '.join(remaining_pids[:5])}{'...' if len(remaining_pids) > 5 else ''}")
+                            logger.debug(f"⚠ После остановки осталось {len(remaining_pids)} процессов: {', '.join(remaining_pids[:5])}{'...' if len(remaining_pids) > 5 else ''}")
                         return True
                     except subprocess.TimeoutExpired:
                         logger.warning("⚠ Таймаут при проверке процессов после остановки. Предполагаем, что остановка выполнена.")
@@ -780,7 +782,7 @@ This agent role is used for automated project tasks execution.
                     return True  # Не критичная ошибка, продолжаем работу
             else:
                 # Для не-Docker окружения - пытаемся убить процессы локально
-                logger.info("Остановка активных процессов agent...")
+                logger.debug("Остановка активных процессов agent...")
                 try:
                     if sys.platform == 'win32':
                         # Windows
@@ -796,7 +798,7 @@ This agent role is used for automated project tasks execution.
                             capture_output=True,
                             timeout=5
                         )
-                    logger.info("Процессы agent остановлены")
+                    logger.debug("Процессы agent остановлены")
                     return True
                 except Exception as e:
                     logger.warning(f"Ошибка при остановке процессов: {e}")
@@ -819,22 +821,16 @@ This agent role is used for automated project tasks execution.
         
         try:
             # Сначала останавливаем активные чаты
-            logger.info("🛑 Шаг 1/3: Остановка активных процессов agent...")
             stop_result = self.stop_active_chats()
-            if stop_result:
-                logger.info("✓ Шаг 1 завершен: процессы остановлены")
-            else:
-                logger.warning("⚠ Шаг 1: не удалось остановить некоторые процессы, продолжаем...")
+            if not stop_result:
+                logger.warning("⚠ Не удалось остановить некоторые процессы, продолжаем...")
             
             # Получаем список всех чатов
-            logger.info("📋 Шаг 2/3: Получение списка чатов...")
             chat_ids = self.list_chats()
             
             if not chat_ids:
-                logger.info("✓ Нет чатов для удаления (база данных пуста или команда list не работает)")
+                logger.debug("Нет чатов для удаления")
                 return True
-            
-            logger.info(f"✓ Шаг 2 завершен: найдено {len(chat_ids)} чатов")
             
             use_docker = self.cli_command == "docker-compose-agent"
             
@@ -850,8 +846,7 @@ This agent role is used for automated project tasks execution.
             # Команда 'agent delete' не существует в официальном Cursor CLI (проверено в январе 2026)
             # В этом случае мы просто останавливаем процессы и сбрасываем chat_id
             # Чаты останутся в базе данных agent, но активные процессы будут остановлены
-            logger.info(f"🗑️  Шаг 3/3: Проверка возможности удаления {len(chat_ids)} чатов...")
-            logger.debug("ℹ️  Команда 'agent delete' не поддерживается Cursor CLI (проверено в официальной документации)")
+            logger.debug(f"Проверка возможности удаления {len(chat_ids)} чатов...")
             
             # Импортируем shlex для безопасного экранирования
             import shlex
@@ -890,13 +885,13 @@ This agent role is used for automated project tasks execution.
                     if ("unknown command" in output or "invalid command" in output or 
                         "not found" in output or "usage:" in output or "unknown option" in output):
                         command_not_supported = True
-                        logger.info(f"ℹ️  Команда 'agent delete' не поддерживается Cursor CLI (это нормально)")
+                        logger.debug(f"Команда 'agent delete' не поддерживается Cursor CLI")
                         logger.debug(f"   Вывод команды: {full_output[:300]}")
                         not_supported_count = len(chat_ids)  # Все чаты не поддерживаются
                     elif result.returncode == 0 and ("deleted" in output or "removed" in output or "success" in output):
                         # Команда работает! Продолжаем удаление остальных
                         deleted_count += 1
-                        logger.info(f"  [1/{len(chat_ids)}] ✓ Чат {test_chat_id} удален из БД")
+                        logger.debug(f"  [1/{len(chat_ids)}] ✓ Чат {test_chat_id} удален из БД")
                         # Продолжаем удаление остальных чатов
                         for idx, chat_id in enumerate(chat_ids[1:], 2):
                             try:
@@ -919,7 +914,7 @@ This agent role is used for automated project tasks execution.
                                 if result.returncode == 0 and ("deleted" in output or "removed" in output or "success" in output):
                                     deleted_count += 1
                                     if idx <= 5:
-                                        logger.info(f"  [{idx}/{len(chat_ids)}] ✓ Чат {chat_id} удален из БД")
+                                        logger.debug(f"  [{idx}/{len(chat_ids)}] ✓ Чат {chat_id} удален из БД")
                                 else:
                                     failed_count += 1
                                     if idx <= 5:
@@ -943,36 +938,13 @@ This agent role is used for automated project tasks execution.
             # Сбрасываем текущий chat_id
             self.current_chat_id = None
             
-            # Формируем итоговое сообщение
-            summary_parts = []
-            if deleted_count > 0:
-                summary_parts.append(f"✓ {deleted_count} удалено из БД")
-            if not_supported_count > 0:
-                summary_parts.append(f"⚠ {not_supported_count} - команда delete не поддерживается")
-            if failed_count > 0:
-                summary_parts.append(f"⚠ {failed_count} - ошибки при удалении")
-            
-            if summary_parts:
-                logger.info(f"📊 Итоги удаления чатов: {', '.join(summary_parts)}")
-            else:
-                logger.warning("⚠ Не удалось определить результат удаления чатов")
-            
             # Главное - процессы остановлены и chat_id сброшен
             if deleted_count == 0 and not_supported_count > 0:
-                logger.info(f"ℹ️  Команда 'agent delete' не поддерживается официальным Cursor CLI (это нормально)")
-                logger.info(f"ℹ️  {len(chat_ids)} чатов остались в базе данных agent")
-                logger.info("✓ Все активные процессы остановлены, chat_id сброшен. Чаты неактивны и не мешают работе.")
-                logger.debug("💡 Примечание: Cursor CLI не предоставляет команду для удаления чатов. "
-                           "Чаты хранятся локально и не влияют на работу системы.")
+                logger.debug(f"Команда 'agent delete' не поддерживается. {len(chat_ids)} чатов остались в БД, но процессы остановлены.")
             elif deleted_count == 0 and failed_count > 0:
                 logger.warning(f"⚠ Не удалось удалить чаты из базы данных. {failed_count} ошибок при попытке удаления.")
-                logger.debug("💡 Проверьте логи выше для деталей ошибок. Возможно, команда 'agent delete' не поддерживается.")
-                logger.info("ℹ️  Все активные процессы остановлены, chat_id сброшен.")
-            elif deleted_count == 0:
-                logger.info(f"ℹ️  Чаты не удалены (команда delete не поддерживается или не требуется)")
-                logger.info("✓ Все активные процессы остановлены, chat_id сброшен.")
-            else:
-                logger.info(f"✓ Очистка завершена: {deleted_count} чатов удалено из БД, все процессы остановлены")
+            elif deleted_count > 0:
+                logger.info(f"✓ Очистка завершена: {deleted_count} чатов удалено из БД")
             
             return True
                 
@@ -987,7 +959,7 @@ This agent role is used for automated project tasks execution.
         Returns:
             True если подготовка выполнена успешно
         """
-        logger.info("Подготовка к новой задаче: очистка активных диалогов...")
+        logger.debug("Подготовка к новой задаче: очистка активных диалогов...")
         
         # Останавливаем активные чаты
         stop_result = self.stop_active_chats()
@@ -999,7 +971,7 @@ This agent role is used for automated project tasks execution.
         self.current_chat_id = None
         
         if stop_result or clear_result:
-            logger.info("Подготовка к новой задаче завершена")
+            logger.debug("Подготовка к новой задаче завершена")
             return True
         else:
             logger.warning("Подготовка к новой задаче выполнена с предупреждениями")
@@ -1285,7 +1257,7 @@ This agent role is used for automated project tasks execution.
         
         logger.info(f"Выполнение команды через Cursor CLI: {' '.join(cmd)}")
         logger.debug(f"Рабочая директория: {exec_cwd or (working_dir or os.getcwd())}")
-        logger.debug(f"Таймаут: {exec_timeout} секунд")
+        logger.debug(f"Таймаут: {exec_timeout} секунд (default_timeout={self.default_timeout}, timeout={timeout})")
         if use_docker:
             logger.debug(f"Docker Compose файл: {compose_file}")
             if cursor_api_key:
@@ -1392,10 +1364,32 @@ This agent role is used for automated project tasks execution.
                 # Специальная обработка кода 1 (общая ошибка выполнения)
                 if result.returncode == 1:
                     logger.warning("⚠️ Код возврата 1 - общая ошибка выполнения команды agent")
+                    logger.warning("=" * 80)
                     if result_stderr:
-                        logger.warning(f"Детали ошибки (stderr): {result_stderr[:1000]}")
+                        # Показываем stderr полностью или первые строки
+                        stderr_lines = result_stderr.strip().split('\n')
+                        if len(stderr_lines) <= 10:
+                            # Если немного строк - показываем все
+                            logger.warning(f"Детали ошибки (stderr):\n{result_stderr}")
+                        else:
+                            # Если много строк - показываем первые 10
+                            preview = '\n'.join(stderr_lines[:10])
+                            logger.warning(f"Детали ошибки (stderr, первые 10 строк):\n{preview}")
+                            logger.warning(f"... (еще {len(stderr_lines) - 10} строк, см. debug логи)")
+                        logger.debug(f"Полный stderr:\n{result_stderr}")
+                    else:
+                        logger.warning("Stderr пуст - ошибка не содержит деталей")
+                    
                     if result_stdout:
-                        logger.debug(f"Stdout (первые 500 символов): {result_stdout[:500]}")
+                        # Показываем stdout если есть важная информация
+                        stdout_lines = result_stdout.strip().split('\n')
+                        if len(stdout_lines) <= 5:
+                            logger.info(f"Stdout:\n{result_stdout}")
+                        else:
+                            preview = '\n'.join(stdout_lines[:5])
+                            logger.info(f"Stdout (первые 5 строк):\n{preview}")
+                            logger.debug(f"Полный stdout:\n{result_stdout}")
+                    logger.warning("=" * 80)
                 
                 if result_stderr:
                     logger.debug(f"Stderr: {result_stderr[:500]}")
@@ -1545,11 +1539,26 @@ This agent role is used for automated project tasks execution.
                     stderr_lower = (result.stderr or '').lower()
                     if 'unpaid invoice' not in stderr_lower and 'pay your invoice' not in stderr_lower:
                         # Логируем детали ошибки для диагностики
-                        error_details = result.stderr[:500] if result.stderr else "(нет stderr)"
                         logger.warning(f"Обнаружена ошибка (код {result.return_code}) - активируем fallback")
-                        logger.debug(f"Детали ошибки (stderr): {error_details}")
+                        if result.stderr:
+                            stderr_lines = result.stderr.strip().split('\n')
+                            if len(stderr_lines) <= 5:
+                                logger.warning(f"Детали ошибки (stderr):\n{result.stderr}")
+                            else:
+                                preview = '\n'.join(stderr_lines[:5])
+                                logger.warning(f"Детали ошибки (stderr, первые 5 строк):\n{preview}")
+                                logger.debug(f"Полный stderr:\n{result.stderr}")
+                        else:
+                            logger.warning("Stderr пуст - ошибка не содержит деталей")
+                        
                         if result.stdout:
-                            logger.debug(f"Stdout (первые 200 символов): {result.stdout[:200]}")
+                            stdout_lines = result.stdout.strip().split('\n')
+                            if len(stdout_lines) <= 3:
+                                logger.info(f"Stdout:\n{result.stdout}")
+                            else:
+                                preview = '\n'.join(stdout_lines[:3])
+                                logger.info(f"Stdout (первые 3 строки):\n{preview}")
+                                logger.debug(f"Полный stdout:\n{result.stdout}")
                         return True
         
         return False
@@ -1740,19 +1749,66 @@ This agent role is used for automated project tasks execution.
         # Выполняем команду (упрощенная версия логики из execute)
         exec_timeout = timeout if timeout is not None else self.default_timeout
         if use_docker:
-            exec_timeout = max(exec_timeout, 600)
+            exec_timeout = max(exec_timeout, 600)  # Минимум 10 минут для Docker
         
+        logger.debug(f"Таймаут выполнения: {exec_timeout} секунд (default_timeout={self.default_timeout}, timeout={timeout})")
+        
+        # Умная обработка таймаута с проверкой активности контейнера (как в основном методе execute)
+        max_timeout_retries = 5  # Максимум 5 продлений таймаута
+        current_timeout = exec_timeout
+        
+        for retry in range(max_timeout_retries):
+            try:
+                result = subprocess.run(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=current_timeout,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace'
+                )
+                # Команда завершилась - выходим из цикла
+                break
+                
+            except subprocess.TimeoutExpired:
+                # Таймаут! Проверяем, идет ли генерация
+                if use_docker and retry < max_timeout_retries - 1:
+                    logger.warning(f"Таймаут {current_timeout}с (попытка {retry + 1}/{max_timeout_retries})")
+                    logger.info("Проверка активности Docker контейнера...")
+                    
+                    # Проверяем статус контейнера
+                    container_active = self._check_docker_container_activity("cursor-agent-life")
+                    
+                    if container_active:
+                        # Контейнер активен - продлеваем таймаут
+                        current_timeout = exec_timeout * 2
+                        logger.info(f"Контейнер активен, генерация продолжается. Продление таймаута до {current_timeout}с")
+                        continue  # Повторяем попытку с увеличенным таймаутом
+                    else:
+                        # Контейнер не активен - что-то пошло не так
+                        logger.error("Контейнер не активен или завис. Перезапуск...")
+                        subprocess.run(["docker", "restart", "cursor-agent-life"], timeout=15, capture_output=True)
+                        import time
+                        time.sleep(5)
+                        logger.info("Контейнер перезапущен, повторная попытка...")
+                        current_timeout = exec_timeout  # Сбрасываем таймаут
+                        continue
+                else:
+                    # Исчерпаны попытки или не Docker
+                    logger.error(f"Таймаут выполнения команды после {retry + 1} попыток ({current_timeout}с)")
+                    # Возвращаем результат с таймаутом
+                    return CursorCLIResult(
+                        success=False,
+                        stdout="",
+                        stderr="",
+                        return_code=-1,
+                        cli_available=True,
+                        error_message=f"Таймаут выполнения ({current_timeout} секунд)"
+                    )
+        
+        # Обрабатываем результат выполнения команды
         try:
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=exec_timeout,
-                text=True,
-                encoding='utf-8',
-                errors='replace'
-            )
-            
             success = result.returncode == 0
             result_stdout = result.stdout if result.stdout else ""
             result_stderr = result.stderr if result.stderr else ""
@@ -1783,16 +1839,6 @@ This agent role is used for automated project tasks execution.
                 return_code=result.returncode,
                 cli_available=True,
                 error_message=error_msg
-            )
-            
-        except subprocess.TimeoutExpired:
-            return CursorCLIResult(
-                success=False,
-                stdout="",
-                stderr="",
-                return_code=-1,
-                cli_available=True,
-                error_message=f"Таймаут выполнения ({exec_timeout} секунд)"
             )
         except Exception as e:
             logger.error(f"Ошибка при выполнении команды: {e}", exc_info=True)
@@ -1874,11 +1920,26 @@ This agent role is used for automated project tasks execution.
                     stderr_lower = (result.stderr or '').lower()
                     if 'unpaid invoice' not in stderr_lower and 'pay your invoice' not in stderr_lower:
                         # Логируем детали ошибки для диагностики
-                        error_details = result.stderr[:500] if result.stderr else "(нет stderr)"
                         logger.warning(f"Обнаружена ошибка (код {result.return_code}) - активируем fallback")
-                        logger.debug(f"Детали ошибки (stderr): {error_details}")
+                        if result.stderr:
+                            stderr_lines = result.stderr.strip().split('\n')
+                            if len(stderr_lines) <= 5:
+                                logger.warning(f"Детали ошибки (stderr):\n{result.stderr}")
+                            else:
+                                preview = '\n'.join(stderr_lines[:5])
+                                logger.warning(f"Детали ошибки (stderr, первые 5 строк):\n{preview}")
+                                logger.debug(f"Полный stderr:\n{result.stderr}")
+                        else:
+                            logger.warning("Stderr пуст - ошибка не содержит деталей")
+                        
                         if result.stdout:
-                            logger.debug(f"Stdout (первые 200 символов): {result.stdout[:200]}")
+                            stdout_lines = result.stdout.strip().split('\n')
+                            if len(stdout_lines) <= 3:
+                                logger.info(f"Stdout:\n{result.stdout}")
+                            else:
+                                preview = '\n'.join(stdout_lines[:3])
+                                logger.info(f"Stdout (первые 3 строки):\n{preview}")
+                                logger.debug(f"Полный stdout:\n{result.stdout}")
                         return True
         
         return False

@@ -10,7 +10,7 @@ import socket
 import subprocess
 import threading
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 
 from crewai import Task, Crew
@@ -34,7 +34,7 @@ from .todo_manager import TodoManager, TodoItem
 from .agents.executor_agent import create_executor_agent
 from .cursor_cli_interface import CursorCLIInterface, create_cursor_cli_interface
 from .cursor_file_interface import CursorFileInterface
-from .task_logger import TaskLogger, ServerLogger, TaskPhase
+from .task_logger import TaskLogger, ServerLogger, TaskPhase, Colors
 from .session_tracker import SessionTracker
 from .checkpoint_manager import CheckpointManager
 from .git_utils import auto_push_after_commit
@@ -485,6 +485,8 @@ class CodeAgentServer:
             cli_path = cli_config.get('cli_path')
             timeout = cli_config.get('timeout', self.DEFAULT_CURSOR_CLI_TIMEOUT)
             headless = cli_config.get('headless', True)
+            
+            logger.debug(f"Инициализация Cursor CLI: timeout={timeout} секунд (из конфига: {cli_config.get('timeout', 'не указан')}, дефолт: {self.DEFAULT_CURSOR_CLI_TIMEOUT})")
             
             # Передаем директорию проекта и роль агента для настройки контекста
             agent_config = self.config.get('agent', {})
@@ -1160,184 +1162,504 @@ class CodeAgentServer:
         logger.info(f"Ожидание файла результата: {file_path} (timeout: {timeout}s)")
         logger.debug(f"Контрольная фраза: '{control_phrase}'")
         logger.debug(f"Также проверяем cursor_results/ на наличие файлов: {cursor_result_patterns}")
-        
+
+        # Во время ожидания результата считаем, что "инструкция выполняется",
+        # чтобы автоперезапуск не обрывал ожидание (перезапуск будет отложен).
+        with self._task_in_progress_lock:
+            prev_task_in_progress = self._task_in_progress
+            self._task_in_progress = True
+
         start_time = time.time()
         check_interval = 2
         last_log_time = 0
         log_interval = 10  # Логируем каждые 10 секунд
-        
-        while time.time() - start_time < timeout:
-            elapsed = time.time() - start_time
-            
-            # Периодическое логирование для диагностики
-            if elapsed - last_log_time >= log_interval:
-                logger.info(f"Ожидание файла {file_path.name}... (прошло {elapsed:.0f}s из {timeout}s)")
-                # Проверяем также cursor_results/
-                if cursor_results_dir.exists():
-                    found_in_cursor_results = []
-                    for pattern in cursor_result_patterns:
-                        candidate = cursor_results_dir / pattern
-                        if candidate.exists():
-                            found_in_cursor_results.append(str(candidate))
-                    if found_in_cursor_results:
-                        logger.info(f"Найдены файлы в cursor_results/: {found_in_cursor_results}")
-                last_log_time = elapsed
-            
-            # Проверяем запрос на остановку
-            with self._stop_lock:
-                if self._should_stop:
-                    logger.warning(f"Получен запрос на остановку во время ожидания файла результата")
+
+        try:
+            while time.time() - start_time < timeout:
+                elapsed = time.time() - start_time
+                
+                # Периодическое логирование для диагностики
+                if elapsed - last_log_time >= log_interval:
+                    logger.info(f"Ожидание файла {file_path.name}... (прошло {elapsed:.0f}s из {timeout}s)")
+                    # Проверяем также cursor_results/
+                    if cursor_results_dir.exists():
+                        found_in_cursor_results = []
+                        for pattern in cursor_result_patterns:
+                            candidate = cursor_results_dir / pattern
+                            if candidate.exists():
+                                found_in_cursor_results.append(str(candidate))
+                        if found_in_cursor_results:
+                            logger.info(f"Найдены файлы в cursor_results/: {found_in_cursor_results}")
+                    last_log_time = elapsed
+                
+                # Проверяем запрос на остановку
+                with self._stop_lock:
+                    if self._should_stop:
+                        logger.warning(f"Получен запрос на остановку во время ожидания файла результата")
+                        return {
+                            "success": False,
+                            "file_path": str(file_path),
+                            "content": None,
+                            "wait_time": time.time() - start_time,
+                            "error": "Остановка сервера по запросу"
+                        }
+                
+                # Проверяем необходимость перезапуска
+                if self._check_reload_needed():
+                    logger.warning(f"Обнаружено изменение кода во время ожидания файла результата")
                     return {
                         "success": False,
                         "file_path": str(file_path),
                         "content": None,
                         "wait_time": time.time() - start_time,
-                        "error": "Остановка сервера по запросу"
+                        "error": "Перезапуск сервера из-за изменения кода"
                     }
-            
-            # Проверяем необходимость перезапуска
-            if self._check_reload_needed():
-                logger.warning(f"Обнаружено изменение кода во время ожидания файла результата")
-                return {
-                    "success": False,
-                    "file_path": str(file_path),
-                    "content": None,
-                    "wait_time": time.time() - start_time,
-                    "error": "Перезапуск сервера из-за изменения кода"
-                }
-            
-            # Сначала проверяем cursor_results/ (файловый интерфейс)
-            if cursor_results_dir.exists():
-                for pattern in cursor_result_patterns:
-                    cursor_result_path = cursor_results_dir / pattern
-                    if cursor_result_path.exists():
-                        logger.info(f"Найден файл результата в cursor_results/: {cursor_result_path}")
-                        try:
-                            content = cursor_result_path.read_text(encoding='utf-8')
-                            if control_phrase:
-                                if control_phrase in content:
-                                    logger.info(f"Файл из cursor_results/ содержит контрольную фразу")
+                
+                # Сначала проверяем cursor_results/ (файловый интерфейс)
+                if cursor_results_dir.exists():
+                    for pattern in cursor_result_patterns:
+                        cursor_result_path = cursor_results_dir / pattern
+                        if cursor_result_path.exists():
+                            logger.info(f"Найден файл результата в cursor_results/: {cursor_result_path}")
+                            try:
+                                content = cursor_result_path.read_text(encoding='utf-8')
+                                if control_phrase:
+                                    if control_phrase in content:
+                                        logger.info(f"Файл из cursor_results/ содержит контрольную фразу")
+                                        return {
+                                            "success": True,
+                                            "file_path": str(cursor_result_path),
+                                            "content": content,
+                                            "wait_time": time.time() - start_time
+                                        }
+                                    else:
+                                        logger.debug(f"Файл найден в cursor_results/, но контрольная фраза еще не появилась")
+                                else:
+                                    # Контрольная фраза не требуется
+                                    logger.info(f"Файл результата найден в cursor_results/")
                                     return {
                                         "success": True,
                                         "file_path": str(cursor_result_path),
                                         "content": content,
                                         "wait_time": time.time() - start_time
                                     }
-                                else:
-                                    logger.debug(f"Файл найден в cursor_results/, но контрольная фраза еще не появилась")
-                            else:
-                                # Контрольная фраза не требуется
-                                logger.info(f"Файл результата найден в cursor_results/")
+                            except Exception as e:
+                                logger.warning(f"Ошибка чтения файла из cursor_results/ {cursor_result_path}: {e}")
+                
+                # Затем проверяем основной путь (docs/results/)
+                if file_path.exists():
+                    try:
+                        content = file_path.read_text(encoding='utf-8')
+                        
+                        # Проверяем контрольную фразу если указана
+                        if control_phrase:
+                            if control_phrase in content:
+                                logger.info(f"Файл результата найден и содержит контрольную фразу")
                                 return {
                                     "success": True,
-                                    "file_path": str(cursor_result_path),
+                                    "file_path": str(file_path),
                                     "content": content,
                                     "wait_time": time.time() - start_time
                                 }
-                        except Exception as e:
-                            logger.warning(f"Ошибка чтения файла из cursor_results/ {cursor_result_path}: {e}")
-            
-            # Затем проверяем основной путь (docs/results/)
-            if file_path.exists():
-                try:
-                    content = file_path.read_text(encoding='utf-8')
-                    
-                    # Проверяем контрольную фразу если указана
-                    if control_phrase:
-                        if control_phrase in content:
-                            logger.info(f"Файл результата найден и содержит контрольную фразу")
+                            else:
+                                logger.debug(f"Файл найден, но контрольная фраза еще не появилась")
+                        else:
+                            # Контрольная фраза не требуется
+                            logger.info(f"Файл результата найден")
                             return {
                                 "success": True,
                                 "file_path": str(file_path),
                                 "content": content,
                                 "wait_time": time.time() - start_time
                             }
-                        else:
-                            logger.debug(f"Файл найден, но контрольная фраза еще не появилась")
-                    else:
-                        # Контрольная фраза не требуется
-                        logger.info(f"Файл результата найден")
-                        return {
-                            "success": True,
-                            "file_path": str(file_path),
-                            "content": content,
-                            "wait_time": time.time() - start_time
-                        }
-                except Exception as e:
-                    logger.warning(f"Ошибка чтения файла {file_path}: {e}")
-            
-            # Дополнительная проверка: для инструкции 3 (тестирование) проверяем альтернативные имена
-            # Если ожидаем test_{task_id}.md, проверяем также test_task_{task_id}.md и другие варианты
-            if "test_" in wait_for_file.lower() and "docs/results" in wait_for_file:
-                results_dir = self.project_dir / "docs" / "results"
-                if results_dir.exists():
-                    # Проверяем альтернативные варианты имен файлов
-                    alternative_patterns = [
-                        f"test_{task_id}.md",
-                        f"test_{task_id}.txt",
-                        f"test_task_{task_id}.md",
-                        f"test_task_{task_id}.txt",
-                    ]
-                    for alt_pattern in alternative_patterns:
-                        alt_path = results_dir / alt_pattern
-                        if alt_path.exists() and alt_path != file_path:
-                            logger.info(f"Найден альтернативный файл результата: {alt_path}")
-                            try:
-                                content = alt_path.read_text(encoding='utf-8')
-                                if control_phrase:
-                                    if control_phrase in content:
-                                        logger.info(f"Альтернативный файл содержит контрольную фразу")
+                    except Exception as e:
+                        logger.warning(f"Ошибка чтения файла {file_path}: {e}")
+                
+                # Дополнительная проверка: для инструкции 3 (тестирование) проверяем альтернативные имена
+                # Если ожидаем test_{task_id}.md, проверяем также test_task_{task_id}.md и другие варианты
+                if "test_" in wait_for_file.lower() and "docs/results" in wait_for_file:
+                    results_dir = self.project_dir / "docs" / "results"
+                    if results_dir.exists():
+                        # Проверяем альтернативные варианты имен файлов
+                        alternative_patterns = [
+                            f"test_{task_id}.md",
+                            f"test_{task_id}.txt",
+                            f"test_task_{task_id}.md",
+                            f"test_task_{task_id}.txt",
+                        ]
+                        for alt_pattern in alternative_patterns:
+                            alt_path = results_dir / alt_pattern
+                            if alt_path.exists() and alt_path != file_path:
+                                logger.info(f"Найден альтернативный файл результата: {alt_path}")
+                                try:
+                                    content = alt_path.read_text(encoding='utf-8')
+                                    if control_phrase:
+                                        if control_phrase in content:
+                                            logger.info(f"Альтернативный файл содержит контрольную фразу")
+                                            return {
+                                                "success": True,
+                                                "file_path": str(alt_path),
+                                                "content": content,
+                                                "wait_time": time.time() - start_time
+                                            }
+                                    else:
                                         return {
                                             "success": True,
                                             "file_path": str(alt_path),
                                             "content": content,
                                             "wait_time": time.time() - start_time
                                         }
-                                else:
-                                    return {
-                                        "success": True,
-                                        "file_path": str(alt_path),
-                                        "content": content,
-                                        "wait_time": time.time() - start_time
-                                    }
-                            except Exception as e:
-                                logger.warning(f"Ошибка чтения альтернативного файла {alt_path}: {e}")
-            
-            # Проверяем запрос на остановку перед ожиданием
-            with self._stop_lock:
-                if self._should_stop:
-                    logger.warning(f"Получен запрос на остановку во время ожидания файла результата")
+                                except Exception as e:
+                                    logger.warning(f"Ошибка чтения альтернативного файла {alt_path}: {e}")
+                
+                # Проверяем запрос на остановку перед ожиданием
+                with self._stop_lock:
+                    if self._should_stop:
+                        logger.warning(f"Получен запрос на остановку во время ожидания файла результата")
+                        return {
+                            "success": False,
+                            "file_path": str(file_path),
+                            "content": None,
+                            "wait_time": time.time() - start_time,
+                            "error": "Остановка сервера по запросу"
+                        }
+                
+                # Проверяем необходимость перезапуска
+                if self._check_reload_needed():
+                    logger.warning(f"Обнаружено изменение кода во время ожидания файла результата")
                     return {
                         "success": False,
                         "file_path": str(file_path),
                         "content": None,
                         "wait_time": time.time() - start_time,
-                        "error": "Остановка сервера по запросу"
+                        "error": "Перезапуск сервера из-за изменения кода"
                     }
-            
-            # Проверяем необходимость перезапуска
-            if self._check_reload_needed():
-                logger.warning(f"Обнаружено изменение кода во время ожидания файла результата")
-                return {
-                    "success": False,
-                    "file_path": str(file_path),
-                    "content": None,
-                    "wait_time": time.time() - start_time,
-                    "error": "Перезапуск сервера из-за изменения кода"
-                }
-            
-            # Ждем перед следующей проверкой
-            time.sleep(check_interval)
+                
+                # Ждем перед следующей проверкой
+                time.sleep(check_interval)
+
+            # Таймаут
+            logger.warning(f"Таймаут ожидания файла результата ({timeout}s)")
+            return {
+                "success": False,
+                "file_path": str(file_path),
+                "content": None,
+                "wait_time": timeout,
+                "error": f"Таймаут ожидания файла ({timeout} секунд)"
+            }
+        finally:
+            with self._task_in_progress_lock:
+                self._task_in_progress = prev_task_in_progress
+    
+    def _check_task_usefulness(self, todo_item: TodoItem) -> Tuple[float, Optional[str]]:
+        """
+        Проверка полезности задачи - является ли она реальной задачей или мусором в тексте туду
         
-        # Таймаут
-        logger.warning(f"Таймаут ожидания файла результата ({timeout}s)")
-        return {
-            "success": False,
-            "file_path": str(file_path),
-            "content": None,
-            "wait_time": timeout,
-            "error": f"Таймаут ожидания файла ({timeout} секунд)"
-        }
+        Args:
+            todo_item: Элемент todo-листа для проверки
+            
+        Returns:
+            Кортеж (процент полезности 0-100, комментарий если есть)
+        """
+        try:
+            from src.llm.llm_manager import LLMManager
+            import asyncio
+            import json
+            import re
+            
+            def _extract_json_object(text: str) -> Optional[dict]:
+                """
+                Надежно извлекает JSON-объект из ответа LLM.
+                Поддерживает ситуации, когда модель возвращает текст/markdown и JSON внутри.
+                """
+                if not text:
+                    return None
+                
+                t = text.strip()
+                # Убираем code fences вида ```json ... ```
+                if t.startswith("```"):
+                    t = re.sub(r"^```(?:json)?\s*", "", t, flags=re.IGNORECASE)
+                    t = re.sub(r"\s*```$", "", t)
+                    t = t.strip()
+                
+                decoder = json.JSONDecoder()
+                # Ищем первый валидный JSON объект, начиная с '{' или '['
+                for i, ch in enumerate(t):
+                    if ch not in "{[":
+                        continue
+                    try:
+                        obj, _end = decoder.raw_decode(t[i:])
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(obj, dict):
+                        return obj
+                return None
+            
+            # Инициализируем LLMManager
+            llm_manager = LLMManager(config_path="config/llm_settings.yaml")
+            
+            # Формируем промпт для проверки полезности
+            check_prompt = f"""Оцени полезность этого пункта из TODO списка. Определи, является ли это реальной полезной задачей или мусором/шумом в тексте.
+
+ПУНКТ TODO:
+{todo_item.text}
+
+Оцени полезность задачи в процентах от 0% до 100%:
+- 0-15% - это мусор/шум, не является реальной задачей (например, случайный текст, комментарии, заметки)
+- 16-50% - слабая полезность, возможно неполная или неясная задача
+- 51-80% - средняя полезность, задача понятна но может быть улучшена
+- 81-100% - высокая полезность, четкая и конкретная задача
+
+Верни JSON объект со следующей структурой:
+{{
+  "usefulness_percent": число от 0 до 100,
+  "comment": "краткий комментарий о полезности задачи"
+}}"""
+            
+            # Выполняем проверку через LLMManager с JSON mode (асинхронно)
+            # Используем response_format для гарантированного JSON ответа
+            json_response_format = {"type": "json_object"}
+            
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Если loop уже запущен, создаем задачу в отдельном потоке
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(
+                            lambda: asyncio.run(llm_manager.generate_response(
+                                prompt=check_prompt,
+                                use_fastest=True,
+                                use_parallel=False,
+                                response_format=json_response_format
+                            ))
+                        )
+                        response = future.result(timeout=60)
+                else:
+                    # Loop существует, но не запущен
+                    response = loop.run_until_complete(llm_manager.generate_response(
+                        prompt=check_prompt,
+                        use_fastest=True,
+                        use_parallel=False,
+                        response_format=json_response_format
+                    ))
+            except RuntimeError:
+                # Нет event loop, создаем новый
+                response = asyncio.run(llm_manager.generate_response(
+                    prompt=check_prompt,
+                    use_fastest=True,
+                    use_parallel=False,
+                    response_format=json_response_format
+                ))
+            
+            if not response.success:
+                logger.warning(f"Не удалось выполнить проверку полезности для задачи: {response.error}")
+                return 50.0, "Ошибка проверки, считаем средней полезности"  # По умолчанию средняя полезность
+            
+            # Парсим ответ LLM (с JSON mode ответ должен быть валидным JSON)
+            content = response.content.strip()
+            if not content:
+                logger.warning(
+                    f"Пустой ответ LLM при проверке полезности (model={getattr(response, 'model_name', 'unknown')})"
+                )
+                return 50.0, "Пустой ответ LLM, считаем средней полезности"
+            
+            # Логируем ответ для диагностики
+            logger.debug(f"Ответ LLM для проверки полезности: {content}")
+            
+            # С JSON mode ответ должен быть валидным JSON, но не все модели/провайдеры строго соблюдают
+            # — поэтому извлекаем JSON устойчиво.
+            response_data = _extract_json_object(content)
+            if response_data is None:
+                try:
+                    response_data = json.loads(content)
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Не удалось распарсить JSON ответ (JSON mode не сработал): {e}")
+                    logger.debug(f"Содержимое ответа: {content[:500]}")
+                    logger.warning(
+                        f"Не удалось извлечь процент полезности из ответа LLM. Ответ: {content[:300]}"
+                    )
+                    return 50.0, "Не удалось определить полезность, считаем средней"
+            
+            try:
+                usefulness = float(response_data.get('usefulness_percent', 50.0))
+                comment = response_data.get('comment', response_data.get('reason', 'Нет комментария'))
+                
+                # Ограничиваем значение от 0 до 100
+                usefulness = max(0.0, min(100.0, usefulness))
+                
+                logger.debug(f"Успешно распарсен JSON: usefulness={usefulness}%, comment={comment}")
+                return usefulness, comment
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Ошибка при обработке ответа: {e}, содержимое: {content[:300]}")
+                return 50.0, f"Ошибка обработки ответа: {str(e)[:100]}"
+            
+        except ImportError:
+            logger.warning("LLMManager не доступен, пропускаем проверку полезности")
+            return 50.0, "LLMManager недоступен, считаем средней полезности"
+        except Exception as e:
+            logger.error(f"Ошибка при проверке полезности задачи через LLMManager: {e}", exc_info=True)
+            return 50.0, f"Ошибка проверки: {str(e)[:100]}"
+    
+    def _check_todo_matches_plan(self, task_id: str, todo_item: TodoItem) -> Tuple[bool, Optional[str]]:
+        """
+        Проверка соответствия пункта туду пунктам плана через LLM агентов Code Agent (OpenRouter)
+        
+        Args:
+            task_id: ID задачи
+            todo_item: Элемент todo-листа для проверки
+            
+        Returns:
+            Кортеж (соответствует ли туду плану, причина несоответствия если есть)
+        """
+        # Ищем файл плана
+        plan_file = self.project_dir / "docs" / "results" / f"current_plan_{task_id}.md"
+        
+        if not plan_file.exists():
+            # Если плана нет, считаем что соответствует (будет создан при выполнении)
+            logger.debug(f"План для задачи {task_id} не найден, считаем что туду соответствует")
+            return True, None
+        
+        try:
+            plan_content = plan_file.read_text(encoding='utf-8')
+        except Exception as e:
+            logger.warning(f"Не удалось прочитать план для задачи {task_id}: {e}")
+            return True, None  # Если не можем прочитать план, считаем что соответствует
+        
+        # Используем LLMManager через OpenRouter для проверки соответствия
+        try:
+            from src.llm.llm_manager import LLMManager
+            import asyncio
+            import json
+            import re
+            
+            def _extract_json_object(text: str) -> Optional[dict]:
+                """
+                Надежно извлекает JSON-объект из ответа LLM (может быть внутри markdown/текста).
+                """
+                if not text:
+                    return None
+                
+                t = text.strip()
+                if t.startswith("```"):
+                    t = re.sub(r"^```(?:json)?\s*", "", t, flags=re.IGNORECASE)
+                    t = re.sub(r"\s*```$", "", t)
+                    t = t.strip()
+                
+                decoder = json.JSONDecoder()
+                for i, ch in enumerate(t):
+                    if ch not in "{[":
+                        continue
+                    try:
+                        obj, _end = decoder.raw_decode(t[i:])
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(obj, dict):
+                        return obj
+                return None
+            
+            # Инициализируем LLMManager
+            llm_manager = LLMManager(config_path="config/llm_settings.yaml")
+            
+            # Формируем промпт для проверки
+            check_prompt = f"""Проверь, соответствует ли пункт туду пунктам плана.
+
+ПУНКТ ТУДУ:
+{todo_item.text}
+
+ПЛАН ВЫПОЛНЕНИЯ:
+{plan_content}
+
+Ответь ТОЛЬКО в формате JSON:
+{{
+  "matches": true/false,
+  "reason": "краткая причина несоответствия (если matches=false)"
+}}
+
+Если пункт туду соответствует хотя бы одному пункту плана, верни matches=true.
+Если пункт туду НЕ соответствует ни одному пункту плана, верни matches=false с причиной."""
+            
+            # Выполняем проверку через LLMManager (асинхронно)
+            # Используем безопасный способ вызова асинхронной функции
+            # Пытаемся получить текущий event loop
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Если loop уже запущен, создаем задачу в отдельном потоке
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(
+                            lambda: asyncio.run(llm_manager.generate_response(
+                                prompt=check_prompt,
+                                use_fastest=True,
+                                use_parallel=False
+                            ))
+                        )
+                        response = future.result(timeout=120)
+                else:
+                    # Loop существует, но не запущен
+                    response = loop.run_until_complete(llm_manager.generate_response(
+                        prompt=check_prompt,
+                        use_fastest=True,
+                        use_parallel=False
+                    ))
+            except RuntimeError:
+                # Нет event loop, создаем новый
+                response = asyncio.run(llm_manager.generate_response(
+                    prompt=check_prompt,
+                    use_fastest=True,
+                    use_parallel=False
+                ))
+            
+            if not response.success:
+                logger.warning(f"Не удалось выполнить проверку соответствия для задачи {task_id}: {response.error}")
+                return True, None  # Если проверка не удалась, считаем что соответствует
+            
+            # Парсим ответ LLM
+            content = response.content.strip()
+            if not content:
+                logger.warning(
+                    f"Пустой ответ LLM при проверке соответствия туду плану (task_id={task_id}, model={getattr(response, 'model_name', 'unknown')})"
+                )
+                return True, None  # при пустом ответе не блокируем выполнение
+            
+            response_data = _extract_json_object(content)
+            if response_data is None:
+                # Последняя попытка — прямой json.loads (если ответ полностью JSON)
+                try:
+                    response_data = json.loads(content)
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Не удалось распарсить JSON ответ для проверки соответствия: {e}")
+                    response_data = None
+            
+            if isinstance(response_data, dict) and "matches" in response_data:
+                matches = response_data.get('matches', True)
+                reason = response_data.get('reason', None)
+                
+                if not matches:
+                    logger.info(f"Пункт туду '{todo_item.text[:50]}...' не соответствует плану: {reason}")
+                    return False, reason
+                else:
+                    logger.debug(f"Пункт туду '{todo_item.text[:50]}...' соответствует плану")
+                    return True, None
+            
+            # Если не нашли JSON, проверяем текстовый ответ
+            content_lower = content.lower()
+            if "не соответствует" in content_lower or "does not match" in content_lower or "false" in content_lower:
+                reason = content[:200]  # Берем первые 200 символов как причину
+                logger.info(f"Пункт туду не соответствует плану (по текстовому ответу): {reason}")
+                return False, reason
+            
+            # По умолчанию считаем что соответствует
+            logger.debug(f"Проверка соответствия завершена, считаем что соответствует")
+            return True, None
+            
+        except ImportError:
+            logger.warning("LLMManager не доступен, пропускаем проверку соответствия")
+            return True, None
+        except Exception as e:
+            logger.error(f"Ошибка при проверке соответствия туду плану через LLMManager: {e}", exc_info=True)
+            return True, None  # При ошибке считаем что соответствует
     
     def _verify_real_work_done(self, task_id: str, todo_item: TodoItem, result_content: str) -> bool:
         """
@@ -1506,6 +1828,48 @@ class CodeAgentServer:
         Returns:
             True если задача выполнена успешно
         """
+        # Проверяем полезность задачи - является ли она реальной задачей или мусором
+        logger.info(f"Проверка полезности задачи: '{todo_item.text[:60]}...'")
+        usefulness_percent, usefulness_comment = self._check_task_usefulness(todo_item)
+        
+        # Выводим результат проверки в консоль с цветовым выделением
+        if usefulness_percent < 15:
+            color_status = "🔴 МУСОР"
+            color = Colors.BRIGHT_RED
+        elif usefulness_percent < 50:
+            color_status = "🟡 СЛАБАЯ ПОЛЕЗНОСТЬ"
+            color = Colors.BRIGHT_YELLOW
+        elif usefulness_percent < 80:
+            color_status = "🟢 СРЕДНЯЯ ПОЛЕЗНОСТЬ"
+            color = Colors.BRIGHT_GREEN
+        else:
+            color_status = "✅ ВЫСОКАЯ ПОЛЕЗНОСТЬ"
+            color = Colors.BRIGHT_GREEN
+        
+        usefulness_msg = f"Полезность задачи: {usefulness_percent:.1f}% - {color_status}"
+        logger.info(Colors.colorize(usefulness_msg, color))
+        if usefulness_comment:
+            logger.info(f"  Комментарий: {usefulness_comment}")
+        
+        # Если полезность менее 15% - помечаем задачу как выполненную с комментарием
+        if usefulness_percent < 15:
+            skip_reason = f"Пропущено: низкая полезность ({usefulness_percent:.1f}%) - {usefulness_comment if usefulness_comment else 'мусор/шум в тексте'}"
+            logger.warning(f"Задача имеет низкую полезность ({usefulness_percent:.1f}%), помечаем как выполненную: {skip_reason}")
+            
+            if self.todo_manager.mark_task_done(todo_item.text, comment=skip_reason):
+                logger.info(f"✓ Задача '{todo_item.text[:50]}...' отмечена как пропущенная в TODO файле")
+            else:
+                logger.warning(f"Не удалось отметить задачу '{todo_item.text[:50]}...' как пропущенную в TODO файле")
+            
+            # Генерируем task_id для статуса
+            task_id = f"task_{int(time.time())}"
+            self.status_manager.update_task_status(
+                task_name=todo_item.text,
+                status="Пропущено",
+                details=f"Пропущено: низкая полезность ({usefulness_percent:.1f}%). {usefulness_comment if usefulness_comment else 'Мусор/шум в тексте'} (task_id: {task_id})"
+            )
+            return False  # Задача пропущена, не выполняем
+        
         # Проверяем, не была ли задача уже выполнена
         # ВАЖНО: Проверяем не только статус в checkpoint, но и реальное выполнение всех инструкций
         # Если выполнена только инструкция 1 (создание плана) - считаем задачу не выполненной
@@ -1794,6 +2158,34 @@ class CodeAgentServer:
         logger.info(f"Найдено {len(all_templates)} инструкций для последовательного выполнения")
         task_logger.log_info(f"Последовательное выполнение {len(all_templates)} инструкций")
         
+        # Проверяем соответствие туду плану (если план уже существует)
+        # Это проверка выполняется только если план был создан ранее
+        plan_file = self.project_dir / "docs" / "results" / f"current_plan_{task_id}.md"
+        if plan_file.exists():
+            logger.info(f"Проверка соответствия туду плану для задачи {task_id}")
+            task_logger.log_info("Проверка соответствия туду плану")
+            
+            matches_plan, reason = self._check_todo_matches_plan(task_id, todo_item)
+            
+            if not matches_plan:
+                logger.warning(f"Пункт туду '{todo_item.text}' не соответствует плану: {reason}")
+                task_logger.log_warning(f"Пункт туду не соответствует плану: {reason}")
+                
+                # Отмечаем задачу как выполненную с комментарием о пропуске
+                skip_reason = f"Пропущено по причине: {reason}" if reason else "Пропущено по причине: не соответствует плану"
+                if self.todo_manager.mark_task_done(todo_item.text, comment=skip_reason):
+                    logger.info(f"✓ Задача '{todo_item.text}' отмечена как пропущенная в TODO файле")
+                    task_logger.log_info(f"Задача пропущена: {skip_reason}")
+                else:
+                    logger.warning(f"Не удалось отметить задачу '{todo_item.text}' как пропущенную в TODO файле")
+                
+                self.status_manager.update_task_status(
+                    task_name=todo_item.text,
+                    status="Пропущено",
+                    details=f"Пропущено: не соответствует плану. {reason if reason else ''} (task_id: {task_id})"
+                )
+                return False  # Задача пропущена, не выполняем
+        
         # Проверяем, есть ли сохраненный прогресс выполнения инструкций для этой задачи
         # Сначала проверяем текущий task_id, затем ищем последнюю попытку с тем же текстом
         instruction_progress = self.checkpoint_manager.get_instruction_progress(task_id)
@@ -1882,17 +2274,12 @@ class CodeAgentServer:
             return False
         
         # КРИТИЧНО: Останавливаем активные диалоги и очищаем очередь перед новой задачей
-        logger.info(f"Подготовка к задаче {task_id}: остановка активных диалогов...")
-        task_logger.log_info("Остановка активных диалогов перед началом новой задачи")
+        logger.debug(f"Подготовка к задаче {task_id}: остановка активных диалогов...")
         
         if self.cursor_cli:
             cleanup_result = self.cursor_cli.prepare_for_new_task()
-            if cleanup_result:
-                logger.info("Активные диалоги остановлены, очередь очищена")
-                task_logger.log_info("Активные диалоги остановлены, очередь очищена")
-            else:
+            if not cleanup_result:
                 logger.warning("Не удалось полностью очистить активные диалоги, продолжаем...")
-                task_logger.log_warning("Предупреждение: не удалось полностью очистить диалоги")
         
         # Логируем создание нового диалога (один раз для всей последовательности)
         # Chat ID будет получен после выполнения первой инструкции
@@ -1969,8 +2356,9 @@ class CodeAgentServer:
             if instruction_id == 8:
                 logger.info("Инструкция 8 (коммит) - сохраняем TODO файл с отмеченными задачами перед коммитом")
                 try:
-                    # Отмечаем текущую задачу как выполненную в TODO файле
-                    if not self.todo_manager.mark_task_done(todo_item.text):
+                    # Отмечаем текущую задачу как выполненную в TODO файле с комментарием
+                    # Комментарий будет добавлен позже при полном завершении, здесь только предварительная отметка
+                    if not self.todo_manager.mark_task_done(todo_item.text, comment="Выполняется"):
                         logger.warning(f"Не удалось отметить задачу '{todo_item.text}' как выполненную в TODO файле")
                     else:
                         logger.info(f"✓ Задача '{todo_item.text}' отмечена как выполненная в TODO файле")
@@ -2144,7 +2532,7 @@ class CodeAgentServer:
             wait_result = None
             if wait_for_file:
                 logger.info(f"Начинаем ожидание файла результата для инструкции {instruction_num}: {wait_for_file}")
-                task_logger.set_phase(TaskPhase.WAITING_RESULT)
+                task_logger.set_phase(TaskPhase.WAITING_RESULT, stage=instruction_num, instruction_num=instruction_num)
                 task_logger.log_waiting_result(wait_for_file, timeout)
                 
                 wait_result = self._wait_for_result_file(
@@ -2175,6 +2563,34 @@ class CodeAgentServer:
                     )
                     logger.info(f"Файл результата получен для инструкции {instruction_num}: {wait_result['file_path']}")
                     instruction_successful = True
+                    
+                    # После первой инструкции (создание плана) проверяем соответствие туду плану
+                    if instruction_num == 1:
+                        plan_file = self.project_dir / "docs" / "results" / f"current_plan_{task_id}.md"
+                        if plan_file.exists():
+                            logger.info(f"План создан, проверяем соответствие туду плану для задачи {task_id}")
+                            task_logger.log_info("Проверка соответствия туду плану после создания плана")
+                            
+                            matches_plan, reason = self._check_todo_matches_plan(task_id, todo_item)
+                            
+                            if not matches_plan:
+                                logger.warning(f"Пункт туду '{todo_item.text}' не соответствует созданному плану: {reason}")
+                                task_logger.log_warning(f"Пункт туду не соответствует плану: {reason}")
+                                
+                                # Отмечаем задачу как выполненную с комментарием о пропуске
+                                skip_reason = f"Пропущено по причине: {reason}" if reason else "Пропущено по причине: не соответствует плану"
+                                if self.todo_manager.mark_task_done(todo_item.text, comment=skip_reason):
+                                    logger.info(f"✓ Задача '{todo_item.text}' отмечена как пропущенная в TODO файле")
+                                    task_logger.log_info(f"Задача пропущена: {skip_reason}")
+                                else:
+                                    logger.warning(f"Не удалось отметить задачу '{todo_item.text}' как пропущенную в TODO файле")
+                                
+                                self.status_manager.update_task_status(
+                                    task_name=todo_item.text,
+                                    status="Пропущено",
+                                    details=f"Пропущено: не соответствует плану. {reason if reason else ''} (task_id: {task_id})"
+                                )
+                                return False  # Задача пропущена, не выполняем остальные инструкции
                     
                     # Для последней инструкции проверяем, была ли выполнена реальная работа
                     if instruction_num == len(all_templates):
@@ -2278,7 +2694,9 @@ class CodeAgentServer:
         
         # Отмечаем задачу как выполненную только если выполнено достаточно инструкций
         # ВАЖНО: mark_task_done() уже вызывает _save_todos() внутри
-        if self.todo_manager.mark_task_done(todo_item.text):
+        # Добавляем краткий комментарий о выполнении
+        completion_comment = f"Выполнено успешно ({successful_instructions}/{len(all_templates)} инструкций)"
+        if self.todo_manager.mark_task_done(todo_item.text, comment=completion_comment):
             logger.info(f"✓ Задача '{todo_item.text}' отмечена как выполненная в TODO файле (после выполнения всех инструкций)")
         else:
             logger.warning(f"Не удалось отметить задачу '{todo_item.text}' как выполненную в TODO файле")
@@ -2380,8 +2798,7 @@ class CodeAgentServer:
         # Создаем TaskLogger для ревизии
         task_logger = TaskLogger(
             task_id=revision_task_id,
-            task_name="Ревизия проекта",
-            project_dir=self.project_dir
+            task_name="Ревизия проекта"
         )
         
         try:
@@ -2413,6 +2830,10 @@ class CodeAgentServer:
                 logger.info(f"[{instruction_num}/{len(valid_instructions)}] Выполнение ревизии: {instruction_name}")
                 task_logger.log_info(f"Ревизия {instruction_num}/{len(valid_instructions)}: {instruction_name}")
                 
+                # Логируем "запрос" (инструкцию) в консоль так же, как в default-потоке
+                task_logger.log_instruction(instruction_num, instruction_text, task_type="revision")
+                task_logger.set_phase(TaskPhase.CURSOR_EXECUTION, stage=instruction_num, instruction_num=instruction_num)
+
                 # Выполняем инструкцию через Cursor
                 result = self._execute_cursor_instruction_with_retry(
                     instruction=instruction_text,
@@ -2421,6 +2842,9 @@ class CodeAgentServer:
                     task_logger=task_logger,
                     instruction_num=instruction_num
                 )
+
+                # Логируем "ответ" в консоль
+                task_logger.log_cursor_response(result, brief=True)
                 
                 if not result.get("success"):
                     logger.warning(f"Инструкция ревизии {instruction_num} завершилась с ошибкой")
@@ -3266,8 +3690,9 @@ class CodeAgentServer:
             def __init__(self, server_instance):
                 self.server = server_instance
                 self.last_reload_time = 0
-                self.reload_cooldown = 5  # Минимальный интервал между перезапусками (секунды)
+                self.reload_cooldown = 10  # Минимальный интервал между перезапусками (секунды) - увеличено для защиты от ложных срабатываний
                 self.file_hashes = {}  # Кэш хешей файлов для проверки реальных изменений
+                self.pending_changes = set()  # Множество файлов с изменениями в процессе обработки
                 self.ignored_patterns = [
                     # Игнорируемые директории и паттерны
                     '__pycache__',
@@ -3297,6 +3722,34 @@ class CodeAgentServer:
                     if pattern in file_path_lower:
                         return True
                 
+                # Игнорируем временные файлы редакторов (Windows и Unix)
+                temp_patterns = [
+                    '~$',  # Windows временные файлы (например, ~$file.py)
+                    '.tmp',  # Временные файлы
+                    '.swp',  # Vim swap файлы
+                    '.swo',  # Vim swap файлы
+                    '.bak',  # Backup файлы
+                    '.orig',  # Merge conflict файлы
+                    '.rej',  # Rejected patch файлы
+                    '.pyc',  # Python bytecode (на всякий случай)
+                    '.pyo',  # Python optimized bytecode
+                    '__pycache__',  # Python cache
+                    '.git/',  # Git файлы
+                    '.vscode/',  # VS Code настройки
+                    '.idea/',  # IntelliJ/PyCharm настройки
+                    '.cursor/',  # Cursor настройки
+                ]
+                for pattern in temp_patterns:
+                    if pattern in file_path_lower:
+                        return True
+                
+                # Проверяем, существует ли файл (может быть временный файл, который уже удален)
+                try:
+                    if not Path(file_path).exists():
+                        return True
+                except Exception:
+                    return True
+                
                 # Игнорируем файлы, которые не в src/ директории (если это не main.py или другие важные файлы в корне)
                 src_dir = str(Path(__file__).parent).lower()
                 root_dir = str(Path(__file__).parent.parent).lower()
@@ -3319,9 +3772,21 @@ class CodeAgentServer:
                     file = Path(file_path)
                     if not file.exists():
                         return None
-                    # Используем размер и время модификации как простой хеш
-                    stat = file.stat()
-                    return f"{stat.st_size}_{stat.st_mtime}"
+                    
+                    # Используем MD5 хеш содержимого файла для более надежной проверки
+                    # Это гарантирует, что мы реагируем только на реальные изменения содержимого
+                    md5 = hashlib.md5()
+                    try:
+                        with open(file_path, 'rb') as f:
+                            # Читаем файл по частям для больших файлов
+                            for chunk in iter(lambda: f.read(4096), b''):
+                                md5.update(chunk)
+                        return md5.hexdigest()
+                    except (OSError, IOError, PermissionError):
+                        # Если не можем прочитать файл (например, он заблокирован), используем fallback
+                        # Но только если файл действительно существует
+                        stat = file.stat()
+                        return f"fallback_{stat.st_size}_{stat.st_mtime}"
                 except Exception:
                     return None
             
@@ -3333,48 +3798,73 @@ class CodeAgentServer:
                 if not event.src_path.endswith('.py'):
                     return
                 
-                # Проверяем, нужно ли игнорировать файл
+                # Проверяем, нужно ли игнорировать файл (включая временные файлы редакторов)
                 if self._should_ignore_file(event.src_path):
-                    logger.debug(f"Игнорируем изменение файла (в игнорируемой директории): {event.src_path}")
+                    logger.debug(f"Игнорируем изменение файла: {event.src_path}")
                     return
                 
-                # Проверяем cooldown
+                # Проверяем, не обрабатывается ли уже этот файл
+                if event.src_path in self.pending_changes:
+                    logger.debug(f"Файл уже в процессе обработки: {event.src_path}")
+                    return
+                
+                # Проверяем cooldown - защита от частых срабатываний
                 current_time = time.time()
                 if current_time - self.last_reload_time < self.reload_cooldown:
+                    logger.debug(f"Cooldown активен, игнорируем изменение: {event.src_path}")
                     return
                 
-                # Проверяем, действительно ли файл изменился (сравниваем хеш)
-                file_hash = self._get_file_hash(event.src_path)
-                if file_hash is not None:
+                # Добавляем файл в обработку
+                self.pending_changes.add(event.src_path)
+                
+                try:
+                    # Небольшая задержка для стабилизации файла (редакторы могут сохранять в несколько этапов)
+                    time.sleep(0.5)
+                    
+                    # Проверяем, действительно ли файл изменился (сравниваем хеш содержимого)
+                    file_hash = self._get_file_hash(event.src_path)
+                    if file_hash is None:
+                        # Не удалось получить хеш - возможно, файл удален или недоступен
+                        logger.debug(f"Не удалось получить хеш файла (возможно, временный файл): {event.src_path}")
+                        return
+                    
+                    # Проверяем, действительно ли содержимое изменилось
                     if event.src_path in self.file_hashes:
                         if self.file_hashes[event.src_path] == file_hash:
-                            # Файл не изменился - ложное срабатывание
-                            logger.debug(f"Игнорируем ложное срабатывание для файла: {event.src_path}")
+                            # Содержимое файла не изменилось - ложное срабатывание
+                            logger.debug(f"Игнорируем ложное срабатывание (содержимое не изменилось): {event.src_path}")
                             return
-                    # Сохраняем новый хеш
+                    
+                    # Сохраняем новый хеш только после подтверждения реального изменения
                     self.file_hashes[event.src_path] = file_hash
-                
-                logger.info(f"Обнаружено изменение файла: {event.src_path}")
-                self.last_reload_time = current_time
-                
-                # Проверяем, выполняется ли сейчас задача
-                with self.server._task_in_progress_lock:
-                    task_in_progress = self.server._task_in_progress
-                
-                if task_in_progress:
-                    # Если задача выполняется, откладываем перезапуск до завершения текущей инструкции
-                    logger.info(f"Обнаружено изменение кода во время выполнения задачи - перезапуск будет выполнен после завершения текущей инструкции")
-                    with self.server._reload_lock:
-                        self.server._should_reload = True
-                        self.server._reload_after_instruction = True
-                else:
-                    # Если задачи нет, перезапускаем немедленно
-                    with self.server._reload_lock:
-                        self.server._should_reload = True
-                        logger.warning("=" * 80)
-                        logger.warning("ОБНАРУЖЕНО ИЗМЕНЕНИЕ .py ФАЙЛА - ТРЕБУЕТСЯ ПЕРЕЗАПУСК")
-                        logger.warning(f"Изменен файл: {event.src_path}")
-                        logger.warning("=" * 80)
+                    
+                    logger.info(f"Обнаружено РЕАЛЬНОЕ изменение файла: {event.src_path}")
+                    self.last_reload_time = current_time
+                    
+                    # Проверяем, выполняется ли сейчас задача
+                    with self.server._task_in_progress_lock:
+                        task_in_progress = self.server._task_in_progress
+                    
+                    if task_in_progress:
+                        # Если задача выполняется, откладываем перезапуск до завершения текущей инструкции
+                        logger.info(f"Обнаружено изменение кода во время выполнения задачи - перезапуск будет выполнен после завершения текущей инструкции")
+                        with self.server._reload_lock:
+                            self.server._should_reload = True
+                            self.server._reload_after_instruction = True
+                    else:
+                        # Если задачи нет, перезапускаем немедленно
+                        with self.server._reload_lock:
+                            self.server._should_reload = True
+                            logger.warning("=" * 80)
+                            logger.warning("ОБНАРУЖЕНО ИЗМЕНЕНИЕ .py ФАЙЛА - ТРЕБУЕТСЯ ПЕРЕЗАПУСК")
+                            logger.warning(f"Изменен файл: {event.src_path}")
+                            logger.warning("=" * 80)
+                finally:
+                    # Удаляем файл из обработки через некоторое время
+                    def remove_pending():
+                        time.sleep(2)
+                        self.pending_changes.discard(event.src_path)
+                    threading.Thread(target=remove_pending, daemon=True).start()
         
         # Определяем директории для отслеживания
         watch_dirs = []
@@ -3417,6 +3907,14 @@ class CodeAgentServer:
         """
         with self._reload_lock:
             if self._should_reload:
+                # Если перезапуск помечен как "после инструкции" — никогда не выполняем его немедленно.
+                # Это защищает ожидание файлов результатов и длинные шаги от обрыва.
+                if self._reload_after_instruction:
+                    logger.warning("=" * 80)
+                    logger.warning("ПЕРЕЗАПУСК ОТЛОЖЕН - ОЖИДАЕМ ЗАВЕРШЕНИЯ ТЕКУЩЕЙ ИНСТРУКЦИИ")
+                    logger.warning("=" * 80)
+                    return False
+
                 # Проверяем, выполняется ли сейчас задача
                 with self._task_in_progress_lock:
                     if self._task_in_progress:
@@ -3602,15 +4100,70 @@ class CodeAgentServer:
             raise
             
         except KeyboardInterrupt:
-            logger.info("Получен сигнал остановки")
-            self.server_logger.log_server_shutdown("Остановка пользователем (Ctrl+C)")
+            import traceback
+            logger.warning("=" * 80)
+            logger.warning("⚠️ ОБНАРУЖЕН KeyboardInterrupt - ОСТАНОВКА СЕРВЕРА")
+            logger.warning("=" * 80)
+            
+            # Получаем полный traceback для диагностики
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            tb_str = ''.join(traceback.format_tb(exc_tb)) if exc_tb else "Traceback недоступен"
+            
+            # Всегда логируем traceback на уровне WARNING для диагностики
+            logger.warning(f"Traceback KeyboardInterrupt:\n{tb_str}")
+            logger.warning(f"Exception: {exc_type.__name__}: {exc_value}")
+            
+            # Проверяем, был ли это реальный Ctrl+C или другой источник
+            # Подозрительные паттерны, которые могут вызвать KeyboardInterrupt
+            suspicious_patterns = [
+                'subprocess', 
+                'threading', 
+                'signal',
+                'docker',
+                'cursor_cli',
+                'execute',
+                'run(',
+                'time.sleep',
+                'wait_for'
+            ]
+            
+            is_suspicious = False
+            suspicious_source = None
+            
+            if exc_tb and tb_str:
+                tb_lower = tb_str.lower()
+                for pattern in suspicious_patterns:
+                    if pattern in tb_lower:
+                        is_suspicious = True
+                        suspicious_source = pattern
+                        break
+            
+            if is_suspicious:
+                reason = f"Остановка из-за KeyboardInterrupt (НЕ Ctrl+C, вероятный источник: {suspicious_source})"
+                logger.error("=" * 80)
+                logger.error(f"❌ ОБНАРУЖЕНА ПРОБЛЕМА: KeyboardInterrupt вызван НЕ пользователем!")
+                logger.error(f"📋 Вероятный источник: {suspicious_source}")
+                logger.error(f"📝 Это может быть ошибка в коде или внешнем процессе")
+                logger.error("=" * 80)
+            else:
+                reason = "Остановка пользователем (Ctrl+C)"
+                logger.info(f"✓ Похоже на реальный Ctrl+C от пользователя")
+            
+            logger.warning("=" * 80)
+            
+            self.server_logger.log_server_shutdown(reason)
             self._is_running = False
             
-            # Отмечаем корректный останов
-            self.checkpoint_manager.mark_server_stop(clean=True)
+            # Отмечаем корректный останов только если это реальный Ctrl+C
+            if not is_suspicious:
+                self.checkpoint_manager.mark_server_stop(clean=True)
+            else:
+                # Если это не Ctrl+C, отмечаем как некорректный останов
+                logger.warning("⚠️ Останавливаемся как некорректный останов (не Ctrl+C)")
+                self.checkpoint_manager.mark_server_stop(clean=False)
             
             self.status_manager.append_status(
-                f"Code Agent Server остановлен. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                f"Code Agent Server остановлен: {reason}. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                 level=2
             )
         except Exception as e:
