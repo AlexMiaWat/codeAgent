@@ -41,25 +41,36 @@ class ConfigUpdater:
     async def run_full_test_and_update(
         self,
         test_prompt: str = "Привет, это тестовое сообщение. Ответь кратко.",
-        update_config: bool = True
+        update_config: bool = True,
+        use_usefulness_test: bool = True,
+        test_todo_text: str = "Добавить обработку ошибок в API",
+        project_docs: str = "Проект Code Agent - система автоматизации задач через LLM"
     ) -> Dict[str, Any]:
         """
         Запуск полного тестирования и обновление конфигурации
         
         Args:
-            test_prompt: Текст для тестирования моделей
+            test_prompt: Текст для тестирования моделей (используется если use_usefulness_test=False)
             update_config: Обновить конфигурацию на основе результатов
+            use_usefulness_test: Использовать реальный тест проверки полезности (JSON mode) вместо простого
+            test_todo_text: Текст тестового TODO пункта (если use_usefulness_test=True)
+            project_docs: Контекст проекта для промпта (если use_usefulness_test=True)
         
         Returns:
             Словарь с результатами тестирования и обновления
         """
         logger.info("Starting full test and configuration update")
+        if use_usefulness_test:
+            logger.info("Using real usefulness check test (JSON mode) - this is more accurate for production use")
         
         # Шаг 1: Тестирование всех моделей
         logger.info("Step 1: Testing all models...")
         test_results = await self.test_runner.test_all_models(
             simple_prompt=test_prompt,
-            delay=1.0
+            delay=1.0,
+            use_usefulness_test=use_usefulness_test,
+            test_todo_text=test_todo_text,
+            project_docs=project_docs
         )
         
         # Шаг 2: Определение самых быстрых моделей

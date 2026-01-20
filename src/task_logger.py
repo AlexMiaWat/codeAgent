@@ -191,13 +191,11 @@ ID: {self.task_id}
                 handler.stream.write(file_header)
                 handler.flush()
         
-        # В консоль - краткий заголовок с цветом
+        # В консоль - компактный заголовок с цветом
+        task_name_short = self.task_name[:70] + "..." if len(self.task_name) > 70 else self.task_name
         console_header = Colors.colorize(
-            f"{'=' * 80}\n"
-            f"ЗАДАЧА: {self.task_name}\n"
-            f"ID: {self.task_id}\n"
-            f"{'=' * 80}",
-            Colors.BOLD + Colors.BRIGHT_CYAN
+            f"📋 ЗАДАЧА: {task_name_short} | ID: {self.task_id}",
+            Colors.BOLD + Colors.BRIGHT_YELLOW
         )
         self.logger.info(console_header)
         
@@ -426,17 +424,28 @@ ID: {self.task_id}
         
         self.logger.debug(f"Ожидание файла результата: {file_path} (timeout: {timeout}s)")
     
-    def log_result_received(self, file_path: str, wait_time: float, content_preview: str = ""):
+    def log_result_received(self, file_path: str, wait_time: float, content_preview: str = "", execution_time: Optional[float] = None):
         """
         Логировать получение результата
         
         Args:
             file_path: Путь к полученному файлу
-            wait_time: Время ожидания
+            wait_time: Время ожидания файла
             content_preview: Превью содержимого (опционально)
+            execution_time: Время выполнения инструкции (если отличается от wait_time)
         """
         # Результат получен - зеленый цвет
-        self.logger.info(Colors.colorize(f"{emoji('✅', '[OK]')} Результат получен (за {wait_time:.1f}с)", Colors.BRIGHT_GREEN))
+        if execution_time and execution_time > wait_time:
+            # Если время выполнения больше времени ожидания - показываем оба
+            self.logger.info(
+                Colors.colorize(
+                    f"{emoji('✅', '[OK]')} Результат получен (выполнение: {execution_time:.1f}с, ожидание файла: {wait_time:.1f}с)",
+                    Colors.BRIGHT_GREEN
+                )
+            )
+        else:
+            # Обычный случай - показываем только время ожидания
+            self.logger.info(Colors.colorize(f"{emoji('✅', '[OK]')} Результат получен (за {wait_time:.1f}с)", Colors.BRIGHT_GREEN))
         self.logger.info(f"   Файл: {file_path}")
         
         if content_preview:
@@ -444,7 +453,9 @@ ID: {self.task_id}
             self.logger.info(f"   Превью: {preview}")
         
         self.logger.debug(f"Файл результата получен: {file_path}")
-        self.logger.debug(f"Время ожидания: {wait_time:.2f}s")
+        self.logger.debug(f"Время ожидания файла: {wait_time:.2f}s")
+        if execution_time:
+            self.logger.debug(f"Время выполнения инструкции: {execution_time:.2f}s")
         if content_preview:
             self.logger.debug(f"Содержимое:\n{content_preview}")
     

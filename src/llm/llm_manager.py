@@ -13,7 +13,7 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Set
 from enum import Enum
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -84,6 +84,16 @@ class LLMManager:
         self.config: Dict[str, Any] = {}
         self.models: Dict[str, ModelConfig] = {}
         self.clients: Dict[str, AsyncOpenAI] = {}
+        # Модели, которые уже нарушали JSON mode в рамках текущего процесса.
+        # Используем для ускорения и снижения шума в логах: повторно не пробуем их для json_object.
+        self._json_mode_blacklist: Set[str] = set()
+        # Модели с ошибками недостатка кредитов (402) в рамках текущего процесса.
+        # Используем для ускорения: повторно не пробуем их в рамках одного запроса.
+        self._credits_error_blacklist: Set[str] = set()
+        # Время последней проверки работоспособности моделей
+        self._last_health_check: Optional[float] = None
+        # Интервал проверки работоспособности (секунды)
+        self._health_check_interval: float = 300.0  # 5 минут по умолчанию
         
         self._load_config()
         self._init_models()
@@ -196,10 +206,21 @@ class LLMManager:
                 if m.role == ModelRole.PRIMARY and m.enabled]
     
     def get_fallback_models(self) -> List[ModelConfig]:
-        """Получить резервные модели (duplicate + reserve + fallback)"""
-        return [m for m in self.models.values() 
-                if m.role in [ModelRole.DUPLICATE, ModelRole.RESERVE, ModelRole.FALLBACK] 
-                and m.enabled]
+        """
+        Получить резервные модели в правильном порядке приоритета.
+        Порядок: reserve → duplicate → fallback
+        (reserve модели обычно более надежны и имеют больше кредитов)
+        """
+        # Собираем модели по ролям в правильном порядке приоритета
+        reserve_models = [m for m in self.models.values() 
+                         if m.role == ModelRole.RESERVE and m.enabled]
+        duplicate_models = [m for m in self.models.values() 
+                            if m.role == ModelRole.DUPLICATE and m.enabled]
+        fallback_models = [m for m in self.models.values() 
+                           if m.role == ModelRole.FALLBACK and m.enabled]
+        
+        # Возвращаем в порядке приоритета: reserve → duplicate → fallback
+        return reserve_models + duplicate_models + fallback_models
     
     def get_fastest_model(self) -> Optional[ModelConfig]:
         """Получить самую быструю модель (по last_response_time)"""
@@ -225,7 +246,8 @@ class LLMManager:
         response_format: Optional[Dict[str, Any]] = None
     ) -> ModelResponse:
         """
-        Генерация ответа через модель
+        Генерация ответа через модель.
+        ВАЖНО: Всегда возвращает ответ, никогда не падает с исключением.
         
         Args:
             prompt: Текст запроса
@@ -235,14 +257,34 @@ class LLMManager:
             response_format: Формат ответа (например, {"type": "json_object"} для JSON mode)
         
         Returns:
-            ModelResponse с ответом модели
+            ModelResponse с ответом модели (всегда успешный или с error, но не исключение)
         """
+        # Периодическая проверка работоспособности моделей
+        await self._periodic_health_check()
+        
+        # Очищаем blacklist кредитов в начале каждого нового запроса
+        # (модели могли получить кредиты или изменилась ситуация)
+        self._credits_error_blacklist.clear()
+        
         llm_config = self.config.get('llm', {})
         strategy = llm_config.get('strategy', 'single')
         
         # Определяем стратегию использования
+        # Для критичных запросов (JSON mode) используем best_of_two по умолчанию
+        if response_format and response_format.get("type") == "json_object":
+            # JSON mode - критичный запрос, используем best_of_two для надежности
+            if not use_parallel and strategy != 'best_of_two':
+                logger.debug("JSON mode запрос - используем best_of_two для надежности")
+                use_parallel = True
+        
+        # Определяем стратегию использования
         if use_parallel or strategy == 'best_of_two':
-            return await self._generate_parallel(prompt, response_format=response_format)
+            try:
+                return await self._generate_parallel(prompt, response_format=response_format)
+            except Exception as e:
+                logger.error(f"Ошибка в parallel режиме, fallback на single: {e}")
+                # Fallback на single режим
+                return await self._generate_single(prompt, model_name, use_fastest, response_format=response_format)
         else:
             return await self._generate_single(prompt, model_name, use_fastest, response_format=response_format)
     
@@ -274,39 +316,234 @@ class LLMManager:
         self,
         prompt: str,
         primary_model: ModelConfig,
-        response_format: Optional[Dict[str, Any]] = None
+        response_format: Optional[Dict[str, Any]] = None,
+        retry_count: int = 0,
+        max_retries: int = 2
     ) -> ModelResponse:
-        """Генерация с fallback на резервные модели"""
+        """
+        Генерация с fallback на резервные модели.
+        ВАЖНО: Всегда возвращает ответ, даже если все модели упали (возвращает последний ответ или дефолтный).
+        
+        Args:
+            prompt: Текст запроса
+            primary_model: Основная модель для использования
+            response_format: Формат ответа (JSON mode и т.д.)
+            retry_count: Текущее количество попыток
+            max_retries: Максимальное количество повторных попыток для JSON mode
+        """
         models_to_try = [primary_model] + self.get_fallback_models()
+
+        # Пропускаем модели с ошибками недостатка кредитов (402)
+        if self._credits_error_blacklist:
+            original_count = len(models_to_try)
+            models_to_try = [m for m in models_to_try if m.name not in self._credits_error_blacklist]
+            skipped_count = original_count - len(models_to_try)
+            if skipped_count > 0:
+                logger.info(
+                    f"Пропущено {skipped_count} моделей с ошибками кредитов (402) "
+                    f"(осталось {len(models_to_try)} моделей для попытки)"
+                )
+
+        # Если включен JSON mode, не пробуем модели, которые уже возвращали невалидный JSON
+        if response_format and response_format.get("type") == "json_object" and self._json_mode_blacklist:
+            original_count = len(models_to_try)
+            models_to_try = [m for m in models_to_try if m.name not in self._json_mode_blacklist]
+            skipped_count = original_count - len(models_to_try)
+            if skipped_count > 0:
+                logger.info(
+                    f"JSON mode: пропущено {skipped_count} моделей из blacklist "
+                    f"(осталось {len(models_to_try)} моделей для попытки)"
+                )
+        
+        # Для JSON mode - приоритет более качественным моделям (не самым быстрым)
+        # Сортируем модели: сначала те, которые не в blacklist и имеют хорошую статистику
+        if response_format and response_format.get("type") == "json_object":
+            def model_priority(model: ModelConfig) -> tuple:
+                # Приоритет: не в blacklist, высокая успешность, меньше ошибок
+                in_blacklist = 1 if model.name in self._json_mode_blacklist else 0
+                total = model.success_count + model.error_count
+                success_rate = model.success_count / total if total > 0 else 0.5
+                return (in_blacklist, -success_rate, model.error_count)
+            
+            models_to_try = sorted(models_to_try, key=model_priority)
+            logger.debug(f"JSON mode: модели отсортированы по приоритету (лучшие первыми)")
+        
+        # Сохраняем последний ответ (даже если он failed) для fallback
+        last_response: Optional[ModelResponse] = None
+        invalid_json_responses: List[ModelResponse] = []  # Сохраняем ответы с невалидным JSON
+        attempt_number = 0  # Счетчик попыток для наглядного логирования
         
         for model_config in models_to_try:
+            attempt_number += 1
+            total_attempts = len(models_to_try)
+            
+            # Логируем начало попытки
+            logger.info(f"🔄 Попытка {attempt_number}/{total_attempts}: модель {model_config.name}")
+            
             try:
                 response = await self._call_model(prompt, model_config, response_format=response_format)
+                last_response = response  # Сохраняем для возможного использования
+                
                 if response.success:
                     # Если запрашивался JSON mode, проверяем что ответ действительно JSON
                     if response_format and response_format.get("type") == "json_object":
                         if self._validate_json_response(response.content):
+                            logger.info(
+                                f"✅ Попытка {attempt_number}/{total_attempts} УСПЕШНА: "
+                                f"модель {model_config.name} вернула валидный JSON "
+                                f"(время: {response.response_time:.2f}s)"
+                            )
+                            # Очищаем blacklist кредитов после успешного запроса
+                            # (модели могли получить кредиты или ситуация изменилась)
+                            self._credits_error_blacklist.clear()
                             return response
                         else:
                             logger.warning(
-                                f"Model {model_config.name} returned invalid JSON in JSON mode. "
-                                f"Content: {response.content[:200]}... Trying next model."
+                                f"❌ Попытка {attempt_number}/{total_attempts} НЕУДАЧНА: "
+                                f"модель {model_config.name} вернула невалидный JSON в JSON mode. "
+                                f"Content: {response.content[:200]}... Пробуем следующую модель."
+                            )
+                            # Запоминаем модель как проблемную для JSON mode
+                            self._json_mode_blacklist.add(model_config.name)
+                            logger.info(
+                                f"⚠️ Модель {model_config.name} добавлена в JSON mode blacklist "
+                                f"(всего в blacklist: {len(self._json_mode_blacklist)} моделей: {', '.join(self._json_mode_blacklist)})"
                             )
                             model_config.error_count += 1
+                            invalid_json_responses.append(response)  # Сохраняем для возможного использования
                             continue
                     else:
                         # Не JSON mode - просто возвращаем успешный ответ
+                        logger.info(
+                            f"✅ Попытка {attempt_number}/{total_attempts} УСПЕШНА: "
+                            f"модель {model_config.name} вернула успешный ответ "
+                            f"(время: {response.response_time:.2f}s)"
+                        )
+                        # Очищаем blacklist кредитов после успешного запроса
+                        # (модели могли получить кредиты или ситуация изменилась)
+                        self._credits_error_blacklist.clear()
                         return response
                 else:
-                    logger.warning(f"Model {model_config.name} failed: {response.error}")
+                    # Проверяем, является ли это ошибкой недостатка кредитов (402)
+                    error_str = str(response.error) if response.error else ""
+                    is_credits_error = "402" in error_str or "credits" in error_str.lower() or "afford" in error_str.lower()
+                    
+                    if is_credits_error:
+                        logger.warning(
+                            f"❌ Попытка {attempt_number}/{total_attempts} НЕУДАЧНА: "
+                            f"модель {model_config.name} failed: недостаток кредитов (402). "
+                            f"Добавляем в blacklist для этого запроса."
+                        )
+                        self._credits_error_blacklist.add(model_config.name)
+                    else:
+                        logger.warning(
+                            f"❌ Попытка {attempt_number}/{total_attempts} НЕУДАЧНА: "
+                            f"модель {model_config.name} failed: {response.error}"
+                        )
                     model_config.error_count += 1
             except Exception as e:
-                logger.error(f"Error calling model {model_config.name}: {e}")
+                error_str = str(e)
+                is_credits_error = "402" in error_str or "credits" in error_str.lower() or "afford" in error_str.lower()
+                
+                if is_credits_error:
+                    logger.error(
+                        f"❌ Попытка {attempt_number}/{total_attempts} ОШИБКА: "
+                        f"модель {model_config.name} - недостаток кредитов (402): {e}. "
+                        f"Добавляем в blacklist для этого запроса."
+                    )
+                    self._credits_error_blacklist.add(model_config.name)
+                else:
+                    logger.error(
+                        f"❌ Попытка {attempt_number}/{total_attempts} ОШИБКА: "
+                        f"ошибка вызова модели {model_config.name}: {e}"
+                    )
                 model_config.error_count += 1
+                # Создаем failed response для этого исключения
+                last_response = ModelResponse(
+                    model_name=model_config.name,
+                    content="",
+                    response_time=0.0,
+                    success=False,
+                    error=str(e)
+                )
                 continue
         
-        # Все модели провалились
-        raise RuntimeError("All models failed to generate response")
+        # КРИТИЧНО: Если это JSON mode и все модели вернули невалидный JSON - используем агрессивную стратегию
+        if response_format and response_format.get("type") == "json_object" and invalid_json_responses:
+            logger.error(
+                f"🚨 КРИТИЧЕСКАЯ СИТУАЦИЯ: Все {len(invalid_json_responses)} модели вернули невалидный JSON в JSON mode! "
+                f"Используем агрессивную стратегию восстановления..."
+            )
+            
+            # Стратегия 1: Попробовать best_of_two с другими моделями
+            if retry_count < max_retries:
+                logger.info(f"Попытка {retry_count + 1}/{max_retries}: Переключаемся на best_of_two режим...")
+                try:
+                    parallel_response = await self._generate_parallel(prompt, response_format=response_format)
+                    if parallel_response.success and self._validate_json_response(parallel_response.content):
+                        logger.info(f"✓ Best_of_two режим успешно вернул валидный JSON от {parallel_response.model_name}")
+                        return parallel_response
+                except Exception as e:
+                    logger.warning(f"Best_of_two режим также не помог: {e}")
+            
+            # Стратегия 2: Попробовать извлечь JSON из лучшего ответа с невалидным JSON
+            if invalid_json_responses:
+                logger.info("Пытаемся извлечь JSON из ответов с невалидным JSON...")
+                for invalid_resp in invalid_json_responses[:3]:  # Пробуем первые 3
+                    extracted_json = self._extract_json_from_text(invalid_resp.content)
+                    if extracted_json:
+                        logger.info(f"✓ Удалось извлечь JSON из ответа модели {invalid_resp.model_name}")
+                        return ModelResponse(
+                            model_name=invalid_resp.model_name,
+                            content=extracted_json,
+                            response_time=invalid_resp.response_time,
+                            success=True
+                        )
+        
+        # Все модели провалились - возвращаем последний ответ или создаем дефолтный
+        if last_response:
+            logger.warning(
+                f"⚠️ Все модели провалились для JSON mode, возвращаем последний ответ от {last_response.model_name}. "
+                f"Ошибка: {last_response.error or 'Invalid JSON'}"
+            )
+            # Пытаемся извлечь хоть какой-то контент из последнего ответа (даже если он failed)
+            if last_response.content:
+                logger.info(f"Используем контент из последнего ответа: {last_response.content[:200]}...")
+                # Если это JSON mode, пытаемся извлечь JSON из текста
+                if response_format and response_format.get("type") == "json_object":
+                    extracted_json = self._extract_json_from_text(last_response.content)
+                    if extracted_json:
+                        logger.info(f"✓ Удалось извлечь JSON из текстового ответа модели {last_response.model_name}")
+                        # Возвращаем успешный ответ с извлеченным JSON
+                        return ModelResponse(
+                            model_name=last_response.model_name,
+                            content=extracted_json,
+                            response_time=last_response.response_time,
+                            success=True
+                        )
+                    # Если не нашли JSON, пытаемся создать дефолтный на основе текста
+                    logger.warning(
+                        f"Не удалось извлечь JSON из ответа модели {last_response.model_name}. "
+                        f"Используем дефолтный ответ."
+                    )
+                else:
+                    # Не JSON mode - возвращаем как есть
+                    return last_response
+        
+        # Если даже последнего ответа нет - создаем дефолтный ответ
+        logger.error(
+            f"КРИТИЧЕСКАЯ СИТУАЦИЯ: Все модели провалились и нет даже последнего ответа. "
+            f"Пробовали {len(models_to_try)} моделей. JSON mode blacklist: {len(self._json_mode_blacklist)} моделей"
+        )
+        fallback_response = ModelResponse(
+            model_name="fallback",
+            content='{"error": "Все модели недоступны", "matches": false, "reason": "Техническая ошибка"}',
+            response_time=0.0,
+            success=False,
+            error="All models failed to generate response"
+        )
+        logger.info(f"Возвращаем дефолтный fallback ответ: {fallback_response.content}")
+        return fallback_response
     
     def _validate_json_response(self, content: str) -> bool:
         """
@@ -399,12 +636,15 @@ class LLMManager:
                             f"Model {resp.model_name} returned invalid JSON in parallel mode. "
                             f"Content: {resp.content[:200]}..."
                         )
+                        # Запоминаем модель как проблемную для JSON mode
+                        self._json_mode_blacklist.add(resp.model_name)
                 else:
                     # Не JSON mode - просто добавляем успешный ответ
                     valid_responses.append(resp)
         
         if not valid_responses:
             # Обе модели провалились или вернули невалидный JSON - используем fallback
+            # Fallback теперь гарантированно вернет ответ (не упадет)
             return await self._generate_with_fallback(prompt, model1, response_format=response_format)
         
         if len(valid_responses) == 1:
@@ -475,6 +715,127 @@ class LLMManager:
             logger.error(f"Error evaluating response: {e}")
         
         return 5.0  # Средняя оценка по умолчанию
+    
+    def _extract_json_from_text(self, text: str) -> Optional[str]:
+        """
+        Агрессивное извлечение JSON из текста.
+        Использует несколько методов для поиска JSON объекта.
+        
+        Args:
+            text: Текст для извлечения JSON
+            
+        Returns:
+            JSON строка если найден, None иначе
+        """
+        if not text:
+            return None
+        
+        import json
+        import re
+        
+        # Метод 1: Стандартное извлечение через _validate_json_response логику
+        text_clean = text.strip()
+        if text_clean.startswith("```"):
+            text_clean = re.sub(r"^```(?:json)?\s*", "", text_clean, flags=re.IGNORECASE)
+            text_clean = re.sub(r"\s*```$", "", text_clean)
+            text_clean = text_clean.strip()
+        
+        # Метод 2: Поиск JSON объекта через regex
+        json_patterns = [
+            r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}',  # Простой объект
+            r'\{"usefulness_percent"[^}]*\}',  # Специфичный паттерн для usefulness
+            r'\{"matches"[^}]*\}',  # Специфичный паттерн для matches
+        ]
+        
+        for pattern in json_patterns:
+            matches = re.finditer(pattern, text_clean, re.DOTALL)
+            for match in matches:
+                try:
+                    json_str = match.group()
+                    # Пытаемся распарсить
+                    parsed = json.loads(json_str)
+                    if isinstance(parsed, dict):
+                        # Возвращаем валидный JSON
+                        return json.dumps(parsed, ensure_ascii=False)
+                except json.JSONDecodeError:
+                    continue
+        
+        # Метод 3: Прямой парсинг всего текста
+        try:
+            parsed = json.loads(text_clean)
+            if isinstance(parsed, dict):
+                return json.dumps(parsed, ensure_ascii=False)
+        except json.JSONDecodeError:
+            pass
+        
+        return None
+    
+    async def _periodic_health_check(self):
+        """
+        Периодическая проверка работоспособности моделей.
+        Вызывается автоматически перед каждым запросом, но выполняет проверку только раз в интервал.
+        """
+        current_time = time.time()
+        
+        # Проверяем, нужно ли выполнять health check
+        if self._last_health_check is None:
+            self._last_health_check = current_time
+            # Первый запуск - выполняем проверку
+            await self._health_check_models()
+            return
+        
+        # Проверяем интервал
+        if current_time - self._last_health_check >= self._health_check_interval:
+            self._last_health_check = current_time
+            await self._health_check_models()
+    
+    async def _health_check_models(self):
+        """
+        Проверка работоспособности всех моделей.
+        Отключает модели с высоким процентом ошибок.
+        """
+        logger.debug("Выполняется проверка работоспособности моделей...")
+        
+        total_models = len(self.models)
+        disabled_count = 0
+        
+        for model_name, model_config in self.models.items():
+            if not model_config.enabled:
+                continue
+            
+            # Вычисляем процент успешности
+            total_requests = model_config.success_count + model_config.error_count
+            if total_requests == 0:
+                continue  # Модель еще не использовалась
+            
+            success_rate = model_config.success_count / total_requests if total_requests > 0 else 0.0
+            
+            # Если процент успешности ниже 30% и было больше 5 запросов - отключаем модель
+            if success_rate < 0.3 and total_requests >= 5:
+                logger.warning(
+                    f"Модель {model_name} отключена из-за низкой успешности: "
+                    f"{success_rate*100:.1f}% ({model_config.success_count}/{total_requests})"
+                )
+                model_config.enabled = False
+                disabled_count += 1
+            # Если процент успешности выше 70% и модель была отключена - включаем обратно
+            elif success_rate >= 0.7 and not model_config.enabled and total_requests >= 3:
+                logger.info(
+                    f"Модель {model_name} включена обратно: "
+                    f"успешность {success_rate*100:.1f}% ({model_config.success_count}/{total_requests})"
+                )
+                model_config.enabled = True
+        
+        if disabled_count > 0:
+            logger.info(f"Проверка завершена: отключено {disabled_count} из {total_models} моделей")
+        
+        # Проверяем что осталась хотя бы одна рабочая модель
+        enabled_models = [m for m in self.models.values() if m.enabled]
+        if not enabled_models:
+            logger.error("КРИТИЧЕСКАЯ СИТУАЦИЯ: Все модели отключены! Включаем все обратно...")
+            for model_config in self.models.values():
+                model_config.enabled = True
+                model_config.error_count = 0  # Сбрасываем счетчик ошибок
     
     async def _call_model(
         self, 

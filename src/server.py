@@ -1395,20 +1395,72 @@ class CodeAgentServer:
                         return obj
                 return None
             
-            # Инициализируем LLMManager
-            llm_manager = LLMManager(config_path="config/llm_settings.yaml")
+            # Инициализируем LLMManager (логи инициализации моделей будут подавлены)
+            # Используем временное изменение уровня логирования для LLMManager
+            llm_logger = logging.getLogger('src.llm.llm_manager')
+            original_level = llm_logger.level
+            llm_logger.setLevel(logging.WARNING)  # Подавляем INFO логи инициализации
+            
+            # Временно убираем префиксы (asctime, name, levelname) для блока LLM Manager
+            # Применяем простой форматтер ко всем handlers root logger
+            # Все дочерние логгеры (src.server, src.llm.llm_manager) используют propagate=True
+            # и передают записи в root logger, поэтому изменение root logger достаточно
+            root_logger = logging.getLogger()
+            original_formatters = []
+            simple_format = logging.Formatter('%(message)s')
+            
+            # Сохраняем и изменяем форматеры для всех handlers root logger
+            # Важно: обрабатываем handlers даже если у них нет форматера (устанавливаем новый)
+            for handler in root_logger.handlers[:]:  # Копируем список
+                original_formatter = handler.formatter
+                original_formatters.append((handler, original_formatter))
+                # Устанавливаем простой форматтер (даже если был None)
+                handler.setFormatter(simple_format)
+            
+            # Функция для восстановления форматеров (вызывается перед return)
+            def restore_formatters():
+                llm_logger.setLevel(original_level)
+                # Восстанавливаем оригинальные форматеры (включая None, если его не было)
+                for handler, original_formatter in original_formatters:
+                    handler.setFormatter(original_formatter)
+            
+            try:
+                llm_manager = LLMManager(config_path="config/llm_settings.yaml")
+                
+                # Выводим компактную информацию о LLM Manager (без префиксов)
+                logger.info(Colors.colorize(
+                    f"┌─ LLM Manager ─────────────────────────────────────────────",
+                    Colors.BRIGHT_CYAN
+                ))
+                logger.info(Colors.colorize(
+                    f"│ Инициализирован для проверки полезности задачи",
+                    Colors.BRIGHT_CYAN
+                ))
+            except Exception as e:
+                # Восстанавливаем форматеры при ошибке инициализации
+                restore_formatters()
+                raise
             
             # Формируем промпт для проверки полезности
-            check_prompt = f"""Оцени полезность этого пункта из TODO списка. Определи, является ли это реальной полезной задачей или мусором/шумом в тексте.
+            # Загружаем документацию проекта для контекста
+            project_docs = self._load_documentation()
+            project_docs_preview = project_docs[:2000] if len(project_docs) > 2000 else project_docs
+            
+            check_prompt = f"""Оцени полезность этого пункта из TODO списка проекта.
+
+КОНТЕКСТ ПРОЕКТА (документация):
+{project_docs_preview}
 
 ПУНКТ TODO:
 {todo_item.text}
 
 Оцени полезность задачи в процентах от 0% до 100%:
-- 0-15% - это мусор/шум, не является реальной задачей (например, случайный текст, комментарии, заметки)
+- 0-15% - это мусор/шум, не является реальной задачей (случайный текст, личные заметки, дубликаты, пустые строки)
 - 16-50% - слабая полезность, возможно неполная или неясная задача
 - 51-80% - средняя полезность, задача понятна но может быть улучшена
-- 81-100% - высокая полезность, четкая и конкретная задача
+- 81-100% - высокая полезность, четкая и конкретная техническая задача
+
+Учитывай контекст проекта из документации при оценке. Технические задачи, связанные с проектом, должны иметь высокую полезность.
 
 Верни JSON объект со следующей структурой:
 {{
@@ -1417,7 +1469,8 @@ class CodeAgentServer:
 }}"""
             
             # Выполняем проверку через LLMManager с JSON mode (асинхронно)
-            # Используем response_format для гарантированного JSON ответа
+            # ВАЖНО: Используем best_of_two для надежности (не самую быструю модель)
+            # Это критичная проверка, нужна качественная модель
             json_response_format = {"type": "json_object"}
             
             try:
@@ -1429,77 +1482,320 @@ class CodeAgentServer:
                         future = executor.submit(
                             lambda: asyncio.run(llm_manager.generate_response(
                                 prompt=check_prompt,
-                                use_fastest=True,
-                                use_parallel=False,
+                                use_fastest=False,  # НЕ используем самую быструю - нужна качественная модель
+                                use_parallel=True,  # Используем best_of_two для надежности
                                 response_format=json_response_format
                             ))
                         )
-                        response = future.result(timeout=60)
+                        response = future.result(timeout=90)  # Увеличиваем таймаут для best_of_two
                 else:
                     # Loop существует, но не запущен
                     response = loop.run_until_complete(llm_manager.generate_response(
                         prompt=check_prompt,
-                        use_fastest=True,
-                        use_parallel=False,
+                        use_fastest=False,  # НЕ используем самую быструю - нужна качественная модель
+                        use_parallel=True,  # Используем best_of_two для надежности
                         response_format=json_response_format
                     ))
             except RuntimeError:
                 # Нет event loop, создаем новый
                 response = asyncio.run(llm_manager.generate_response(
                     prompt=check_prompt,
-                    use_fastest=True,
-                    use_parallel=False,
+                    use_fastest=False,  # НЕ используем самую быструю - нужна качественная модель
+                    use_parallel=True,  # Используем best_of_two для надежности
                     response_format=json_response_format
                 ))
             
-            if not response.success:
-                logger.warning(f"Не удалось выполнить проверку полезности для задачи: {response.error}")
-                return 50.0, "Ошибка проверки, считаем средней полезности"  # По умолчанию средняя полезность
-            
             # Парсим ответ LLM (с JSON mode ответ должен быть валидным JSON)
-            content = response.content.strip()
+            # ВАЖНО: Даже если response.success = False, пытаемся использовать content если он есть
+            content = response.content.strip() if response.content else ""
+            
+            if not response.success:
+                if content:
+                    logger.warning(
+                        f"│ ⚠️ LLM вернул ошибку, но есть контент. Пытаемся использовать его. "
+                        f"Ошибка: {response.error}, контент: {content[:200]}..."
+                    )
+                else:
+                    logger.warning(
+                        f"│ ❌ Не удалось выполнить проверку полезности для задачи: {response.error}"
+                    )
+                    logger.info(Colors.colorize(
+                        f"└───────────────────────────────────────────────────────────",
+                        Colors.BRIGHT_CYAN
+                    ))
+                    restore_formatters()
+                    return 50.0, "Ошибка проверки, считаем средней полезности"  # По умолчанию средняя полезность
+            
             if not content:
                 logger.warning(
-                    f"Пустой ответ LLM при проверке полезности (model={getattr(response, 'model_name', 'unknown')})"
+                    f"│ ❌ Пустой ответ LLM при проверке полезности (model={getattr(response, 'model_name', 'unknown')})"
                 )
+                logger.info(Colors.colorize(
+                    f"└───────────────────────────────────────────────────────────",
+                    Colors.BRIGHT_CYAN
+                ))
+                restore_formatters()
                 return 50.0, "Пустой ответ LLM, считаем средней полезности"
             
-            # Логируем ответ для диагностики
-            logger.debug(f"Ответ LLM для проверки полезности: {content}")
+            # Логируем ответ LLM компактно, но с сохранением текста от LLM
+            model_name = getattr(response, 'model_name', 'unknown')
+            response_time = getattr(response, 'response_time', 0.0)
+            
+            # Выводим итоговую информацию о результате всех попыток
+            status_icon = "✅" if response.success else "❌"
+            status_text = "УСПЕШНО" if response.success else "НЕУДАЧНО"
+            
+            logger.info(Colors.colorize(
+                f"│ ИТОГ: {status_icon} {status_text} | Модель: {model_name} | Время: {response_time:.2f}s",
+                Colors.BRIGHT_CYAN if response.success else Colors.BRIGHT_YELLOW
+            ))
+            
+            # Выводим полный текст ответа LLM (важно для диагностики)
+            if content:
+                # Извлекаем JSON для красивого отображения
+                response_data_preview = _extract_json_object(content)
+                if response_data_preview:
+                    usefulness_preview = response_data_preview.get('usefulness_percent', '?')
+                    comment_preview = response_data_preview.get('comment', '')[:100]
+                    logger.info(Colors.colorize(
+                        f"│ Результат: usefulness={usefulness_preview}%, comment=\"{comment_preview}\"",
+                        Colors.BRIGHT_CYAN
+                    ))
+                else:
+                    # Если не удалось извлечь JSON, показываем первые 200 символов
+                    logger.info(Colors.colorize(
+                        f"│ Ответ LLM (текст): {content[:200]}...",
+                        Colors.BRIGHT_CYAN
+                    ))
             
             # С JSON mode ответ должен быть валидным JSON, но не все модели/провайдеры строго соблюдают
-            # — поэтому извлекаем JSON устойчиво.
+            # — поэтому извлекаем JSON устойчиво с несколькими попытками.
             response_data = _extract_json_object(content)
+            
+            # Если не удалось извлечь, пробуем более агрессивные методы
             if response_data is None:
+                # Попытка 1: Прямой парсинг всего текста
                 try:
                     response_data = json.loads(content)
-                except json.JSONDecodeError as e:
-                    logger.warning(f"Не удалось распарсить JSON ответ (JSON mode не сработал): {e}")
-                    logger.debug(f"Содержимое ответа: {content[:500]}")
-                    logger.warning(
-                        f"Не удалось извлечь процент полезности из ответа LLM. Ответ: {content[:300]}"
-                    )
-                    return 50.0, "Не удалось определить полезность, считаем средней"
+                except json.JSONDecodeError:
+                    # Попытка 2: Ищем JSON объект в тексте более гибко
+                    import re
+                    # Ищем паттерн вида {"usefulness_percent": число, "comment": "текст"}
+                    json_pattern = r'\{[^{}]*"usefulness_percent"[^{}]*\}'
+                    match = re.search(json_pattern, content, re.DOTALL)
+                    if match:
+                        try:
+                            response_data = json.loads(match.group())
+                            logger.info(f"✓ JSON извлечен из текста через regex паттерн")
+                        except json.JSONDecodeError:
+                            pass
+                    
+                    # Попытка 3: Пытаемся создать JSON из найденных чисел и текста
+                    if response_data is None:
+                        numbers = re.findall(r'\d+\.?\d*', content)
+                        # Ищем процентное значение (0-100)
+                        usefulness_value = None
+                        for num_str in numbers:
+                            num = float(num_str)
+                            if 0 <= num <= 100:
+                                usefulness_value = num
+                                break
+                        
+                        if usefulness_value is not None:
+                            # Извлекаем комментарий (текст после "comment" или в кавычках)
+                            comment_match = re.search(r'comment["\']?\s*[:=]\s*["\']([^"\']+)["\']', content, re.IGNORECASE)
+                            comment_text = comment_match.group(1) if comment_match else "Извлечено из текста"
+                            response_data = {
+                                "usefulness_percent": usefulness_value,
+                                "comment": comment_text
+                            }
+                            logger.info(f"✓ JSON создан из извлеченных значений: {usefulness_value}%")
+            
+            # Если все попытки не удались - используем дефолтное значение
+            if response_data is None:
+                logger.warning(
+                    f"│ ⚠️ Не удалось извлечь JSON из ответа LLM (модель: {getattr(response, 'model_name', 'unknown')}). "
+                    f"Ответ: {content[:500]}. Используем дефолтное значение 75% (техническая задача по умолчанию)"
+                )
+                logger.info(Colors.colorize(
+                    f"└───────────────────────────────────────────────────────────",
+                    Colors.BRIGHT_CYAN
+                ))
+                restore_formatters()
+                # ВАЖНО: Для технических задач используем 75% по умолчанию, а не 50%
+                # Это предотвращает ложное отбрасывание валидных задач
+                return 75.0, "Не удалось определить полезность из ответа LLM, считаем технической задачей (75%)"
+            
+            # Валидируем что response_data это dict
+            if not isinstance(response_data, dict):
+                logger.warning(
+                    f"│ ⚠️ response_data не является dict: {type(response_data)}. Используем дефолт 75%"
+                )
+                logger.info(Colors.colorize(
+                    f"└───────────────────────────────────────────────────────────",
+                    Colors.BRIGHT_CYAN
+                ))
+                restore_formatters()
+                return 75.0, "Неверный формат ответа LLM, считаем технической задачей (75%)"
             
             try:
-                usefulness = float(response_data.get('usefulness_percent', 50.0))
+                usefulness = float(response_data.get('usefulness_percent', 75.0))
                 comment = response_data.get('comment', response_data.get('reason', 'Нет комментария'))
+                
+                # Самопроверка LLM: если оценка подозрительно низкая (особенно 0%), 
+                # перепроверяем с использованием контекста проекта
+                if usefulness < 20.0:  # Подозрительно низкая оценка
+                    logger.info(Colors.colorize(
+                        f"│",
+                        Colors.BRIGHT_CYAN
+                    ))
+                    logger.info(Colors.colorize(
+                        f"│ ⚠️  Самопроверка LLM: подозрительно низкая оценка ({usefulness}%)",
+                        Colors.BRIGHT_YELLOW
+                    ))
+                    
+                    # Загружаем документацию проекта для контекста
+                    project_docs = self._load_documentation()
+                    # Ограничиваем размер документации для промпта (чтобы не превысить лимиты токенов)
+                    project_docs_preview = project_docs[:3000] if len(project_docs) > 3000 else project_docs
+                    
+                    # Формируем промпт для самопроверки
+                    self_check_prompt = f"""Проверь адекватность оценки полезности задачи, используя контекст проекта.
+
+КОНТЕКСТ ПРОЕКТА (документация):
+{project_docs_preview}
+
+ЗАДАЧА ИЗ TODO:
+{todo_item.text}
+
+ПЕРВОНАЧАЛЬНАЯ ОЦЕНКА:
+- Полезность: {usefulness}%
+- Комментарий: {comment}
+
+ВОПРОС: Учитывая контекст проекта и содержание задачи, является ли оценка {usefulness}% адекватной?
+
+ВАЖНО:
+- Если задача связана с техническими аспектами проекта (MCP, API, архитектура, рефакторинг, оптимизация, документация, поиск, индексация и т.д.) - она должна иметь высокую полезность (50-100%)
+- Если задача действительно является мусором/шумом (случайный текст, личные заметки, дубликаты) - низкая оценка оправдана
+- Учитывай специфику проекта из документации
+
+Верни JSON объект:
+{{
+  "is_adequate": true/false,
+  "corrected_usefulness_percent": число от 0 до 100 (если is_adequate=false, предложи правильную оценку),
+  "reason": "краткое объяснение почему оценка адекватна или нет"
+}}"""
+                    
+                    # Выполняем самопроверку
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                future = executor.submit(
+                                    lambda: asyncio.run(llm_manager.generate_response(
+                                        prompt=self_check_prompt,
+                                        use_fastest=False,
+                                        use_parallel=True,
+                                        response_format=json_response_format
+                                    ))
+                                )
+                                self_check_response = future.result(timeout=90)
+                        else:
+                            self_check_response = loop.run_until_complete(llm_manager.generate_response(
+                                prompt=self_check_prompt,
+                                use_fastest=False,
+                                use_parallel=True,
+                                response_format=json_response_format
+                            ))
+                    except RuntimeError:
+                        self_check_response = asyncio.run(llm_manager.generate_response(
+                            prompt=self_check_prompt,
+                            use_fastest=False,
+                            use_parallel=True,
+                            response_format=json_response_format
+                        ))
+                    
+                    # Парсим ответ самопроверки
+                    if self_check_response.success and self_check_response.content:
+                        self_check_content = self_check_response.content.strip()
+                        self_check_data = _extract_json_object(self_check_content)
+                        
+                        if self_check_data and isinstance(self_check_data, dict):
+                            is_adequate = self_check_data.get('is_adequate', True)
+                            corrected_usefulness = self_check_data.get('corrected_usefulness_percent')
+                            reason = self_check_data.get('reason', 'Нет объяснения')
+                            
+                            if not is_adequate and corrected_usefulness is not None:
+                                original_usefulness = usefulness  # Сохраняем первоначальное значение
+                                corrected_usefulness = float(corrected_usefulness)
+                                # Ограничиваем значение
+                                corrected_usefulness = max(0.0, min(100.0, corrected_usefulness))
+                                
+                                logger.info(Colors.colorize(
+                                    f"│ ✓ Самопроверка: {original_usefulness}% → {corrected_usefulness}%",
+                                    Colors.BRIGHT_GREEN
+                                ))
+                                logger.info(Colors.colorize(
+                                    f"│   Причина: {reason}",
+                                    Colors.BRIGHT_CYAN
+                                ))
+                                
+                                usefulness = corrected_usefulness
+                                comment = f"Самопроверка LLM: {reason} (исправлено с {original_usefulness}%)"
+                            else:
+                                logger.info(Colors.colorize(
+                                    f"│ ✓ Самопроверка: оценка {usefulness}% подтверждена",
+                                    Colors.BRIGHT_CYAN
+                                ))
+                        else:
+                            logger.warning("Не удалось распарсить ответ самопроверки LLM, используем первоначальную оценку")
+                    else:
+                        logger.warning(f"Самопроверка LLM не удалась: {getattr(self_check_response, 'error', 'unknown error')}, используем первоначальную оценку")
                 
                 # Ограничиваем значение от 0 до 100
                 usefulness = max(0.0, min(100.0, usefulness))
                 
+                # Закрываем блок LLM Manager
+                logger.info(Colors.colorize(
+                    f"└───────────────────────────────────────────────────────────",
+                    Colors.BRIGHT_CYAN
+                ))
+                restore_formatters()
+                
                 logger.debug(f"Успешно распарсен JSON: usefulness={usefulness}%, comment={comment}")
                 return usefulness, comment
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Ошибка при обработке ответа: {e}, содержимое: {content[:300]}")
-                return 50.0, f"Ошибка обработки ответа: {str(e)[:100]}"
+            except (ValueError, TypeError, AttributeError) as e:
+                logger.warning(
+                    f"│ ⚠️ Ошибка при обработке ответа: {e}, содержимое: {content[:300]}, response_data: {response_data}"
+                )
+                logger.info(Colors.colorize(
+                    f"└───────────────────────────────────────────────────────────",
+                    Colors.BRIGHT_CYAN
+                ))
+                restore_formatters()
+                return 75.0, f"Ошибка обработки ответа, считаем технической задачей (75%): {str(e)[:100]}"
             
         except ImportError:
             logger.warning("LLMManager не доступен, пропускаем проверку полезности")
-            return 50.0, "LLMManager недоступен, считаем средней полезности"
+            # Форматеры не были изменены при ImportError, но на всякий случай проверим
+            if 'restore_formatters' in locals():
+                restore_formatters()
+            return 75.0, "LLMManager недоступен, считаем технической задачей (75%)"
         except Exception as e:
-            logger.error(f"Ошибка при проверке полезности задачи через LLMManager: {e}", exc_info=True)
-            return 50.0, f"Ошибка проверки: {str(e)[:100]}"
+            logger.error(
+                f"│ ❌ Ошибка при проверке полезности задачи через LLMManager: {e}", exc_info=True
+            )
+            logger.info(Colors.colorize(
+                f"└───────────────────────────────────────────────────────────",
+                Colors.BRIGHT_CYAN
+            ))
+            # Восстанавливаем форматеры при исключении
+            if 'restore_formatters' in locals():
+                restore_formatters()
+            # ВАЖНО: При ошибке считаем задачу технической (75%), а не мусором (50%)
+            # Это предотвращает ложное отбрасывание валидных задач при сбоях LLM
+            return 75.0, f"Ошибка проверки, считаем технической задачей (75%): {str(e)[:100]}"
     
     def _check_todo_matches_plan(self, task_id: str, todo_item: TodoItem) -> Tuple[bool, Optional[str]]:
         """
@@ -1611,15 +1907,26 @@ class CodeAgentServer:
                     use_parallel=False
                 ))
             
-            if not response.success:
-                logger.warning(f"Не удалось выполнить проверку соответствия для задачи {task_id}: {response.error}")
-                return True, None  # Если проверка не удалась, считаем что соответствует
-            
             # Парсим ответ LLM
-            content = response.content.strip()
+            # ВАЖНО: Даже если response.success = False, пытаемся использовать content если он есть
+            content = response.content.strip() if response.content else ""
+            model_name = getattr(response, 'model_name', 'unknown')
+            
+            logger.debug(f"Ответ LLM для проверки соответствия от модели {model_name}: {content[:300]}")
+            
+            if not response.success:
+                if content:
+                    logger.warning(
+                        f"LLM вернул ошибку, но есть контент. Пытаемся использовать его. "
+                        f"Модель: {model_name}, ошибка: {response.error}, контент: {content[:200]}..."
+                    )
+                else:
+                    logger.warning(f"Не удалось выполнить проверку соответствия для задачи {task_id}: {response.error}")
+                    return True, None  # Если проверка не удалась, считаем что соответствует
+            
             if not content:
                 logger.warning(
-                    f"Пустой ответ LLM при проверке соответствия туду плану (task_id={task_id}, model={getattr(response, 'model_name', 'unknown')})"
+                    f"Пустой ответ LLM при проверке соответствия туду плану (task_id={task_id}, model={model_name})"
                 )
                 return True, None  # при пустом ответе не блокируем выполнение
             
@@ -2376,6 +2683,9 @@ class CodeAgentServer:
             # Фаза: Выполнение через Cursor
             task_logger.set_phase(TaskPhase.CURSOR_EXECUTION, stage=instruction_num, instruction_num=instruction_num)
             
+            # Сохраняем время начала выполнения инструкции для корректного расчета времени
+            instruction_start_time = time.time()
+            
             # Используем Cursor CLI для выполнения инструкции с обработкой повторяющихся ошибок
             result = self._execute_cursor_instruction_with_retry(
                 instruction=instruction_text,
@@ -2556,10 +2866,16 @@ class CodeAgentServer:
                 
                 if wait_result and wait_result.get("success"):
                     result_content = wait_result.get("content", "")
+                    # ВАЖНО: Используем реальное время выполнения инструкции (с момента начала выполнения),
+                    # а не только время ожидания файла (которое может быть 0.0 если файл уже существовал)
+                    instruction_execution_time = time.time() - instruction_start_time
+                    # Используем большее значение: либо время ожидания файла, либо время выполнения инструкции
+                    actual_wait_time = max(wait_result['wait_time'], instruction_execution_time)
                     task_logger.log_result_received(
                         wait_result['file_path'],
-                        wait_result['wait_time'],
-                        result_content[:500]
+                        actual_wait_time,
+                        result_content[:500],
+                        execution_time=instruction_execution_time if instruction_execution_time > wait_result['wait_time'] else None
                     )
                     logger.info(f"Файл результата получен для инструкции {instruction_num}: {wait_result['file_path']}")
                     instruction_successful = True
@@ -3591,7 +3907,16 @@ class CodeAgentServer:
                 from werkzeug.serving import make_server
                 import sys
                 
-                logger.info(f"Инициализация HTTP сервера на порту {self.http_port}...")
+                # Объединяем все логи инициализации в один цветной блок
+                separator = '-' * 60
+                http_info_lines = [
+                    Colors.colorize(separator, Colors.BRIGHT_CYAN),
+                    Colors.colorize(f"🌐 HTTP СЕРВЕР", Colors.BRIGHT_CYAN + Colors.BOLD),
+                    f"Порт: {self.http_port}",
+                    f"Адрес: http://127.0.0.1:{self.http_port}",
+                    Colors.colorize(separator, Colors.BRIGHT_CYAN)
+                ]
+                logger.info('\n'.join(http_info_lines))
                 
                 # Создаем сервер через werkzeug
                 try:
@@ -3601,7 +3926,6 @@ class CodeAgentServer:
                         self.flask_app,
                         threaded=True
                     )
-                    logger.info(f"HTTP сервер создан на порту {self.http_port}")
                 except OSError as e:
                     # Правильная обработка ошибок с UTF-8 кодировкой
                     error_msg = f"Ошибка создания HTTP сервера на порту {self.http_port}"
@@ -3620,10 +3944,6 @@ class CodeAgentServer:
                 except Exception as e:
                     logger.error(f"Неожиданная ошибка при создании HTTP сервера: {e}", exc_info=True)
                     return
-                
-                # Запускаем сервер
-                logger.info(f"Запуск HTTP сервера на порту {self.http_port}...")
-                logger.info(f"HTTP сервер будет доступен по адресу: http://127.0.0.1:{self.http_port}")
                 try:
                     self.http_server.serve_forever()
                 except Exception as e:
@@ -3640,8 +3960,7 @@ class CodeAgentServer:
         self.http_thread = threading.Thread(target=run_flask, daemon=True, name="HTTP-Server")
         self.http_thread.start()
         
-        # Ждем запуска сервера с более длительным таймаутом
-        logger.info(f"Ожидание запуска HTTP сервера на порту {self.http_port}...")
+        # Ждем запуска сервера с более длительным таймаутом (логируем только в debug)
         max_attempts = 20  # Увеличиваем до 20 попыток (10 секунд)
         server_started = False
         
@@ -3653,12 +3972,10 @@ class CodeAgentServer:
                         import requests
                         response = requests.get(f'http://127.0.0.1:{self.http_port}/health', timeout=1)
                         if response.status_code == 200:
-                            logger.info(f"HTTP сервер успешно запущен и доступен на порту {self.http_port}")
                             server_started = True
                             break
                     except ImportError:
                         # requests не установлен - используем только проверку порта
-                        logger.info(f"HTTP сервер запущен на порту {self.http_port} (requests не установлен для проверки)")
                         server_started = True
                         break
                 except Exception as e:
@@ -3873,11 +4190,6 @@ class CodeAgentServer:
         src_dir = Path(__file__).parent
         if src_dir.exists():
             watch_dirs.append(str(src_dir))
-        
-        # Добавляем корневую директорию проекта (где main.py)
-        root_dir = Path(__file__).parent.parent
-        if root_dir.exists():
-            watch_dirs.append(str(root_dir))
         
         if not watch_dirs:
             logger.warning("Не найдены директории для отслеживания изменений")

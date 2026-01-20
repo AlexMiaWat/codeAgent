@@ -18,6 +18,19 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 
 try:
+    from .task_logger import Colors
+except ImportError:
+    # Fallback если модуль еще не создан
+    class Colors:
+        BRIGHT_MAGENTA = ''
+        BRIGHT_CYAN = ''
+        BOLD = ''
+        RESET = ''
+        @staticmethod
+        def colorize(text: str, color: str) -> str:
+            return text
+
+try:
     from .prompt_formatter import PromptFormatter
 except ImportError:
     # Fallback если модуль еще не создан
@@ -1604,13 +1617,20 @@ This agent role is used for automated project tasks execution.
         if enable_fallback and fallback_models:
             models_to_try.extend(fallback_models[:max_attempts - 1])
         
-        logger.info(f"Выполнение с fallback: основная модель '{primary_model}', резервные: {fallback_models}")
+        # Компактный лог fallback моделей
+        fallback_info = f"'{primary_model}'"
+        if fallback_models:
+            fallback_info += f" → {fallback_models}"
+        logger.info(Colors.colorize(
+            f"🔄 Fallback: {fallback_info}",
+            Colors.BRIGHT_MAGENTA
+        ))
         
         last_result = None
         
         # Пробуем каждую модель по очереди
         for attempt, model in enumerate(models_to_try, 1):
-            logger.info(f"Попытка {attempt}/{len(models_to_try)} с моделью '{model}'")
+            logger.debug(f"Попытка {attempt}/{len(models_to_try)} с моделью '{model}'")
             
             # Выполняем команду с текущей моделью
             result = self._execute_with_specific_model(
@@ -2119,13 +2139,20 @@ This agent role is used for automated project tasks execution.
         if enable_fallback and fallback_models:
             models_to_try.extend(fallback_models[:max_attempts - 1])
         
-        logger.info(f"Выполнение с fallback: основная модель '{primary_model}', резервные: {fallback_models}")
+        # Компактный лог fallback моделей
+        fallback_info = f"'{primary_model}'"
+        if fallback_models:
+            fallback_info += f" → {fallback_models}"
+        logger.info(Colors.colorize(
+            f"🔄 Fallback: {fallback_info}",
+            Colors.BRIGHT_MAGENTA
+        ))
         
         last_result = None
         
         # Пробуем каждую модель по очереди
         for attempt, model in enumerate(models_to_try, 1):
-            logger.info(f"Попытка {attempt}/{len(models_to_try)} с моделью '{model}'")
+            logger.debug(f"Попытка {attempt}/{len(models_to_try)} с моделью '{model}'")
             
             # Выполняем команду с текущей моделью
             result = self._execute_with_specific_model(
@@ -2204,7 +2231,11 @@ This agent role is used for automated project tasks execution.
         Returns:
             Словарь с результатом выполнения
         """
-        logger.info(f"Выполнение инструкции для задачи {task_id} через Cursor CLI (с fallback)")
+        # Объединяем логи выполнения в один компактный цветной блок
+        logger.info(Colors.colorize(
+            f"💬 CURSOR CLI | Задача: {task_id}",
+            Colors.BRIGHT_MAGENTA + Colors.BOLD
+        ))
         
         # Используем execute_with_fallback вместо execute
         result = self.execute_with_fallback(

@@ -78,10 +78,60 @@ class LLMTestRunner:
         """
         return await self.llm_manager._call_model(prompt, model_config)
     
+    async def test_model_usefulness_check(
+        self,
+        model_config: ModelConfig,
+        test_todo_text: str = "Добавить обработку ошибок в API",
+        project_docs: str = "Проект Code Agent - система автоматизации задач через LLM"
+    ) -> ModelResponse:
+        """
+        Тест модели на реальном промпте проверки полезности задачи (JSON mode)
+        
+        Это критичный тест, который проверяет способность модели:
+        - Работать в JSON mode
+        - Правильно обрабатывать структурированные запросы
+        - Возвращать валидный JSON
+        
+        Args:
+            model_config: Конфигурация модели
+            test_todo_text: Текст тестового TODO пункта
+            project_docs: Контекст проекта для промпта
+        
+        Returns:
+            ModelResponse с результатом (должен содержать валидный JSON)
+        """
+        check_prompt = f"""Оцени полезность этого пункта из TODO списка проекта.
+
+КОНТЕКСТ ПРОЕКТА (документация):
+{project_docs[:2000] if len(project_docs) > 2000 else project_docs}
+
+ПУНКТ TODO:
+{test_todo_text}
+
+Оцени полезность задачи в процентах от 0% до 100%:
+- 0-15% - это мусор/шум, не является реальной задачей (случайный текст, личные заметки, дубликаты, пустые строки)
+- 16-50% - слабая полезность, возможно неполная или неясная задача
+- 51-80% - средняя полезность, задача понятна но может быть улучшена
+- 81-100% - высокая полезность, четкая и конкретная техническая задача
+
+Учитывай контекст проекта из документации при оценке. Технические задачи, связанные с проектом, должны иметь высокую полезность.
+
+Верни JSON объект со следующей структурой:
+{{
+  "usefulness_percent": число от 0 до 100,
+  "comment": "краткий комментарий о полезности задачи"
+}}"""
+        
+        json_response_format = {"type": "json_object"}
+        return await self.llm_manager._call_model(check_prompt, model_config, response_format=json_response_format)
+    
     async def test_all_models(
         self,
         simple_prompt: str = "Привет, это тестовое сообщение. Ответь кратко.",
-        delay: float = 1.0
+        delay: float = 1.0,
+        use_usefulness_test: bool = False,
+        test_todo_text: str = "Добавить обработку ошибок в API",
+        project_docs: str = "Проект Code Agent - система автоматизации задач через LLM"
     ) -> Dict[str, Dict]:
         """
         Тестирование всех доступных моделей
@@ -89,6 +139,9 @@ class LLMTestRunner:
         Args:
             simple_prompt: Текст тестового запроса
             delay: Задержка между тестами (секунды)
+            use_usefulness_test: Использовать реальный тест проверки полезности (JSON mode) вместо простого
+            test_todo_text: Текст тестового TODO пункта (если use_usefulness_test=True)
+            project_docs: Контекст проекта для промпта (если use_usefulness_test=True)
         
         Returns:
             Словарь с результатами тестирования по моделям
@@ -108,18 +161,64 @@ class LLMTestRunner:
             # Тест 1: Проверка доступности
             available, avail_msg = await self.test_model_availability(model_config)
             
-            # Тест 2: Простой запрос (если доступна)
+            # Тест 2: Простой запрос или тест проверки полезности (если доступна)
             simple_response = None
+            usefulness_response = None
+            json_valid = False
             if available:
                 await asyncio.sleep(delay)
-                simple_response = await self.test_model_simple(model_config, simple_prompt)
+                if use_usefulness_test:
+                    # Используем реальный тест проверки полезности (JSON mode)
+                    usefulness_response = await self.test_model_usefulness_check(
+                        model_config, test_todo_text, project_docs
+                    )
+                    # Проверяем валидность JSON
+                    if usefulness_response.success:
+                        import json
+                        try:
+                            json.loads(usefulness_response.content)
+                            json_valid = True
+                        except json.JSONDecodeError:
+                            json_valid = False
+                else:
+                    # Простой тест
+                    simple_response = await self.test_model_simple(model_config, simple_prompt)
             
             # Сохраняем результаты
-            results[model_name] = {
-                'available': available,
-                'availability_message': avail_msg,
-                'simple_test': {
-                    'success': simple_response.success if simple_response else False,
+            if use_usefulness_test and usefulness_response:
+                # Используем результаты теста проверки полезности
+                results[model_name] = {
+                    'available': available,
+                    'availability_message': avail_msg,
+                    'usefulness_test': {
+                        'success': usefulness_response.success and json_valid,
+                        'response_time': usefulness_response.response_time if usefulness_response else None,
+                        'content_length': len(usefulness_response.content) if usefulness_response and usefulness_response.success else 0,
+                        'error': usefulness_response.error if usefulness_response and not usefulness_response.success else None,
+                        'json_valid': json_valid
+                    },
+                    'simple_test': {
+                        'success': False,  # Не использовался
+                        'response_time': None,
+                        'content_length': 0,
+                        'error': None
+                    },
+                    'model_config': {
+                        'role': model_config.role.value,
+                        'max_tokens': model_config.max_tokens,
+                        'context_window': model_config.context_window,
+                        'last_response_time': model_config.last_response_time,
+                        'success_count': model_config.success_count,
+                        'error_count': model_config.error_count
+                    }
+                }
+            else:
+                # Используем результаты простого теста
+                results[model_name] = {
+                    'available': available,
+                    'availability_message': avail_msg,
+                    'simple_test': {
+                        'success': simple_response.success if simple_response else False,
                     'response_time': simple_response.response_time if simple_response else None,
                     'content_length': len(simple_response.content) if simple_response and simple_response.success else 0,
                     'error': simple_response.error if simple_response and not simple_response.success else None
@@ -134,8 +233,9 @@ class LLMTestRunner:
                 }
             }
             
+            response_time = (usefulness_response.response_time if usefulness_response else simple_response.response_time) if (usefulness_response or simple_response) else None
             logger.info(f"Model {model_name}: available={available}, "
-                       f"response_time={simple_response.response_time if simple_response else None}")
+                       f"response_time={response_time}")
             
             await asyncio.sleep(delay)
         
@@ -158,8 +258,15 @@ class LLMTestRunner:
             if min_available and not result.get('available', False):
                 continue
             
+            # Проверяем либо simple_test, либо usefulness_test
             simple_test = result.get('simple_test', {})
-            response_time = simple_test.get('response_time')
+            usefulness_test = result.get('usefulness_test', {})
+            
+            # Используем время отклика из теста проверки полезности, если он есть и успешен
+            if usefulness_test and usefulness_test.get('success', False) and usefulness_test.get('json_valid', False):
+                response_time = usefulness_test.get('response_time')
+            else:
+                response_time = simple_test.get('response_time')
             
             if response_time is not None:
                 fastest.append((model_name, response_time))
@@ -179,8 +286,18 @@ class LLMTestRunner:
         working = []
         
         for model_name, result in self.test_results.items():
-            if result.get('available', False) and result.get('simple_test', {}).get('success', False):
-                working.append(model_name)
+            # Проверяем либо simple_test, либо usefulness_test
+            simple_test = result.get('simple_test', {})
+            usefulness_test = result.get('usefulness_test', {})
+            
+            if result.get('available', False):
+                # Если есть тест проверки полезности - используем его (более строгий критерий)
+                if usefulness_test:
+                    if usefulness_test.get('success', False) and usefulness_test.get('json_valid', False):
+                        working.append(model_name)
+                # Иначе используем простой тест
+                elif simple_test.get('success', False):
+                    working.append(model_name)
         
         return working
     
