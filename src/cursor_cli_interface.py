@@ -51,6 +51,7 @@ class CursorCLIResult:
     error_message: Optional[str] = None
     fallback_used: bool = False  # Флаг использования fallback модели
     primary_model_failed: bool = False  # Флаг неудачи основной модели
+    billing_fallback_used: bool = False  # Флаг использования автоматического billing fallback
 
 
 class CursorCLIInterface:
@@ -1677,6 +1678,7 @@ This agent role is used for automated project tasks execution.
                     # Успешное выполнение в автоматическом fallback режиме
                     logger.info(f"✅ Успешно выполнено в автоматическом fallback режиме с моделью '{model}'")
                     result.fallback_used = True
+                    result.billing_fallback_used = True  # Устанавливаем флаг автоматического billing fallback
                     # Записываем обращение в fallback режиме
                     self.fallback_state.record_request()
                 else:
@@ -2226,6 +2228,7 @@ This agent role is used for automated project tasks execution.
                     # Успешное выполнение в автоматическом fallback режиме
                     logger.info(f"✅ Успешно выполнено в автоматическом fallback режиме с моделью '{model}'")
                     result.fallback_used = True
+                    result.billing_fallback_used = True  # Устанавливаем флаг автоматического billing fallback
                     # Записываем обращение в fallback режиме
                     self.fallback_state.record_request()
                 else:

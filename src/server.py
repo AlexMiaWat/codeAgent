@@ -9,8 +9,9 @@ import logging
 import socket
 import subprocess
 import threading
+import asyncio
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, Union
 from datetime import datetime
 
 from crewai import Task, Crew
@@ -1034,7 +1035,7 @@ class CodeAgentServer:
         else:
             return 'default'
     
-    def _get_instruction_template(self, task_type: str, instruction_id: int = 1) -> Optional[Dict[str, Any]]:
+    def _get_instruction_template(self, task_type: str, instruction_id: Union[int, str]) -> Optional[Dict[str, Any]]:
         """
         Получить шаблон инструкции из конфигурации
         
@@ -1073,11 +1074,12 @@ class CodeAgentServer:
         task_instructions = instructions.get(task_type, instructions.get('default', []))
         
         # Фильтруем только словари с instruction_id и сортируем по ID
+        # Исключаем системные инструкции со строковыми ID (report-check, free)
         valid_instructions = [
             instr for instr in task_instructions
-            if isinstance(instr, dict) and 'instruction_id' in instr
+            if isinstance(instr, dict) and 'instruction_id' in instr and isinstance(instr.get('instruction_id'), int)
         ]
-        
+
         # Сортируем по instruction_id (1, 2, 3, ...)
         valid_instructions.sort(key=lambda x: x.get('instruction_id', 999))
         
@@ -1169,12 +1171,20 @@ class CodeAgentServer:
         log_interval = 100  # Логируем каждые 100 секунд
 
         try:
+            logger.info(Colors.colorize(f"⏳ Начало ожидания файла: {file_path.name} (макс: {timeout}s)", Colors.YELLOW))
+
             while time.time() - start_time < timeout:
                 elapsed = time.time() - start_time
-                
+                remaining = timeout - elapsed
+
                 # Периодическое логирование для диагностики
                 if elapsed - last_log_time >= log_interval:
-                    logger.info(f"Ожидание файла {file_path.name}... (прошло {elapsed:.0f}s из {timeout}s)")
+                    progress_percent = (elapsed / timeout) * 100
+                    logger.info(Colors.colorize(
+                        f"⏱️  Ожидание {file_path.name}: {elapsed:.0f}s/{timeout}s ({progress_percent:.1f}%) - осталось {remaining:.0f}s",
+                        Colors.YELLOW if progress_percent < 50 else Colors.BRIGHT_YELLOW
+                    ))
+
                     # Проверяем также cursor_results/
                     if cursor_results_dir.exists():
                         found_in_cursor_results = []
@@ -1183,7 +1193,8 @@ class CodeAgentServer:
                             if candidate.exists():
                                 found_in_cursor_results.append(str(candidate))
                         if found_in_cursor_results:
-                            logger.info(f"Найдены файлы в cursor_results/: {found_in_cursor_results}")
+                            logger.info(Colors.colorize(f"📂 Найдены файлы в cursor_results/: {found_in_cursor_results}", Colors.GREEN))
+
                     last_log_time = elapsed
                 
                 # Проверяем запрос на остановку
@@ -1248,23 +1259,31 @@ class CodeAgentServer:
                         # Проверяем контрольную фразу если указана
                         if control_phrase:
                             if control_phrase in content:
-                                logger.info(f"Файл результата найден и содержит контрольную фразу")
+                                wait_time = time.time() - start_time
+                                logger.info(Colors.colorize(
+                                    f"✅ Файл результата найден и содержит контрольную фразу! (за {wait_time:.1f}s)",
+                                    Colors.BRIGHT_GREEN
+                                ))
                                 return {
                                     "success": True,
                                     "file_path": str(file_path),
                                     "content": content,
-                                    "wait_time": time.time() - start_time
+                                    "wait_time": wait_time
                                 }
                             else:
-                                logger.debug(f"Файл найден, но контрольная фраза еще не появилась")
+                                logger.debug(f"Файл найден, но контрольная фраза '{control_phrase}' еще не появилась")
                         else:
                             # Контрольная фраза не требуется
-                            logger.info(f"Файл результата найден")
+                            wait_time = time.time() - start_time
+                            logger.info(Colors.colorize(
+                                f"✅ Файл результата найден! (за {wait_time:.1f}s)",
+                                Colors.BRIGHT_GREEN
+                            ))
                             return {
                                 "success": True,
                                 "file_path": str(file_path),
                                 "content": content,
-                                "wait_time": time.time() - start_time
+                                "wait_time": wait_time
                             }
                     except Exception as e:
                         logger.warning(f"Ошибка чтения файла {file_path}: {e}")
@@ -1333,7 +1352,14 @@ class CodeAgentServer:
                 time.sleep(check_interval)
 
             # Таймаут
-            logger.warning(f"Таймаут ожидания файла результата ({timeout}s)")
+            logger.warning(Colors.colorize(
+                f"⏰ Таймаут ожидания файла результата: {file_path.name} ({timeout}s истекло)",
+                Colors.BRIGHT_RED
+            ))
+            logger.warning(Colors.colorize(
+                "💡 Возможные причины: Cursor не отвечает, файл не создается, или требуется больше времени",
+                Colors.YELLOW
+            ))
             return {
                 "success": False,
                 "file_path": str(file_path),
@@ -2034,7 +2060,261 @@ class CodeAgentServer:
         # Если только план без реальной работы
         logger.warning(f"Для задачи {task_id} выполнен только план, реальная работа не обнаружена")
         return False
-    
+
+    async def _check_report_and_decide_next_action(
+        self,
+        report_file: str,
+        next_instruction_name: str,
+        task_id: str,
+        task_logger: TaskLogger,
+        instruction_num: int
+    ) -> Dict[str, Any]:
+        """
+        Проверяет репорт и принимает решение о дальнейших действиях.
+
+        Args:
+            report_file: Путь к файлу репорта
+            next_instruction_name: Название следующей инструкции в линейном процессе
+            task_id: ID задачи
+            task_logger: Логгер задачи
+            instruction_num: Номер текущей инструкции
+
+        Returns:
+            Словарь с решением
+        """
+        llm_manager = None
+        try:
+            # Читаем содержимое репорта
+            report_path = Path(self.project_dir) / report_file
+            if not report_path.exists():
+                logger.warning(f"Файл репорта не найден: {report_path}")
+                return {
+                    "action": "continue",
+                    "reason": f"Файл репорта не найден: {report_file}",
+                    "next_instruction_name": next_instruction_name,
+                    "free_instruction_text": ""
+                }
+
+            with open(report_path, 'r', encoding='utf-8') as f:
+                report_content = f.read()
+
+            logger.debug(f"Прочитан репорт: {report_file} ({len(report_content)} символов)")
+
+            # Используем LLM manager для анализа репорта
+            if not hasattr(self, 'llm_manager') or not self.llm_manager:
+                # Инициализируем LLM manager если не инициализирован
+                from src.llm.llm_manager import LLMManager
+                llm_manager = LLMManager()
+                self.llm_manager = llm_manager
+            else:
+                llm_manager = self.llm_manager
+
+            # Анализируем репорт
+            decision_data = await llm_manager.analyze_report_and_decide(
+                report_content=report_content,
+                report_file=report_file,
+                next_instruction_name=next_instruction_name,
+                task_id=task_id
+            )
+
+            # Анализируем решение
+            final_decision = await llm_manager.analyze_decision_response(
+                decision_data=decision_data,
+                original_report_file=report_file,
+                task_id=task_id
+            )
+
+            # Логируем решение
+            action = final_decision.get('action', 'continue')
+            reason = final_decision.get('reason', '')
+
+            logger.info(f"📋 Решение системы для инструкции {instruction_num}: {action}")
+            logger.info(f"📝 Причина: {reason}")
+
+            task_logger.log_info(f"Проверка репорта после инструкции {instruction_num}: {action} - {reason}")
+
+            return final_decision
+
+        except Exception as e:
+            logger.error(f"Ошибка при проверке репорта: {e}", exc_info=True)
+            task_logger.log_error(f"Ошибка проверки репорта: {str(e)}", e)
+
+            # В случае ошибки продолжаем линейно
+            return {
+                "action": "continue",
+                "reason": f"Ошибка проверки репорта: {str(e)}",
+                "next_instruction_name": next_instruction_name,
+                "free_instruction_text": ""
+            }
+        finally:
+            # Гарантированное закрытие LLM manager в случае ошибки
+            # Это предотвратит "Task exception was never retrieved"
+            if llm_manager and llm_manager is self.llm_manager:
+                try:
+                    # Проверяем, можем ли мы закрыть manager
+                    loop = asyncio.get_running_loop()
+                    if not loop.is_closed():
+                        # Создаем задачу для закрытия, но не ждем её завершения
+                        # Это предотвратит блокировку в случае проблем с event loop
+                        asyncio.create_task(self._safe_close_llm_manager(llm_manager))
+                except RuntimeError:
+                    # Event loop уже закрыт, пытаемся закрыть синхронно
+                    try:
+                        # Создаем новый event loop для закрытия
+                        import concurrent.futures
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            future = executor.submit(self._sync_close_llm_manager, llm_manager)
+                            future.result(timeout=5.0)  # Ждем максимум 5 секунд
+                    except Exception as close_error:
+                        logger.warning(f"Не удалось корректно закрыть LLM manager: {close_error}")
+
+    async def _safe_close_llm_manager(self, llm_manager):
+        """Безопасное закрытие LLM manager без блокировки"""
+        try:
+            # Проверяем, не закрывается ли уже manager
+            if getattr(self, '_llm_manager_closing', False):
+                logger.debug("LLM manager уже закрывается, пропускаем")
+                return
+
+            self._llm_manager_closing = True
+            await asyncio.wait_for(llm_manager.close(), timeout=10.0)
+            logger.debug("LLM manager закрыт успешно в _check_report_and_decide_next_action")
+        except asyncio.TimeoutError:
+            logger.warning("Таймаут при закрытии LLM manager")
+        except Exception as e:
+            logger.warning(f"Ошибка при закрытии LLM manager: {e}")
+        finally:
+            self._llm_manager_closing = False
+
+    def _sync_close_llm_manager(self, llm_manager):
+        """Синхронное закрытие LLM manager для использования в отдельном потоке"""
+        try:
+            # Создаем новый event loop для закрытия
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(asyncio.wait_for(llm_manager.close(), timeout=10.0))
+                logger.debug("LLM manager закрыт успешно синхронно")
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.warning(f"Ошибка при синхронном закрытии LLM manager: {e}")
+
+    async def _execute_free_instruction(
+        self,
+        instruction_text: str,
+        task_id: str,
+        task_logger: TaskLogger,
+        instruction_num: int
+    ) -> bool:
+        """
+        Выполняет свободную инструкцию, вставленную вне очереди.
+
+        Args:
+            instruction_text: Текст инструкции для выполнения
+            task_id: ID задачи
+            task_logger: Логгер задачи
+            instruction_num: Номер инструкции, после которой вставлена свободная
+
+        Returns:
+            True если выполнение успешно, False иначе
+        """
+        try:
+            logger.info(f"🔧 Выполнение свободной инструкции после инструкции {instruction_num}")
+            logger.info(Colors.colorize(
+                f"⚡ СВОБОДНАЯ ИНСТРУКЦИЯ | После инструкции {instruction_num} | Задача: {task_id}",
+                Colors.BRIGHT_CYAN + Colors.BOLD
+            ))
+            task_logger.log_info(f"Выполнение свободной инструкции после {instruction_num}")
+
+            # Получаем шаблон свободной инструкции из конфига
+            free_template = self._get_instruction_template("default", "free")
+            if not free_template:
+                logger.error("Шаблон свободной инструкции не найден в конфиге")
+                return False
+
+            # Форматируем инструкцию
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            formatted_instruction = free_template.get('template', '').replace(
+                '{free_instruction_text}', instruction_text
+            ).replace(
+                '{timestamp}', timestamp
+            ).replace(
+                '{task_id}', task_id
+            )
+
+            # Получаем параметры выполнения
+            timeout = free_template.get('timeout', 600)
+            wait_for_file = free_template.get('wait_for_file', f"docs/results/free_instruction_{task_id}_{timestamp}.md")
+            control_phrase = free_template.get('control_phrase', 'Свободная инструкция выполнена!')
+
+            # Подставляем переменные в wait_for_file
+            wait_for_file = wait_for_file.replace('{task_id}', task_id).replace('{timestamp}', timestamp)
+
+            logger.info(Colors.colorize(
+                f"📝 Текст инструкции: {instruction_text[:100]}{'...' if len(instruction_text) > 100 else ''}",
+                Colors.CYAN
+            ))
+            logger.info(Colors.colorize(
+                f"⏱️  Таймаут: {timeout} сек | Ожидаемый файл: {wait_for_file}",
+                Colors.CYAN
+            ))
+
+            # Выполняем инструкцию через Cursor
+            logger.info(Colors.colorize("🚀 Отправка инструкции в Cursor...", Colors.BRIGHT_GREEN))
+            result = self._execute_cursor_instruction_with_retry(
+                instruction=formatted_instruction,
+                task_id=f"{task_id}_free_{timestamp}",
+                timeout=timeout,
+                task_logger=task_logger,
+                instruction_num=instruction_num
+            )
+
+            if not result.get("success"):
+                logger.warning(Colors.colorize(
+                    f"❌ Свободная инструкция не выполнена: {result.get('error_message')}",
+                    Colors.BRIGHT_RED
+                ))
+                task_logger.log_warning(f"Свободная инструкция не выполнена: {result.get('error_message')}")
+                return False
+
+            logger.info(Colors.colorize("✅ Инструкция принята Cursor, ожидаем результат...", Colors.GREEN))
+
+            # Ожидаем файл результата
+            if wait_for_file:
+                logger.info(Colors.colorize(f"📄 Ожидание файла результата: {wait_for_file}", Colors.YELLOW))
+                task_logger.log_info(f"Ожидание файла результата: {wait_for_file}")
+
+                wait_result = self._wait_for_result_file(
+                    task_id=f"{task_id}_free_{timestamp}",
+                    wait_for_file=wait_for_file,
+                    control_phrase=control_phrase,
+                    timeout=timeout
+                )
+
+                if not wait_result.get("success"):
+                    logger.warning(Colors.colorize(
+                        f"❌ Файл результата не получен: {wait_result.get('error')}",
+                        Colors.BRIGHT_RED
+                    ))
+                    task_logger.log_warning(f"Файл результата свободной инструкции не получен: {wait_result.get('error')}")
+                    return False
+
+                logger.info(Colors.colorize("🎉 Свободная инструкция выполнена успешно!", Colors.BRIGHT_GREEN))
+                task_logger.log_info("Свободная инструкция выполнена успешно")
+                return True
+            else:
+                logger.info(Colors.colorize("✅ Свободная инструкция выполнена (без ожидания файла)", Colors.GREEN))
+                task_logger.log_info("Свободная инструкция выполнена (без ожидания файла)")
+                return True
+
+        except Exception as e:
+            logger.error(Colors.colorize(f"💥 Критическая ошибка при выполнении свободной инструкции: {e}", Colors.BRIGHT_RED), exc_info=True)
+            task_logger.log_error(f"Критическая ошибка свободной инструкции: {str(e)}", e)
+            return False
+
     def _should_use_cursor(self, todo_item: TodoItem) -> bool:
         """
         Определить, нужно ли использовать Cursor для задачи
@@ -2117,7 +2397,7 @@ class CodeAgentServer:
         
         return task
     
-    def _execute_task(self, todo_item: TodoItem, task_number: int = 1, total_tasks: int = 1) -> bool:
+    async def _execute_task(self, todo_item: TodoItem, task_number: int = 1, total_tasks: int = 1) -> bool:
         """
         Выполнение одной задачи через Cursor или CrewAI
         
@@ -2328,7 +2608,7 @@ class CodeAgentServer:
             
             if use_cursor:
                 # Выполнение через Cursor
-                result = self._execute_task_via_cursor(todo_item, task_type, task_logger)
+                result = await self._execute_task_via_cursor(todo_item, task_type, task_logger)
                 task_logger.log_completion(result, "Задача выполнена через Cursor")
                 task_logger.close()
                 
@@ -2421,7 +2701,7 @@ class CodeAgentServer:
                     logger.warning("Перезапуск будет выполнен на следующей проверке")
                     # Не сбрасываем флаг здесь - он будет обработан в run_iteration или start()
     
-    def _execute_task_via_cursor(self, todo_item: TodoItem, task_type: str, task_logger: TaskLogger) -> bool:
+    async def _execute_task_via_cursor(self, todo_item: TodoItem, task_type: str, task_logger: TaskLogger) -> bool:
         """
         Выполнение задачи через Cursor (CLI или файловый интерфейс)
         
@@ -2787,24 +3067,29 @@ class CodeAgentServer:
                 primary_model_failed = result.get('primary_model_failed', False)
                 
                 if fallback_used or primary_model_failed:
-                    # Fallback был использован - это признак проблемы с основной моделью
-                    # Увеличиваем счетчик ошибок, даже если fallback помог
-                    error_message = f"Основная модель не смогла выполнить команду, использован fallback"
-                    logger.warning(f"⚠️ Fallback использован для успешного выполнения - это признак проблемы с основной моделью")
-                    can_continue = self._handle_cursor_error(error_message, task_logger)
-                    
-                    if not can_continue:
-                        # Критическая ситуация - слишком много использований fallback
-                        logger.error("---")
-                        logger.error("Критическая ситуация: слишком часто используется fallback")
-                        logger.error("---")
-                        task_logger.log_error("Критическая ситуация: слишком часто используется fallback", Exception(error_message))
-                        self.status_manager.update_task_status(
-                            task_name=todo_item.text,
-                            status="Прервано",
-                            details=f"Критическая ситуация: слишком часто используется fallback"
-                        )
-                        return False
+                    billing_fallback_used = result.get('billing_fallback_used', False)
+
+                    if billing_fallback_used:
+                        # Автоматический billing fallback - это нормально, не считаем ошибкой
+                        logger.info(f"ℹ️ Выполнено с использованием автоматического billing fallback - это штатная ситуация")
+                    else:
+                        # Резервный fallback или проблема с основной моделью - это может быть проблемой
+                        error_message = f"Основная модель не смогла выполнить команду, использован fallback"
+                        logger.warning(f"⚠️ Fallback использован для успешного выполнения - это признак проблемы с основной моделью")
+                        can_continue = self._handle_cursor_error(error_message, task_logger)
+
+                        if not can_continue:
+                            # Критическая ситуация - слишком много использований fallback
+                            logger.error("---")
+                            logger.error("Критическая ситуация: слишком часто используется fallback")
+                            logger.error("---")
+                            task_logger.log_error("Критическая ситуация: слишком часто используется fallback", Exception(error_message))
+                            self.status_manager.update_task_status(
+                                task_name=todo_item.text,
+                                status="Прервано",
+                                details=f"Критическая ситуация: слишком часто используется fallback"
+                            )
+                            return False
                 else:
                     # Успешное выполнение без fallback - сбрасываем счетчик ошибок
                     with self._cursor_error_lock:
@@ -2932,13 +3217,68 @@ class CodeAgentServer:
             if instruction_successful:
                 successful_instructions += 1
                 logger.info(f"Инструкция {instruction_num}/{len(all_templates)} выполнена успешно")
-                
+
                 # Сохраняем прогресс выполнения инструкций в checkpoint
                 self.checkpoint_manager.update_instruction_progress(
                     task_id=task_id,
                     instruction_num=instruction_num,
                     total_instructions=len(all_templates)
                 )
+
+                # Проверяем, нужно ли выполнять проверку репорта после этой инструкции
+                check_report = template.get('check_report', False)
+                if check_report and instruction_num < len(all_templates):  # Не проверяем после последней инструкции
+                    logger.info(Colors.colorize(
+                        f"🔍 Выполняется проверка репорта, принимается решение дальнейших действий... ожидайте",
+                        Colors.BRIGHT_BLUE + Colors.BOLD
+                    ))
+
+                    # Получаем следующую инструкцию для контекста
+                    next_instruction_template = all_templates[instruction_num] if instruction_num < len(all_templates) else None
+                    next_instruction_name = next_instruction_template.get('name', 'Следующая инструкция') if next_instruction_template else 'Конец процесса'
+
+                    # Выполняем проверку репорта
+                    report_check_result = await self._check_report_and_decide_next_action(
+                        report_file=wait_for_file,
+                        next_instruction_name=next_instruction_name,
+                        task_id=task_id,
+                        task_logger=task_logger,
+                        instruction_num=instruction_num
+                    )
+
+                    # Обрабатываем результат проверки
+                    action = report_check_result.get('action', 'continue')
+                    reason = report_check_result.get('reason', '')
+
+                    if action == 'execute_free_instruction':
+                        # Вставляем свободную инструкцию
+                        free_instruction_text = report_check_result.get('free_instruction_text', '')
+                        logger.info(f"🔧 Вставляем свободную инструкцию по решению системы: {reason}")
+
+                        success = await self._execute_free_instruction(
+                            instruction_text=free_instruction_text,
+                            task_id=task_id,
+                            task_logger=task_logger,
+                            instruction_num=instruction_num
+                        )
+
+                        if not success:
+                            logger.warning("Свободная инструкция не выполнена успешно, продолжаем линейно")
+                            task_logger.log_warning("Свободная инструкция не выполнена, продолжаем линейно")
+
+                    elif action == 'stop':
+                        # Останавливаем процесс
+                        logger.warning(f"🛑 Процесс остановлен по решению системы: {reason}")
+                        task_logger.log_warning(f"Процесс остановлен: {reason}")
+
+                        self.status_manager.update_task_status(
+                            task_name=todo_item.text,
+                            status="Прервано",
+                            details=f"Остановлено по решению системы: {reason}"
+                        )
+                        return False
+
+                    # Для action == 'continue' просто продолжаем линейно (ничего не делаем)
                 
                 # Автоматический push после успешного выполнения инструкции с контрольной фразой "Коммит выполнен!"
                 # Это работает для инструкции 8 (default) и инструкции 6 (revision)
@@ -3111,9 +3451,10 @@ class CodeAgentServer:
         
         try:
             # Получаем все инструкции ревизии и сортируем по instruction_id
+            # Фильтруем только инструкции с числовыми ID
             valid_instructions = [
                 instr for instr in revision_instructions
-                if isinstance(instr, dict) and 'instruction_id' in instr
+                if isinstance(instr, dict) and 'instruction_id' in instr and isinstance(instr.get('instruction_id'), int)
             ]
             valid_instructions.sort(key=lambda x: x.get('instruction_id', 999))
             
@@ -3449,7 +3790,7 @@ class CodeAgentServer:
         
         return wait_result.get("success", False)
     
-    def run_iteration(self, iteration: int = 1):
+    async def run_iteration(self, iteration: int = 1):
         """
         Выполнение одной итерации цикла
         
@@ -3587,7 +3928,7 @@ class CodeAgentServer:
                 raise ServerReloadException("Перезапуск из-за изменения кода перед выполнением задачи")
             
             self.status_manager.add_separator()
-            task_result = self._execute_task(todo_item, task_number=idx, total_tasks=total_tasks)
+            task_result = await self._execute_task(todo_item, task_number=idx, total_tasks=total_tasks)
             
             # Проверяем запрос на остановку после выполнения задачи
             with self._stop_lock:
@@ -4239,7 +4580,7 @@ class CodeAgentServer:
                 return True
             return False
     
-    def start(self):
+    async def start(self):
         """Запуск сервера агента в бесконечном цикле"""
         logger.info("Запуск Code Agent Server")
         logger.info("Инициализация завершена, начинаем запуск HTTP сервера...")
@@ -4309,7 +4650,7 @@ class CodeAgentServer:
                 
                 # Выполняем итерацию
                 try:
-                    has_tasks = self.run_iteration(iteration)
+                    has_tasks = await self.run_iteration(iteration)
                 except ServerReloadException:
                     # Перезапуск из-за изменений в коде во время выполнения итерации
                     logger.warning("Перезапуск сервера во время выполнения итерации")
@@ -4485,6 +4826,28 @@ class CodeAgentServer:
                     self.checkpoint_manager.mark_server_stop(clean=False)
             except:
                 pass
+
+    async def close(self):
+        """
+        Корректное закрытие всех ресурсов сервера.
+        Должен вызываться перед завершением работы сервера.
+        """
+        logger.info("Закрытие ресурсов сервера...")
+
+        # Закрываем LLM manager если он инициализирован и не закрывается уже
+        if hasattr(self, 'llm_manager') and self.llm_manager and not getattr(self, '_llm_manager_closing', False):
+            self._llm_manager_closing = True
+            try:
+                await asyncio.wait_for(self.llm_manager.close(), timeout=10.0)
+                logger.info("LLM manager закрыт успешно")
+            except asyncio.TimeoutError:
+                logger.warning("Таймаут при закрытии LLM manager")
+            except Exception as e:
+                logger.error(f"Ошибка при закрытии LLM manager: {e}")
+            finally:
+                self._llm_manager_closing = False
+
+        logger.info("Все ресурсы сервера закрыты")
 
 
 def main():
