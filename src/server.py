@@ -781,7 +781,7 @@ class CodeAgentServer:
                 # Перезапускаем Docker контейнер и очищаем диалоги
                 self._safe_print("Попытка перезапуска Docker контейнера и очистки диалогов...")
                 if self._restart_cursor_environment():
-                    success_msg = "Docker контейнер и диалоги перезапущены. Сбрасываем счетчик ошибок."
+                    success_msg = "✅ Docker контейнер и диалоги перезапущены. Сбрасываем счетчик ошибок."
                     self._safe_print(success_msg)
                     logger.info(success_msg)
                     task_logger.log_info("Docker контейнер перезапущен после критической ошибки")
@@ -2171,6 +2171,16 @@ class CodeAgentServer:
     async def _safe_close_llm_manager(self, llm_manager):
         """Безопасное закрытие LLM manager без блокировки"""
         try:
+            # Проверяем состояние event loop
+            try:
+                loop = asyncio.get_running_loop()
+                if loop.is_closed():
+                    logger.warning("Event loop is already closed, skipping LLM manager close")
+                    return
+            except RuntimeError:
+                logger.warning("No running event loop, skipping LLM manager close")
+                return
+
             # Проверяем, не закрывается ли уже manager
             if getattr(self, '_llm_manager_closing', False):
                 logger.debug("LLM manager уже закрывается, пропускаем")
@@ -2826,9 +2836,74 @@ class CodeAgentServer:
         if instruction_progress and instruction_progress.get("last_completed_instruction", 0) > 0:
             last_completed = instruction_progress.get("last_completed_instruction", 0)
             total_saved = instruction_progress.get("total_instructions", 0)
-            
+
             logger.info(f"Восстановление прогресса: последняя выполненная инструкция={last_completed}, всего инструкций={total_saved}, текущее количество={len(all_templates)}")
-            
+
+            # Проверяем, нужно ли проверить отчет для последней выполненной инструкции
+            if last_completed <= len(all_templates):
+                last_template = all_templates[last_completed - 1]  # -1 потому что индексы начинаются с 0
+                check_report = last_template.get('check_report', False)
+
+                if check_report and last_completed < len(all_templates):  # Не проверяем после последней инструкции
+                    logger.info(f"🔍 Проверка отчета для последней выполненной инструкции {last_completed} перед продолжением")
+                    task_logger.log_info(f"Проверка отчета для инструкции {last_completed}")
+
+                    # Получаем следующую инструкцию для контекста
+                    next_instruction_template = all_templates[last_completed] if last_completed < len(all_templates) else None
+                    next_instruction_name = next_instruction_template.get('name', 'Следующая инструкция') if next_instruction_template else 'Конец процесса'
+
+                    # Выполняем проверку репорта
+                    report_file = last_template.get('wait_for_file', f"docs/results/result_{task_id}.md")
+                    report_check_result = await self._check_report_and_decide_next_action(
+                        report_file=report_file,
+                        next_instruction_name=next_instruction_name,
+                        task_id=task_id,
+                        task_logger=task_logger,
+                        instruction_num=last_completed
+                    )
+
+                    # Обрабатываем результат проверки
+                    action = report_check_result.get('action', 'continue')
+                    reason = report_check_result.get('reason', '')
+
+                    if action == 'execute_free_instruction':
+                        # Вставляем свободную инструкцию вместо продолжения
+                        free_instruction_text = report_check_result.get('free_instruction_text', '')
+                        logger.info(f"🔧 По результатам проверки репорта вставляем свободную инструкцию для инструкции {last_completed}: {reason}")
+
+                        # Добавляем свободную инструкцию после последней выполненной
+                        free_template = {
+                            'instruction_id': 'free',
+                            'name': f'Свободная инструкция после проверки репорта {last_completed}',
+                            'template': free_instruction_text,
+                            'wait_for_file': f"docs/results/free_instruction_{task_id}_{int(time.time())}.md",
+                            'control_phrase': 'Свободная инструкция выполнена!',
+                            'timeout': 600,
+                            'check_report': True,
+                            'free_instruction': True
+                        }
+                        all_templates.insert(last_completed, free_template)
+
+                        # Обновляем общее количество инструкций в прогрессе
+                        if current_task := self.checkpoint_manager._find_task(task_id):
+                            current_task["instruction_progress"]["total_instructions"] = len(all_templates)
+                            self.checkpoint_manager._save_checkpoint(create_backup=False)
+
+                        # Обновляем прогресс, чтобы начать со свободной инструкции
+                        start_from_instruction = last_completed + 1  # +1 потому что вставили инструкцию
+                        logger.info(f"✓ Вставлена свободная инструкция, начинаем с инструкции {start_from_instruction}")
+                        task_logger.log_info(f"Вставлена свободная инструкция после проверки репорта")
+
+                    elif action == 'stop_and_check':
+                        # Останавливаемся на проверке репорта, не переходим к следующей инструкции
+                        start_from_instruction = last_completed  # Повторяем эту инструкцию
+                        logger.warning(f"⚠️ По результатам проверки репорта останавливаемся на инструкции {last_completed}: {reason}")
+                        task_logger.log_warning(f"Остановка на инструкции {last_completed} по результатам проверки репорта: {reason}")
+
+                    else:
+                        # Продолжаем нормально
+                        logger.info(f"✓ Проверка репорта пройдена, продолжаем с следующей инструкции")
+
             # Если количество инструкций совпадает, продолжаем с последней выполненной + 1
             if total_saved == len(all_templates) and last_completed < len(all_templates):
                 start_from_instruction = last_completed + 1
@@ -3081,7 +3156,7 @@ class CodeAgentServer:
                         if not can_continue:
                             # Критическая ситуация - слишком много использований fallback
                             logger.error("---")
-                            logger.error("Критическая ситуация: слишком часто используется fallback")
+                            logger.error("🚨 Критическая ситуация: слишком часто используется fallback")
                             logger.error("---")
                             task_logger.log_error("Критическая ситуация: слишком часто используется fallback", Exception(error_message))
                             self.status_manager.update_task_status(
@@ -3094,7 +3169,7 @@ class CodeAgentServer:
                     # Успешное выполнение без fallback - сбрасываем счетчик ошибок
                     with self._cursor_error_lock:
                         if self._cursor_error_count > 0:
-                            logger.info(f"Инструкция выполнена успешно, счетчик ошибок Cursor сброшен (было {self._cursor_error_count})")
+                            logger.info(f"✅ Инструкция выполнена успешно, счетчик ошибок Cursor сброшен (было {self._cursor_error_count})")
                             self._cursor_error_count = 0
                             self._cursor_error_delay = 0
                             self._last_cursor_error = None
@@ -3216,7 +3291,7 @@ class CodeAgentServer:
             
             if instruction_successful:
                 successful_instructions += 1
-                logger.info(f"Инструкция {instruction_num}/{len(all_templates)} выполнена успешно")
+                logger.info(f"✅ Инструкция {instruction_num}/{len(all_templates)} выполнена успешно")
 
                 # Сохраняем прогресс выполнения инструкций в checkpoint
                 self.checkpoint_manager.update_instruction_progress(
@@ -3569,7 +3644,7 @@ class CodeAgentServer:
             )
             return False
         
-        logger.info("Начало генерации нового TODO листа")
+        logger.info("ℹ️ Начало генерации нового TODO листа")
         session_id = self.session_tracker.current_session_id
         date_str = datetime.now().strftime('%Y%m%d')
         
@@ -3582,7 +3657,7 @@ class CodeAgentServer:
             return False
         
         # Выполняем инструкцию 1: Создание TODO листа
-        logger.info("Шаг 1: Архитектурный анализ и создание TODO листа")
+        logger.info("🔍 Шаг 1: Архитектурный анализ и создание TODO листа")
         instruction_1 = empty_todo_instructions[0]
         
         instruction_text = instruction_1.get('template', '')
@@ -3618,7 +3693,7 @@ class CodeAgentServer:
             for loc in possible_locations:
                 if loc.exists():
                     todo_file = loc
-                    logger.info(f"TODO файл найден: {todo_file}")
+                    logger.info(f"✅ TODO файл найден: {todo_file}")
                     break
         
         # Читаем задачи из сгенерированного TODO
@@ -3626,7 +3701,7 @@ class CodeAgentServer:
             content = todo_file.read_text(encoding='utf-8')
             # Простой подсчет задач (строки с - [ ])
             task_count = content.count('- [ ]')
-            logger.info(f"Сгенерировано задач: {task_count}")
+            logger.info(f"ℹ️ Сгенерировано задач: {task_count}")
         except Exception as e:
             logger.warning(f"Не удалось прочитать сгенерированный TODO: {e}")
             task_count = 0
@@ -3637,14 +3712,14 @@ class CodeAgentServer:
         
         # Выполняем инструкцию 2: Создание документации для каждой задачи
         # (Упрощенная версия - создаем документацию для первых 3 задач)
-        logger.info("Шаг 2: Создание документации для задач")
+        logger.info("🔍 Шаг 2: Создание документации для задач")
         max_docs = min(3, task_count)  # Ограничиваем количество для экономии времени
         
         for task_num in range(1, max_docs + 1):
             logger.info(f"Создание документации для задачи {task_num}/{max_docs}")
             
             if len(empty_todo_instructions) < 2:
-                logger.warning("Инструкция для создания документации не найдена")
+                logger.warning("⚠️ Инструкция для создания документации не найдена")
                 break
             
             instruction_2 = empty_todo_instructions[1]
@@ -3919,7 +3994,7 @@ class CodeAgentServer:
             # Проверяем запрос на остановку перед каждой задачей
             with self._stop_lock:
                 if self._should_stop:
-                    logger.warning(f"Получен запрос на остановку перед выполнением задачи {idx}/{total_tasks}")
+                    logger.warning(f"⚠️ Получен запрос на остановку перед выполнением задачи {idx}/{total_tasks}")
                     break
             
             # Проверяем необходимость перезапуска перед задачей
@@ -4833,6 +4908,16 @@ class CodeAgentServer:
         Должен вызываться перед завершением работы сервера.
         """
         logger.info("Закрытие ресурсов сервера...")
+
+        # Проверяем состояние event loop перед закрытием LLM manager
+        try:
+            loop = asyncio.get_running_loop()
+            if loop.is_closed():
+                logger.warning("Event loop is already closed, skipping LLM manager close in server.close()")
+                return
+        except RuntimeError:
+            logger.warning("No running event loop, skipping LLM manager close in server.close()")
+            return
 
         # Закрываем LLM manager если он инициализирован и не закрывается уже
         if hasattr(self, 'llm_manager') and self.llm_manager and not getattr(self, '_llm_manager_closing', False):
