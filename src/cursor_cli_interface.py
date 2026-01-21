@@ -1536,7 +1536,12 @@ This agent role is used for automated project tasks execution.
             # Проверяем billing error
             if 'billing_error' in fallback_on:
                 stderr_lower = (result.stderr or '').lower()
-                if 'unpaid invoice' in stderr_lower or 'pay your invoice' in stderr_lower:
+                if ('unpaid invoice' in stderr_lower or
+                    'pay your invoice' in stderr_lower or
+                    'usage limit' in stderr_lower or
+                    'spend limit' in stderr_lower or
+                    'hit your usage limit' in stderr_lower or
+                    'monthly cycle ends' in stderr_lower):
                     logger.warning("Обнаружена billing error - активируем fallback")
                     return True
             
@@ -1843,7 +1848,14 @@ This agent role is used for automated project tasks execution.
             
             # Проверяем billing error
             stderr_lower = result_stderr.lower()
-            billing_error = "unpaid invoice" in stderr_lower or "pay your invoice" in stderr_lower
+            billing_error = (
+                "unpaid invoice" in stderr_lower or
+                "pay your invoice" in stderr_lower or
+                "usage limit" in stderr_lower or
+                "spend limit" in stderr_lower or
+                "hit your usage limit" in stderr_lower or
+                "monthly cycle ends" in stderr_lower
+            )
             
             if billing_error:
                 error_msg = "Неоплаченный счет в Cursor. Требуется оплата: https://cursor.com/dashboard"
@@ -1924,7 +1936,12 @@ This agent role is used for automated project tasks execution.
             # Проверяем billing error
             if 'billing_error' in fallback_on:
                 stderr_lower = (result.stderr or '').lower()
-                if 'unpaid invoice' in stderr_lower or 'pay your invoice' in stderr_lower:
+                if ('unpaid invoice' in stderr_lower or
+                    'pay your invoice' in stderr_lower or
+                    'usage limit' in stderr_lower or
+                    'spend limit' in stderr_lower or
+                    'hit your usage limit' in stderr_lower or
+                    'monthly cycle ends' in stderr_lower):
                     logger.warning("Обнаружена billing error - активируем fallback")
                     return True
             
@@ -2060,7 +2077,14 @@ This agent role is used for automated project tasks execution.
             
             # Проверяем billing error
             stderr_lower = result_stderr.lower()
-            billing_error = "unpaid invoice" in stderr_lower or "pay your invoice" in stderr_lower
+            billing_error = (
+                "unpaid invoice" in stderr_lower or
+                "pay your invoice" in stderr_lower or
+                "usage limit" in stderr_lower or
+                "spend limit" in stderr_lower or
+                "hit your usage limit" in stderr_lower or
+                "monthly cycle ends" in stderr_lower
+            )
             
             if billing_error:
                 error_msg = "Неоплаченный счет в Cursor. Требуется оплата: https://cursor.com/dashboard"

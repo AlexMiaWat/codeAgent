@@ -6,79 +6,62 @@ llm:
   strategy: best_of_two
   model_roles:
     primary:
-    - meta-llama/llama-3.2-1b-instruct
-    - microsoft/wizardlm-2-8x22b
+    - allenai/molmo-2-8b:free
+    - xiaomi/mimo-v2-flash:free
     duplicate:
-    - google/gemma-2-27b-it
-    - undi95/remm-slerp-l2-13b
+    - liquid/lfm-2.5-1.2b-instruct:free
+    - nvidia/nemotron-3-nano-30b-a3b:free
     reserve:
-    - mistralai/mistral-small-24b-instruct-2501
+    - liquid/lfm-2.5-1.2b-thinking:free
     fallback:
-    - meta-llama/llama-3.2-3b-instruct
-    - kwaipilot/kat-coder-pro:free
+    - liquid/lfm-2.5-1.2b-instruct:free
+    - nvidia/nemotron-3-nano-30b-a3b:free
   parallel:
     enabled: true
     models:
-    - meta-llama/llama-3.2-1b-instruct
-    - microsoft/phi-3-mini-128k-instruct
-    evaluator_model: meta-llama/llama-3.2-3b-instruct
+    - allenai/molmo-2-8b:free
+    - xiaomi/mimo-v2-flash:free
+    evaluator_model: liquid/lfm-2.5-1.2b-instruct:free
     selection_criteria:
     - relevance
     - completeness
     - quality
-  _last_updated: '2026-01-19T15:19:42.496214'
-  _update_source: auto_test_results
+  _last_updated: '2026-01-21T19:15:00.000000'
+  _update_source: manual_free_models
   _stats:
-    total_tested: 7
+    total_tested: 5
     working_count: 5
-    fastest_model: meta-llama/llama-3.2-1b-instruct
+    fastest_model: allenai/molmo-2-8b:free
 providers:
   openrouter:
     base_url: https://openrouter.ai/api/v1
     models:
-      meta-llama:
-      - name: meta-llama/llama-3.2-1b-instruct
-        max_tokens: 4096
-        context_window: 60000
+      allenai:
+      - name: allenai/molmo-2-8b:free
+        max_tokens: 1024
+        context_window: 4096
         temperature: 0.7
         top_p: 1.0
-      - name: meta-llama/llama-3.2-3b-instruct
-        max_tokens: 4096
-        context_window: 131072
+      xiaomi:
+      - name: xiaomi/mimo-v2-flash:free
+        max_tokens: 1024
+        context_window: 4096
         temperature: 0.7
         top_p: 1.0
-      microsoft:
-      - name: microsoft/phi-3-mini-128k-instruct
-        max_tokens: 4096
-        context_window: 128000
+      liquid:
+      - name: liquid/lfm-2.5-1.2b-instruct:free
+        max_tokens: 1024
+        context_window: 4096
         temperature: 0.7
         top_p: 1.0
-      - name: microsoft/wizardlm-2-8x22b
-        max_tokens: 4096
-        context_window: 65536
+      - name: liquid/lfm-2.5-1.2b-thinking:free
+        max_tokens: 1024
+        context_window: 4096
         temperature: 0.7
         top_p: 1.0
-      google:
-      - name: google/gemma-2-27b-it
-        max_tokens: 2048
-        context_window: 8192
-        temperature: 0.7
-        top_p: 1.0
-      mistralai:
-      - name: mistralai/mistral-small-24b-instruct-2501
-        max_tokens: 4096
-        context_window: 32768
-        temperature: 0.7
-        top_p: 1.0
-      kwaipilot:
-      - name: kwaipilot/kat-coder-pro:free
-        max_tokens: 4096
-        context_window: 128000
-        temperature: 0.7
-        top_p: 1.0
-      undi95:
-      - name: undi95/remm-slerp-l2-13b
-        max_tokens: 1536
-        context_window: 6144
+      nvidia:
+      - name: nvidia/nemotron-3-nano-30b-a3b:free
+        max_tokens: 1024
+        context_window: 4096
         temperature: 0.7
         top_p: 1.0

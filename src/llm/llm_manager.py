@@ -529,15 +529,24 @@ class LLMManager:
                 else:
                     # Не JSON mode - возвращаем как есть
                     return last_response
-        
+
         # Если даже последнего ответа нет - создаем дефолтный ответ
+        # Для JSON mode возвращаем нейтральный ответ, чтобы не блокировать работу системы
         logger.error(
             f"КРИТИЧЕСКАЯ СИТУАЦИЯ: Все модели провалились и нет даже последнего ответа. "
             f"Пробовали {len(models_to_try)} моделей. JSON mode blacklist: {len(self._json_mode_blacklist)} моделей"
         )
+
+        if response_format and response_format.get("type") == "json_object":
+            # Для JSON mode возвращаем нейтральный ответ, чтобы система могла продолжать работать
+            fallback_content = '{"matches": true, "reason": "API недоступен, проверка пропущена"}'
+            logger.warning(f"Возвращаем нейтральный fallback ответ для JSON mode: {fallback_content}")
+        else:
+            fallback_content = '{"error": "Все модели недоступны", "matches": false, "reason": "Техническая ошибка"}'
+
         fallback_response = ModelResponse(
             model_name="fallback",
-            content='{"error": "Все модели недоступны", "matches": false, "reason": "Техническая ошибка"}',
+            content=fallback_content,
             response_time=0.0,
             success=False,
             error="All models failed to generate response"

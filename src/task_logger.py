@@ -202,23 +202,29 @@ ID: {self.task_id}
         # В файл добавляем дополнительную информацию
         self.logger.debug(f"Лог файл: {self.log_file}")
     
-    def set_phase(self, phase: TaskPhase, stage: Optional[int] = None, instruction_num: Optional[int] = None):
+    def set_phase(self, phase: TaskPhase, stage: Optional[int] = None, instruction_num: Optional[int] = None, task_text: Optional[str] = None):
         """
         Установить текущую фазу выполнения
-        
+
         Args:
             phase: Фаза выполнения
             stage: Номер этапа (опционально)
             instruction_num: Номер инструкции (опционально)
+            task_text: Текст задачи (опционально, для замены номера этапа)
         """
         self.current_phase = phase
         self.current_stage = stage
-        
+
         # Формируем сообщение о фазе (без рамок, только цвет)
-        if stage and instruction_num:
+        if task_text and instruction_num:
+            # Используем текст задачи вместо "ЭТАП"
+            phase_text = f"📍 {task_text}, ИНСТРУКЦИЯ {instruction_num} - {phase.value}"
+        elif stage and instruction_num:
             phase_text = f"📍 ЭТАП {stage}, ИНСТРУКЦИЯ {instruction_num} - {phase.value}"
         elif stage:
             phase_text = f"📍 ЭТАП {stage} - {phase.value}"
+        elif task_text:
+            phase_text = f"📍 {task_text} - {phase.value}"
         else:
             phase_text = f"📍 {phase.value}"
         

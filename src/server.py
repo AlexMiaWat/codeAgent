@@ -2681,7 +2681,7 @@ class CodeAgentServer:
                     # Не прерываем выполнение из-за ошибки сохранения TODO
             
             # Фаза: Выполнение через Cursor
-            task_logger.set_phase(TaskPhase.CURSOR_EXECUTION, stage=instruction_num, instruction_num=instruction_num)
+            task_logger.set_phase(TaskPhase.CURSOR_EXECUTION, task_text=todo_item.text, instruction_num=instruction_num)
             
             # Сохраняем время начала выполнения инструкции для корректного расчета времени
             instruction_start_time = time.time()
@@ -2842,7 +2842,7 @@ class CodeAgentServer:
             wait_result = None
             if wait_for_file:
                 logger.info(f"Начинаем ожидание файла результата для инструкции {instruction_num}: {wait_for_file}")
-                task_logger.set_phase(TaskPhase.WAITING_RESULT, stage=instruction_num, instruction_num=instruction_num)
+                task_logger.set_phase(TaskPhase.WAITING_RESULT, task_text=todo_item.text, instruction_num=instruction_num)
                 task_logger.log_waiting_result(wait_for_file, timeout)
                 
                 wait_result = self._wait_for_result_file(
@@ -3148,7 +3148,7 @@ class CodeAgentServer:
                 
                 # Логируем "запрос" (инструкцию) в консоль так же, как в default-потоке
                 task_logger.log_instruction(instruction_num, instruction_text, task_type="revision")
-                task_logger.set_phase(TaskPhase.CURSOR_EXECUTION, stage=instruction_num, instruction_num=instruction_num)
+                task_logger.set_phase(TaskPhase.CURSOR_EXECUTION, task_text="Ревизия проекта", instruction_num=instruction_num)
 
                 # Выполняем инструкцию через Cursor
                 result = self._execute_cursor_instruction_with_retry(
