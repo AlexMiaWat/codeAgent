@@ -2089,8 +2089,8 @@ class CodeAgentServer:
             if not report_path.exists():
                 logger.warning(f"Файл репорта не найден: {report_path}")
                 return {
-                    "action": "continue",
-                    "reason": f"Файл репорта не найден: {report_file}",
+                    "action": "stop_and_check",
+                    "reason": f"Файл репорта не найден: {report_file}. Инструкция не была выполнена или отчет не создан.",
                     "next_instruction_name": next_instruction_name,
                     "free_instruction_text": ""
                 }
