@@ -304,11 +304,11 @@ def main():
             break
             
         except ServerReloadException:
-            # Полный перезапуск из-за 15 изменений кода подряд
+            # Перезапуск сервера
             restart_count += 1
             if restart_count < max_restarts:
                 print(f"\n{'='*80}")
-                print(f"Полный перезапуск сервера (достигнуто 15 изменений кода подряд) ({restart_count}/{max_restarts})...")
+                print(f"Перезапуск сервера ({restart_count}/{max_restarts})...")
                 print(f"{'='*80}\n")
                 time.sleep(2)
                 continue

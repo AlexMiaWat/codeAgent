@@ -182,15 +182,16 @@ class CodeAgentServer:
         self.file_observer = None
         self._should_reload = False
         self._reload_after_instruction = False  # Флаг для перезапуска после текущей инструкции
+        self._waiting_change_detected = False   # Флаг для изменения в моменте ожидания
         self._reload_lock = threading.Lock()
         
         # Счетчик перезапусков
         self._restart_count = 0
         self._restart_count_lock = threading.Lock()
 
-        # Счетчик изменений кода (для остановки только после 15 изменений подряд)
-        self._code_change_count = 0
-        self._code_change_count_lock = threading.Lock()
+        # Счетчик изменений кода в ожидании (для остановки после 15 изменений подряд)
+        self._waiting_change_count = 0
+        self._waiting_change_count_lock = threading.Lock()
         
         # Флаг для остановки сервера через API
         self._should_stop = False
@@ -1486,13 +1487,13 @@ class CodeAgentServer:
 
                 # Проверяем необходимость перезапуска
                 if self._check_reload_needed():
-                    logger.warning(f"Достигнуто 15 изменений кода подряд во время ожидания файла результата - полный перезапуск")
+                    logger.warning(f"Необходим перезапуск во время ожидания файла результата")
                     return {
                         "success": False,
                         "file_path": str(file_path),
                         "content": None,
                         "wait_time": time.time() - start_time,
-                        "error": "Полный перезапуск сервера из-за 15 изменений кода подряд"
+                        "error": "Перезапуск сервера"
                     }
                 
                 # Сначала проверяем cursor_results/ (файловый интерфейс)
@@ -1614,13 +1615,13 @@ class CodeAgentServer:
 
                 # Проверяем необходимость перезапуска
                 if self._check_reload_needed():
-                    logger.warning(f"Достигнуто 15 изменений кода подряд во время ожидания файла результата - полный перезапуск")
+                    logger.warning(f"Необходим перезапуск во время ожидания файла результата")
                     return {
                         "success": False,
                         "file_path": str(file_path),
                         "content": None,
                         "wait_time": time.time() - start_time,
-                        "error": "Полный перезапуск сервера из-за 15 изменений кода подряд"
+                        "error": "Перезапуск сервера"
                     }
                 
                 # Ждем перед следующей проверкой
@@ -4365,8 +4366,8 @@ class CodeAgentServer:
             
             # Проверяем необходимость перезапуска перед задачей
             if self._check_reload_needed():
-                logger.warning(f"Достигнуто 15 изменений кода подряд перед выполнением задачи {idx}/{total_tasks} - выполняется перезапуск")
-                raise ServerReloadException("Перезапуск из-за 15 изменений кода подряд перед выполнением задачи")
+                logger.warning(f"Необходим перезапуск перед выполнением задачи {idx}/{total_tasks}")
+                raise ServerReloadException("Перезапуск перед выполнением задачи")
             
             self.status_manager.add_separator()
             task_result = await self._execute_task(todo_item, task_number=idx, total_tasks=total_tasks)
@@ -4386,8 +4387,8 @@ class CodeAgentServer:
             
             # Проверяем необходимость перезапуска после задачи
             if self._check_reload_needed():
-                logger.warning(f"Достигнуто 15 изменений кода подряд после выполнения задачи {idx}/{total_tasks} - выполняется перезапуск")
-                raise ServerReloadException("Перезапуск из-за 15 изменений кода подряд после выполнения задачи")
+                logger.warning(f"Необходим перезапуск после выполнения задачи {idx}/{total_tasks}")
+                raise ServerReloadException("Перезапуск после выполнения задачи")
             
             # Задержка между задачами
             if self.task_delay > 0:
@@ -4397,7 +4398,7 @@ class CodeAgentServer:
                         if self._should_stop:
                             break
                     if self._check_reload_needed():
-                        raise ServerReloadException("Перезапуск из-за 15 изменений кода подряд во время задержки")
+                        raise ServerReloadException("Перезапуск во время задержки между задачами")
                     time.sleep(1)
 
         # Очищаем отложенные задачи после завершения итерации
@@ -4665,11 +4666,11 @@ class CodeAgentServer:
             """Перезапустить сервер"""
             logger.warning("Получен запрос на перезапуск сервера через API")
             with self._reload_lock:
-                self._should_reload = True
-            logger.warning(f"Флаг перезапуска установлен. Текущий счетчик перезапусков: {self._restart_count}")
+                self._reload_after_instruction = True
+            logger.warning(f"Флаг перезапуска после инструкции установлен. Текущий счетчик перезапусков: {self._restart_count}")
             return jsonify({
                 'status': 'restarting',
-                'message': 'Сервер будет перезапущен после завершения текущей итерации',
+                'message': 'Сервер будет перезапущен после завершения текущей инструкции',
                 'timestamp': datetime.now().isoformat(),
                 'restart_count': self._restart_count
             })
@@ -4936,17 +4937,15 @@ class CodeAgentServer:
                         task_in_progress = self.server._task_in_progress
                     
                     if task_in_progress:
-                        # Если задача выполняется, откладываем обработку изменения до завершения текущей инструкции
-                        logger.info(f"Обнаружено изменение кода во время выполнения задачи - обработка будет выполнена после завершения текущей инструкции")
+                        # Если задача выполняется, перезапуск после завершения инструкции
+                        logger.info(f"Обнаружено изменение кода во время выполнения задачи - перезапуск будет выполнен после завершения текущей инструкции")
                         with self.server._reload_lock:
-                            self.server._should_reload = True
                             self.server._reload_after_instruction = True
                     else:
-                        # Если задачи нет, устанавливаем флаг изменения кода
+                        # Если задачи нет, это изменение в моменте ожидания
+                        logger.info(f"Обнаружено изменение кода в моменте ожидания: {event.src_path}")
                         with self.server._reload_lock:
-                            self.server._should_reload = True
-                            logger.info(f"Обнаружено изменение .py файла: {event.src_path}")
-                            logger.info("Сервер продолжит работу (перезапуск только после 15 изменений подряд)")
+                            self.server._waiting_change_detected = True
                 finally:
                     # Удаляем файл из обработки через некоторое время
                     def remove_pending():
@@ -4989,68 +4988,75 @@ class CodeAgentServer:
             True если требуется перезапуск
         """
         with self._reload_lock:
-            if self._should_reload:
-                # Увеличиваем счетчик изменений кода
-                with self._code_change_count_lock:
-                    self._code_change_count += 1
-                    current_change_count = self._code_change_count
+            # Проверяем перезапуск после завершения инструкции
+            if self._reload_after_instruction:
+                logger.warning("Выполняется перезапуск после завершения инструкции")
+                logger.warning(f"Счетчик перезапусков до перезапуска: {self._restart_count}")
 
-                logger.info(f"Обнаружено изменение кода. Счетчик изменений: {current_change_count}/15")
+                # Увеличиваем счетчик перезапусков
+                with self._restart_count_lock:
+                    self._restart_count += 1
 
-                # Если перезапуск помечен как "после инструкции" — никогда не выполняем его немедленно.
-                # Это защищает ожидание файлов результатов и длинные шаги от обрыва.
-                if self._reload_after_instruction:
-                    logger.warning("Перезапуск отложен - ожидаем завершения текущей инструкции")
-                    return False
+                # Перезапускаем Docker контейнер перед перезапуском сервера
+                logger.info("Перезапуск Docker контейнера перед перезапуском сервера...")
+                docker_restart_success = self._restart_cursor_environment()
+                if not docker_restart_success:
+                    logger.warning("Не удалось перезапустить Docker контейнер, но продолжаем перезапуск сервера")
 
-                # Проверяем, выполняется ли сейчас задача
-                with self._task_in_progress_lock:
-                    if self._task_in_progress:
-                        # Задача выполняется - перезапуск будет выполнен после завершения текущей инструкции
-                        # (проверка _reload_after_instruction происходит после завершения инструкции)
-                        logger.warning("Перезапуск отложен - выполняется задача")
-                        logger.warning("Перезапуск произойдет после завершения текущей инструкции")
-                        return False
+                logger.warning(f"Перезапуск после инструкции инициирован. Новый счетчик: {self._restart_count}")
 
-                # Проверяем, достигнуто ли максимальное количество изменений кода подряд
-                if current_change_count >= 15:
-                    logger.warning("Достигнуто 15 изменений кода подряд - выполняется полный перезапуск сервера")
-                    logger.warning(f"Счетчик перезапусков до перезапуска: {self._restart_count}")
+                # Сбрасываем флаг
+                self._reload_after_instruction = False
+                return True
+
+            # Проверяем изменения в моменте ожидания
+            if self._waiting_change_detected:
+                # Увеличиваем счетчик изменений в ожидании
+                with self._waiting_change_count_lock:
+                    self._waiting_change_count += 1
+                    current_waiting_count = self._waiting_change_count
+
+                logger.info(f"Обнаружено изменение кода в ожидании. Счетчик: {current_waiting_count}/15")
+
+                # Проверяем, достигнуто ли максимальное количество изменений в ожидании
+                if current_waiting_count >= 15:
+                    logger.warning("Достигнуто 15 изменений кода в ожидании подряд - выполняется остановка сервера")
+                    logger.warning(f"Счетчик перезапусков до остановки: {self._restart_count}")
 
                     # Увеличиваем счетчик перезапусков
                     with self._restart_count_lock:
                         self._restart_count += 1
 
-                    # Сбрасываем счетчик изменений кода
-                    with self._code_change_count_lock:
-                        self._code_change_count = 0
+                    # Сбрасываем счетчик изменений в ожидании
+                    with self._waiting_change_count_lock:
+                        self._waiting_change_count = 0
 
-                    # Перезапускаем Docker контейнер перед перезапуском сервера
-                    logger.info("Перезапуск Docker контейнера перед перезапуском сервера...")
+                    # Перезапускаем Docker контейнер перед остановкой сервера
+                    logger.info("Перезапуск Docker контейнера перед остановкой сервера...")
                     docker_restart_success = self._restart_cursor_environment()
                     if not docker_restart_success:
-                        logger.warning("Не удалось перезапустить Docker контейнер, но продолжаем перезапуск сервера")
+                        logger.warning("Не удалось перезапустить Docker контейнер, но продолжаем остановку сервера")
 
-                    logger.warning(f"Полный перезапуск инициирован. Новый счетчик: {self._restart_count}")
+                    logger.warning(f"Остановка сервера инициирована. Новый счетчик: {self._restart_count}")
 
-                    self._should_reload = False
-                    self._reload_after_instruction = False
+                    # Сбрасываем флаг
+                    self._waiting_change_detected = False
                     return True
                 else:
-                    # Менее 15 изменений - просто перезагружаем (продолжаем работу)
-                    logger.info(f"Изменение кода #{current_change_count}/15 - сервер продолжает работу без перезапуска")
+                    # Менее 15 изменений - продолжаем работу
+                    logger.info(f"Изменение в ожидании #{current_waiting_count}/15 - сервер продолжает работу")
 
-                    self._should_reload = False
-                    self._reload_after_instruction = False
+                    # Сбрасываем флаг
+                    self._waiting_change_detected = False
                     return False
 
             return False
     
     async def start(self):
         """Запуск сервера агента в бесконечном цикле"""
-        # Сбрасываем счетчик изменений кода при запуске сервера
-        with self._code_change_count_lock:
-            self._code_change_count = 0
+        # Сбрасываем счетчики изменений кода при запуске сервера
+        with self._waiting_change_count_lock:
+            self._waiting_change_count = 0
 
         logger.info("Запуск Code Agent Server")
         logger.info("Инициализация завершена, начинаем запуск HTTP сервера...")
@@ -5103,16 +5109,16 @@ class CodeAgentServer:
                         # Прерываем выполнение немедленно
                         break
                 
-                # Проверяем необходимость перезапуска (только после 15 изменений кода подряд)
+                # Проверяем необходимость перезапуска
                 if self._check_reload_needed():
-                    logger.warning("Выполняется полный перезапуск сервера (достигнуто 15 изменений кода подряд)")
+                    logger.warning("Выполняется перезапуск сервера")
                     logger.warning(f"Счетчик перезапусков: {self._restart_count}")
                     logger.warning("Текущая задача будет прервана, checkpoint будет сохранен")
                     self.checkpoint_manager.mark_server_stop(clean=True)
                     self._is_running = False
                     # Инициируем перезапуск через исключение
                     # main.py перехватит это и перезапустит сервер
-                    raise ServerReloadException("Полный перезапуск сервера после 15 изменений кода подряд")
+                    raise ServerReloadException("Перезапуск сервера")
                 
                 iteration += 1
                 self._current_iteration = iteration
@@ -5122,8 +5128,8 @@ class CodeAgentServer:
                 try:
                     has_tasks = await self.run_iteration(iteration)
                 except ServerReloadException:
-                    # Полный перезапуск из-за 15 изменений кода подряд во время выполнения итерации
-                    logger.warning("Полный перезапуск сервера во время выполнения итерации (15 изменений кода подряд)")
+                    # Перезапуск сервера во время выполнения итерации
+                    logger.warning("Перезапуск сервера во время выполнения итерации")
                     self.checkpoint_manager.mark_server_stop(clean=True)
                     self._is_running = False
                     raise  # Пробрасываем исключение дальше
@@ -5133,13 +5139,13 @@ class CodeAgentServer:
                     if self._should_stop:
                         break
                 
-                # Проверяем необходимость перезапуска после итерации (только после 15 изменений кода подряд)
+                # Проверяем необходимость перезапуска после итерации
                 if self._check_reload_needed():
-                    logger.warning("Выполняется полный перезапуск сервера ПОСЛЕ ИТЕРАЦИИ (достигнуто 15 изменений кода подряд)")
+                    logger.warning("Выполняется перезапуск сервера ПОСЛЕ ИТЕРАЦИИ")
                     logger.warning(f"Счетчик перезапусков: {self._restart_count}")
                     self.checkpoint_manager.mark_server_stop(clean=True)
                     self._is_running = False
-                    raise ServerReloadException("Полный перезапуск сервера после 15 изменений кода подряд")
+                    raise ServerReloadException("Перезапуск сервера после итерации")
                 
                 # Проверяем ограничение итераций
                 if self.max_iterations and iteration >= self.max_iterations:
@@ -5160,9 +5166,9 @@ class CodeAgentServer:
                             if self._should_stop:
                                 break
                         if self._check_reload_needed():
-                            logger.warning("Достигнуто 15 изменений кода подряд во время ожидания - полный перезапуск")
+                            logger.warning("Необходим перезапуск во время ожидания")
                             self.checkpoint_manager.mark_server_stop(clean=True)
-                            raise ServerReloadException("Полный перезапуск из-за 15 изменений кода подряд")
+                            raise ServerReloadException("Перезапуск во время ожидания")
                         time.sleep(1)
                 else:
                     # Если задачи были, ждем интервал перед следующей итерацией
@@ -5172,18 +5178,18 @@ class CodeAgentServer:
                             if self._should_stop:
                                 break
                         if self._check_reload_needed():
-                            logger.warning("Достигнуто 15 изменений кода подряд во время ожидания - полный перезапуск")
+                            logger.warning("Необходим перезапуск во время ожидания")
                             self.checkpoint_manager.mark_server_stop(clean=True)
-                            raise ServerReloadException("Полный перезапуск из-за 15 изменений кода подряд")
+                            raise ServerReloadException("Перезапуск во время ожидания")
                         time.sleep(1)
                     
         except ServerReloadException as e:
-            # Полный перезапуск из-за 15 изменений кода подряд
-            logger.warning("Полный перезапуск сервера (достигнуто 15 изменений кода подряд)")
+            # Перезапуск сервера
+            logger.warning("Перезапуск сервера")
             logger.warning(f"Причина: {str(e)}")
             self._is_running = False
             self.checkpoint_manager.mark_server_stop(clean=True)
-            self.server_logger.log_server_shutdown(f"Полный перезапуск из-за 15 изменений кода подряд: {str(e)}")
+            self.server_logger.log_server_shutdown(f"Перезапуск сервера: {str(e)}")
             # Пробрасываем исключение дальше для обработки в main.py
             raise
             
