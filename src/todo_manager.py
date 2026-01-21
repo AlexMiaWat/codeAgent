@@ -14,27 +14,34 @@ logger = logging.getLogger(__name__)
 
 class TodoItem:
     """Элемент todo-листа"""
-    
-    def __init__(self, text: str, level: int = 0, done: bool = False, parent: Optional['TodoItem'] = None, comment: Optional[str] = None):
+
+    def __init__(self, text: str, level: int = 0, done: bool = False, skipped: bool = False, parent: Optional['TodoItem'] = None, comment: Optional[str] = None):
         """
         Инициализация элемента todo
-        
+
         Args:
             text: Текст задачи
             level: Уровень вложенности (0 - корень)
             done: Выполнена ли задача
+            skipped: Пропущена ли задача (не выполнена по решению, а не из-за невыполнения)
             parent: Родительский элемент
             comment: Комментарий к задаче (например, причина пропуска или краткое описание выполнения)
         """
         self.text = text.strip()
         self.level = level
         self.done = done
+        self.skipped = skipped
         self.parent = parent
         self.children: List['TodoItem'] = []
         self.comment = comment
     
     def __repr__(self) -> str:
-        status = "✓" if self.done else "○"
+        if self.done:
+            status = "[DONE]"
+        elif self.skipped:
+            status = "[SKIP]"
+        else:
+            status = "[TODO]"
         indent = "  " * self.level
         return f"{indent}{status} {self.text}"
 
@@ -319,18 +326,33 @@ class TodoManager:
             if not line:
                 continue
             
-            # Парсинг чекбоксов: - [ ] или - [x] с возможным комментарием
+            # Парсинг чекбоксов: - [ ] или - [x] или - [-] с возможным комментарием
             # Формат: - [x] Текст задачи <!-- комментарий -->
+            # Где: [x] = выполнена, [-] = пропущена, [ ] = не выполнена
             # Используем более гибкий regex для парсинга комментариев
-            checkbox_match = re.match(r'^(\s*)- \[([ xX])\]\s*(.+?)(?:\s*<!--\s*(.+?)\s*-->)?\s*$', line)
+            checkbox_match = re.match(r'^(\s*)- \[([ xX-])\]\s*(.+?)(?:\s*<!--\s*(.+?)\s*-->)?\s*$', line)
             if checkbox_match:
                 indent = len(checkbox_match.group(1))
-                checked = checkbox_match.group(2).lower() == 'x'
+                status = checkbox_match.group(2).lower()
                 text = checkbox_match.group(3).strip()
                 comment = checkbox_match.group(4) if checkbox_match.group(4) else None
-                
+
+                # Определяем статус задачи
+                if status == 'x':
+                    # [x] = выполнена
+                    done = True
+                    skipped = False
+                elif status == '-':
+                    # [-] = пропущена
+                    done = False
+                    skipped = True
+                else:
+                    # [ ] = не выполнена
+                    done = False
+                    skipped = False
+
                 level = indent // 2
-                items.append(TodoItem(text, level=level, done=checked, comment=comment))
+                items.append(TodoItem(text, level=level, done=done, skipped=skipped, comment=comment))
             # Парсинг обычных списков
             elif re.match(r'^\s*[-*+]\s+', line):
                 level = (len(line) - len(line.lstrip())) // 2
@@ -391,9 +413,10 @@ class TodoManager:
                 if isinstance(item_data, dict):
                     text = item_data.get('text', item_data.get('task', ''))
                     done = item_data.get('done', False)
+                    skipped = item_data.get('skipped', False)
                     comment = item_data.get('comment', None)
-                    items.append(TodoItem(text, level=level, done=done, comment=comment))
-                    
+                    items.append(TodoItem(text, level=level, done=done, skipped=skipped, comment=comment))
+
                     if 'children' in item_data:
                         parse_items(item_data['children'], level + 1)
                 elif isinstance(item_data, str):
@@ -411,11 +434,11 @@ class TodoManager:
     def get_pending_tasks(self) -> List[TodoItem]:
         """
         Получение непройденных задач
-        
+
         Returns:
-            Список невыполненных задач
+            Список невыполненных задач (исключая пропущенные)
         """
-        return [item for item in self.items if not item.done]
+        return [item for item in self.items if not item.done and not item.skipped]
     
     def get_all_tasks(self) -> List[TodoItem]:
         """
@@ -429,19 +452,20 @@ class TodoManager:
     def mark_task_done(self, task_text: str, comment: Optional[str] = None) -> bool:
         """
         Отметка задачи как выполненной
-        
+
         Args:
             task_text: Текст задачи для отметки
             comment: Комментарий к выполнению (опционально, дата/время добавляется автоматически)
-        
+
         Returns:
             True если задача найдена и отмечена
         """
         from datetime import datetime
-        
+
         for item in self.items:
             if item.text == task_text or item.text.startswith(task_text):
                 item.done = True
+                item.skipped = False  # Сбрасываем статус пропущенной
                 # Добавляем комментарий с датой/временем
                 if comment:
                     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -450,6 +474,35 @@ class TodoManager:
                     # Если комментария нет, добавляем только дату/время
                     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     item.comment = f"Выполнено - {timestamp}"
+                self._save_todos()
+                return True
+        return False
+
+    def mark_task_skipped(self, task_text: str, comment: Optional[str] = None) -> bool:
+        """
+        Отметка задачи как пропущенной
+
+        Args:
+            task_text: Текст задачи для отметки
+            comment: Комментарий к пропуску (опционально, дата/время добавляется автоматически)
+
+        Returns:
+            True если задача найдена и отмечена
+        """
+        from datetime import datetime
+
+        for item in self.items:
+            if item.text == task_text or item.text.startswith(task_text):
+                item.done = False  # Пропущенная задача не считается выполненной
+                item.skipped = True
+                # Добавляем комментарий с датой/временем
+                if comment:
+                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    item.comment = f"{comment} - {timestamp}"
+                elif not item.comment:
+                    # Если комментария нет, добавляем только дату/время
+                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    item.comment = f"Пропущено - {timestamp}"
                 self._save_todos()
                 return True
         return False
@@ -499,7 +552,13 @@ class TodoManager:
         lines = []
         for item in self.items:
             indent = "  " * item.level
-            status = "[x]" if item.done else "[ ]"
+            # Определяем статус: [x] для выполненных, [-] для пропущенных, [ ] для невыполненных
+            if item.done:
+                status = "[x]"
+            elif item.skipped:
+                status = "[-]"
+            else:
+                status = "[ ]"
             # Добавляем комментарий если есть
             if item.comment:
                 lines.append(f"{indent}{status} {item.text}  # {item.comment}")
@@ -520,7 +579,13 @@ class TodoManager:
         lines = []
         for item in self.items:
             indent = "  " * item.level
-            checkbox = "[x]" if item.done else "[ ]"
+            # Определяем чекбокс: [x] для выполненных, [-] для пропущенных, [ ] для невыполненных
+            if item.done:
+                checkbox = "[x]"
+            elif item.skipped:
+                checkbox = "[-]"
+            else:
+                checkbox = "[ ]"
             # Добавляем комментарий если есть
             if item.comment:
                 lines.append(f"{indent}- {checkbox} {item.text} <!-- {item.comment} -->")
@@ -544,6 +609,8 @@ class TodoManager:
                 "text": item.text,
                 "done": item.done
             }
+            if item.skipped:
+                task_data["skipped"] = item.skipped
             if item.level > 0:
                 task_data["level"] = item.level
             if item.comment:
@@ -558,12 +625,13 @@ class TodoManager:
     def get_task_hierarchy(self) -> Dict[str, Any]:
         """
         Получение иерархии задач
-        
+
         Returns:
             Словарь с иерархией задач, содержащий:
             - 'total': общее количество задач
             - 'pending': количество невыполненных задач
             - 'completed': количество выполненных задач
+            - 'skipped': количество пропущенных задач
             - 'items': список словарей с информацией о каждой задаче
         """
         # Простая реализация - можно расширить для построения дерева
@@ -571,6 +639,7 @@ class TodoManager:
             'total': len(self.items),
             'pending': len(self.get_pending_tasks()),
             'completed': len([i for i in self.items if i.done]),
-            'items': [{'text': item.text, 'level': item.level, 'done': item.done} 
+            'skipped': len([i for i in self.items if i.skipped]),
+            'items': [{'text': item.text, 'level': item.level, 'done': item.done, 'skipped': item.skipped}
                      for item in self.items]
         }

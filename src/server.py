@@ -341,9 +341,7 @@ class CodeAgentServer:
         recovery_info = self.checkpoint_manager.get_recovery_info()
         
         if not recovery_info["was_clean_shutdown"]:
-            logger.warning("=" * 80)
-            logger.warning("ОБНАРУЖЕН НЕКОРРЕКТНЫЙ ОСТАНОВ СЕРВЕРА")
-            logger.warning("=" * 80)
+            logger.warning("Обнаружен некорректный останов сервера")
             logger.warning(f"Последний запуск: {recovery_info['last_start_time']}")
             logger.warning(f"Последний останов: {recovery_info['last_stop_time']}")
             logger.warning(f"Сессия: {recovery_info['session_id']}")
@@ -390,9 +388,7 @@ class CodeAgentServer:
                         # Защита от ошибок при выводе
                         logger.warning(f"  - [Ошибка при выводе задачи с ошибкой: {e}]")
             
-            logger.warning("=" * 80)
             logger.info("Сервер продолжит работу с последней контрольной точки")
-            logger.warning("=" * 80)
             logger.info("Восстановление завершено, продолжаем инициализацию сервера...")
             
             # Обновляем статус
@@ -686,10 +682,10 @@ class CodeAgentServer:
             
             # Для критических ошибок - останавливаем сервер сразу (не ждем повторений)
             if is_critical:
-                logger.error("=" * 80)
-                logger.error(f"КРИТИЧЕСКАЯ ОШИБКА CURSOR: {error_message}")
+                logger.error("---")
+                logger.error(f"Критическая ошибка Cursor: {error_message}")
                 logger.error("Критическая ошибка не исправится перезапуском - останавливаем сервер немедленно")
-                logger.error("=" * 80)
+                logger.error("---")
                 task_logger.log_error(f"Критическая ошибка Cursor (не исправится): {error_message}", Exception(error_message))
                 # Останавливаем сервер немедленно для критических ошибок
                 self._stop_server_due_to_cursor_errors(error_message)
@@ -704,10 +700,8 @@ class CodeAgentServer:
                 if self.cursor_cli and hasattr(self.cursor_cli, 'cli_command'):
                     logger.debug(f"Cursor CLI доступен, cli_command: {self.cursor_cli.cli_command}")
                     if self.cursor_cli.cli_command == "docker-compose-agent":
-                        logger.warning("=" * 80)
-                        logger.warning(f"НЕПРЕДВИДЕННАЯ ОШИБКА CURSOR (#{self._cursor_error_count}): {error_message}")
+                        logger.warning(f"Непредвиденная ошибка Cursor (#{self._cursor_error_count}): {error_message}")
                         logger.warning("Перезапускаем Docker контейнер из-за непредвиденной ошибки...")
-                        logger.warning("=" * 80)
                         task_logger.log_warning(f"Непредвиденная ошибка Cursor - перезапуск Docker: {error_message}")
                         
                         # Сначала проверяем, установлен ли агент в контейнере
@@ -811,11 +805,11 @@ class CodeAgentServer:
         Перезапустить Docker контейнер и очистить открытые диалоги Cursor
         
         Returns:
-            True если перезапуск успешен, False иначе
+            True если Перезапуск успешен, False иначе
         """
-        logger.info("=" * 80)
-        logger.info("ПЕРЕЗАПУСК CURSOR ENVIRONMENT")
-        logger.info("=" * 80)
+        logger.info("---")
+        logger.info("Перезапуск Cursor environment")
+        logger.info("---")
         
         try:
             # 1. Очищаем открытые диалоги
@@ -914,9 +908,9 @@ class CodeAgentServer:
                                     else:
                                         logger.error(f"  ✗ Не удалось переустановить Cursor Agent: {reinstall_result.stderr[:200]}")
                                 
-                                logger.info("=" * 80)
-                                logger.info("ПЕРЕЗАПУСК УСПЕШЕН")
-                                logger.info("=" * 80)
+                                logger.info("---")
+                                logger.info("Перезапуск успешен")
+                                logger.info("---")
                                 return True
                             else:
                                 logger.warning(f"  ⚠ Контейнер запущен, но не отвечает: {check_result.stderr[:200]}")
@@ -928,9 +922,9 @@ class CodeAgentServer:
                 else:
                     logger.info("  Docker не используется, пропускаем перезапуск контейнера")
                     # Если не Docker, просто очищаем диалоги
-                    logger.info("=" * 80)
-                    logger.info("ПЕРЕЗАПУСК ЗАВЕРШЕН (без Docker)")
-                    logger.info("=" * 80)
+                    logger.info("---")
+                    logger.info("Перезапуск завершен (без Docker)")
+                    logger.info("---")
                     return True
             else:
                 logger.warning("  Cursor CLI недоступен, пропускаем перезапуск")
@@ -969,7 +963,7 @@ class CodeAgentServer:
         """
         # Выводим в консоль и в лог
         error_msg = "=" * 80 + "\n"
-        error_msg += "ОСТАНОВКА СЕРВЕРА ИЗ-ЗА КРИТИЧЕСКИХ ОШИБОК CURSOR\n"
+        error_msg += "Остановка сервера из-за критических ошибок Cursor\n"
         error_msg += "=" * 80 + "\n"
         error_msg += f"Ошибка повторяется: {error_message}\n"
         error_msg += f"Количество повторений: {self._cursor_error_count}\n"
@@ -1172,7 +1166,7 @@ class CodeAgentServer:
         start_time = time.time()
         check_interval = 2
         last_log_time = 0
-        log_interval = 10  # Логируем каждые 10 секунд
+        log_interval = 100  # Логируем каждые 100 секунд
 
         try:
             while time.time() - start_time < timeout:
@@ -2158,16 +2152,16 @@ class CodeAgentServer:
         if usefulness_comment:
             logger.info(f"  Комментарий: {usefulness_comment}")
         
-        # Если полезность менее 15% - помечаем задачу как выполненную с комментарием
+        # Если полезность менее 15% - помечаем задачу как пропущенную
         if usefulness_percent < 15:
             skip_reason = f"Пропущено: низкая полезность ({usefulness_percent:.1f}%) - {usefulness_comment if usefulness_comment else 'мусор/шум в тексте'}"
-            logger.warning(f"Задача имеет низкую полезность ({usefulness_percent:.1f}%), помечаем как выполненную: {skip_reason}")
-            
-            if self.todo_manager.mark_task_done(todo_item.text, comment=skip_reason):
+            logger.warning(f"Задача имеет низкую полезность ({usefulness_percent:.1f}%), помечаем как пропущенную: {skip_reason}")
+
+            if self.todo_manager.mark_task_skipped(todo_item.text, comment=skip_reason):
                 logger.info(f"✓ Задача '{todo_item.text[:50]}...' отмечена как пропущенная в TODO файле")
             else:
                 logger.warning(f"Не удалось отметить задачу '{todo_item.text[:50]}...' как пропущенную в TODO файле")
-            
+
             # Генерируем task_id для статуса
             task_id = f"task_{int(time.time())}"
             self.status_manager.update_task_status(
@@ -2423,10 +2417,8 @@ class CodeAgentServer:
             # Если да, инициируем его после завершения задачи
             with self._reload_lock:
                 if self._should_reload:
-                    logger.warning("=" * 80)
-                    logger.warning("ОБНАРУЖЕН ОТЛОЖЕННЫЙ ПЕРЕЗАПУСК - ЗАДАЧА ЗАВЕРШЕНА")
+                    logger.warning("Обнаружен отложенный перезапуск - задача завершена")
                     logger.warning("Перезапуск будет выполнен на следующей проверке")
-                    logger.warning("=" * 80)
                     # Не сбрасываем флаг здесь - он будет обработан в run_iteration или start()
     
     def _execute_task_via_cursor(self, todo_item: TodoItem, task_type: str, task_logger: TaskLogger) -> bool:
@@ -2478,14 +2470,14 @@ class CodeAgentServer:
                 logger.warning(f"Пункт туду '{todo_item.text}' не соответствует плану: {reason}")
                 task_logger.log_warning(f"Пункт туду не соответствует плану: {reason}")
                 
-                # Отмечаем задачу как выполненную с комментарием о пропуске
+                # Отмечаем задачу как пропущенную
                 skip_reason = f"Пропущено по причине: {reason}" if reason else "Пропущено по причине: не соответствует плану"
-                if self.todo_manager.mark_task_done(todo_item.text, comment=skip_reason):
+                if self.todo_manager.mark_task_skipped(todo_item.text, comment=skip_reason):
                     logger.info(f"✓ Задача '{todo_item.text}' отмечена как пропущенная в TODO файле")
                     task_logger.log_info(f"Задача пропущена: {skip_reason}")
                 else:
                     logger.warning(f"Не удалось отметить задачу '{todo_item.text}' как пропущенную в TODO файле")
-                
+
                 self.status_manager.update_task_status(
                     task_name=todo_item.text,
                     status="Пропущено",
@@ -2720,9 +2712,9 @@ class CodeAgentServer:
                 # Проверяем флаг остановки после обработки ошибки
                 with self._stop_lock:
                     if self._should_stop:
-                        logger.error("=" * 80)
-                        logger.error("СЕРВЕР ОСТАНОВЛЕН ИЗ-ЗА КРИТИЧЕСКИХ ОШИБОК CURSOR")
-                        logger.error("=" * 80)
+                        logger.error("---")
+                        logger.error("Сервер остановлен из-за критических ошибок Cursor")
+                        logger.error("---")
                         task_logger.log_error("Критическая ошибка Cursor - выполнение задачи прервано", Exception(error_message))
                         self.status_manager.update_task_status(
                             task_name=todo_item.text,
@@ -2733,9 +2725,9 @@ class CodeAgentServer:
                 
                 if not can_continue:
                     # Критическая ошибка - сервер должен быть остановлен
-                    logger.error("=" * 80)
-                    logger.error("КРИТИЧЕСКАЯ ОШИБКА CURSOR - ПРЕРЫВАНИЕ ВЫПОЛНЕНИЯ ЗАДАЧИ")
-                    logger.error("=" * 80)
+                    logger.error("---")
+                    logger.error("Критическая ошибка Cursor - прерывание выполнения задачи")
+                    logger.error("---")
                     task_logger.log_error("Критическая ошибка Cursor - выполнение задачи прервано", Exception(error_message))
                     self.status_manager.update_task_status(
                         task_name=todo_item.text,
@@ -2803,9 +2795,9 @@ class CodeAgentServer:
                     
                     if not can_continue:
                         # Критическая ситуация - слишком много использований fallback
-                        logger.error("=" * 80)
-                        logger.error("КРИТИЧЕСКАЯ СИТУАЦИЯ: Слишком часто используется fallback")
-                        logger.error("=" * 80)
+                        logger.error("---")
+                        logger.error("Критическая ситуация: слишком часто используется fallback")
+                        logger.error("---")
                         task_logger.log_error("Критическая ситуация: слишком часто используется fallback", Exception(error_message))
                         self.status_manager.update_task_status(
                             task_name=todo_item.text,
@@ -2893,14 +2885,14 @@ class CodeAgentServer:
                                 logger.warning(f"Пункт туду '{todo_item.text}' не соответствует созданному плану: {reason}")
                                 task_logger.log_warning(f"Пункт туду не соответствует плану: {reason}")
                                 
-                                # Отмечаем задачу как выполненную с комментарием о пропуске
+                                # Отмечаем задачу как пропущенную
                                 skip_reason = f"Пропущено по причине: {reason}" if reason else "Пропущено по причине: не соответствует плану"
-                                if self.todo_manager.mark_task_done(todo_item.text, comment=skip_reason):
+                                if self.todo_manager.mark_task_skipped(todo_item.text, comment=skip_reason):
                                     logger.info(f"✓ Задача '{todo_item.text}' отмечена как пропущенная в TODO файле")
                                     task_logger.log_info(f"Задача пропущена: {skip_reason}")
                                 else:
                                     logger.warning(f"Не удалось отметить задачу '{todo_item.text}' как пропущенную в TODO файле")
-                                
+
                                 self.status_manager.update_task_status(
                                     task_name=todo_item.text,
                                     status="Пропущено",
@@ -3096,9 +3088,9 @@ class CodeAgentServer:
         Returns:
             True если ревизия успешна, False иначе
         """
-        logger.info("=" * 80)
-        logger.info("НАЧАЛО РЕВИЗИИ ПРОЕКТА")
-        logger.info("=" * 80)
+        logger.info("---")
+        logger.info("Начало ревизии проекта")
+        logger.info("---")
         
         # Получаем инструкции для ревизии
         instructions = self.config.get('instructions', {})
@@ -3203,9 +3195,9 @@ class CodeAgentServer:
                     successful_instructions += 1
             
             if successful_instructions >= critical_instructions:
-                logger.info("=" * 80)
+                logger.info("---")
                 logger.info(f"РЕВИЗИЯ ЗАВЕРШЕНА: выполнено {successful_instructions}/{len(valid_instructions)} инструкций")
-                logger.info("=" * 80)
+                logger.info("---")
                 task_logger.set_phase(TaskPhase.COMPLETION)
                 return True
             else:
@@ -3496,9 +3488,9 @@ class CodeAgentServer:
             pending_tasks_after_revision = []
             
             if not revision_done:
-                logger.info("=" * 80)
-                logger.info("ВЫПОЛНЕНИЕ РЕВИЗИИ ПРОЕКТА (все задачи выполнены)")
-                logger.info("=" * 80)
+                logger.info("---")
+                logger.info("Выполнение ревизии проекта (все задачи выполнены)")
+                logger.info("---")
                 
                 revision_success = self._execute_revision()
                 
@@ -3545,9 +3537,9 @@ class CodeAgentServer:
             # Если после ревизии все еще нет задач, используем empty_todo для генерации нового TODO
             if not pending_tasks_after_revision:
                 if self.auto_todo_enabled:
-                    logger.info("=" * 80)
+                    logger.info("---")
                     logger.info("ГЕНЕРАЦИЯ НОВОГО TODO ЛИСТА (все todo выполнены и ревизия завершена)")
-                    logger.info("=" * 80)
+                    logger.info("---")
                     generation_success = self._generate_new_todo_list()
                     
                     if generation_success:
@@ -3873,11 +3865,8 @@ class CodeAgentServer:
             """Остановить сервер немедленно"""
             with self._stop_lock:
                 self._should_stop = True
-            logger.warning("=" * 80)
-            logger.warning("ПОЛУЧЕН ЗАПРОС НА НЕМЕДЛЕННУЮ ОСТАНОВКУ СЕРВЕРА ЧЕРЕЗ API")
-            logger.warning("=" * 80)
+            logger.warning("Получен запрос на немедленную остановку сервера через API")
             logger.warning("Сервер будет остановлен немедленно, текущая задача будет прервана")
-            logger.warning("=" * 80)
             return jsonify({
                 'status': 'stopping',
                 'message': 'Сервер будет остановлен немедленно',
@@ -3887,13 +3876,10 @@ class CodeAgentServer:
         @self.flask_app.route('/restart', methods=['POST'])
         def restart():
             """Перезапустить сервер"""
-            logger.warning("=" * 80)
-            logger.warning("ПОЛУЧЕН ЗАПРОС НА ПЕРЕЗАПУСК СЕРВЕРА ЧЕРЕЗ API")
-            logger.warning("=" * 80)
+            logger.warning("Получен запрос на перезапуск сервера через API")
             with self._reload_lock:
                 self._should_reload = True
             logger.warning(f"Флаг перезапуска установлен. Текущий счетчик перезапусков: {self._restart_count}")
-            logger.warning("=" * 80)
             return jsonify({
                 'status': 'restarting',
                 'message': 'Сервер будет перезапущен после завершения текущей итерации',
@@ -4172,10 +4158,8 @@ class CodeAgentServer:
                         # Если задачи нет, перезапускаем немедленно
                         with self.server._reload_lock:
                             self.server._should_reload = True
-                            logger.warning("=" * 80)
-                            logger.warning("ОБНАРУЖЕНО ИЗМЕНЕНИЕ .py ФАЙЛА - ТРЕБУЕТСЯ ПЕРЕЗАПУСК")
+                            logger.warning("Обнаружено изменение .py файла - требуется перезапуск")
                             logger.warning(f"Изменен файл: {event.src_path}")
-                            logger.warning("=" * 80)
                 finally:
                     # Удаляем файл из обработки через некоторое время
                     def remove_pending():
@@ -4222,9 +4206,7 @@ class CodeAgentServer:
                 # Если перезапуск помечен как "после инструкции" — никогда не выполняем его немедленно.
                 # Это защищает ожидание файлов результатов и длинные шаги от обрыва.
                 if self._reload_after_instruction:
-                    logger.warning("=" * 80)
-                    logger.warning("ПЕРЕЗАПУСК ОТЛОЖЕН - ОЖИДАЕМ ЗАВЕРШЕНИЯ ТЕКУЩЕЙ ИНСТРУКЦИИ")
-                    logger.warning("=" * 80)
+                    logger.warning("Перезапуск отложен - ожидаем завершения текущей инструкции")
                     return False
 
                 # Проверяем, выполняется ли сейчас задача
@@ -4232,17 +4214,13 @@ class CodeAgentServer:
                     if self._task_in_progress:
                         # Задача выполняется - перезапуск будет выполнен после завершения текущей инструкции
                         # (проверка _reload_after_instruction происходит после завершения инструкции)
-                        logger.warning("=" * 80)
-                        logger.warning("ПЕРЕЗАПУСК ОТЛОЖЕН - ВЫПОЛНЯЕТСЯ ЗАДАЧА")
+                        logger.warning("Перезапуск отложен - выполняется задача")
                         logger.warning("Перезапуск произойдет после завершения текущей инструкции")
-                        logger.warning("=" * 80)
                         return False
                 
                 # Задачи нет - можно перезапускать
-                logger.warning("=" * 80)
-                logger.warning("НАЧАЛО ПЕРЕЗАПУСКА СЕРВЕРА")
+                logger.warning("Начало перезапуска сервера")
                 logger.warning(f"Счетчик перезапусков до перезапуска: {self._restart_count}")
-                logger.warning("=" * 80)
                 
                 # Увеличиваем счетчик перезапусков
                 with self._restart_count_lock:
@@ -4254,9 +4232,7 @@ class CodeAgentServer:
                 if not docker_restart_success:
                     logger.warning("Не удалось перезапустить Docker контейнер, но продолжаем перезапуск сервера")
                 
-                logger.warning("=" * 80)
-                logger.warning(f"ПЕРЕЗАПУСК ИНИЦИИРОВАН. Новый счетчик: {self._restart_count}")
-                logger.warning("=" * 80)
+                logger.warning(f"Перезапуск инициирован. Новый счетчик: {self._restart_count}")
                 
                 self._should_reload = False
                 self._reload_after_instruction = False
@@ -4299,16 +4275,13 @@ class CodeAgentServer:
                             cursor_error_stop = self._cursor_error_count >= self._max_cursor_errors
                         
                         if cursor_error_stop:
-                            logger.error("=" * 80)
-                            logger.error("ОСТАНОВКА СЕРВЕРА ИЗ-ЗА КРИТИЧЕСКИХ ОШИБОК CURSOR")
-                            logger.error("=" * 80)
+                            logger.error("---")
+                            logger.error("Остановка сервера из-за критических ошибок Cursor")
+                            logger.error("---")
                             self.checkpoint_manager.mark_server_stop(clean=False)
                         else:
-                            logger.warning("=" * 80)
                             logger.warning("ОСТАНОВКА СЕРВЕРА ПО ЗАПРОСУ ЧЕРЕЗ API")
-                            logger.warning("=" * 80)
                             logger.warning("Текущая задача будет прервана, checkpoint будет сохранен")
-                            logger.warning("=" * 80)
                             self.checkpoint_manager.mark_server_stop(clean=True)
                         
                         self._is_running = False
@@ -4321,12 +4294,9 @@ class CodeAgentServer:
                 
                 # Проверяем необходимость перезапуска
                 if self._check_reload_needed():
-                    logger.warning("=" * 80)
-                    logger.warning("ВЫПОЛНЯЕТСЯ ПЕРЕЗАПУСК СЕРВЕРА")
+                    logger.warning("Выполняется перезапуск сервера")
                     logger.warning(f"Счетчик перезапусков: {self._restart_count}")
-                    logger.warning("=" * 80)
                     logger.warning("Текущая задача будет прервана, checkpoint будет сохранен")
-                    logger.warning("=" * 80)
                     self.checkpoint_manager.mark_server_stop(clean=True)
                     self._is_running = False
                     # Инициируем перезапуск через исключение
@@ -4354,10 +4324,8 @@ class CodeAgentServer:
                 
                 # Проверяем необходимость перезапуска после итерации
                 if self._check_reload_needed():
-                    logger.warning("=" * 80)
-                    logger.warning("ВЫПОЛНЯЕТСЯ ПЕРЕЗАПУСК СЕРВЕРА ПОСЛЕ ИТЕРАЦИИ")
+                    logger.warning("Выполняется перезапуск сервера ПОСЛЕ ИТЕРАЦИИ")
                     logger.warning(f"Счетчик перезапусков: {self._restart_count}")
-                    logger.warning("=" * 80)
                     self.checkpoint_manager.mark_server_stop(clean=True)
                     self._is_running = False
                     raise ServerReloadException("Перезапуск сервера")
@@ -4400,11 +4368,8 @@ class CodeAgentServer:
                     
         except ServerReloadException as e:
             # Перезапуск из-за изменений в .py файлах
-            logger.warning("=" * 80)
-            logger.warning("ПЕРЕЗАПУСК СЕРВЕРА ИЗ-ЗА ИЗМЕНЕНИЙ В КОДЕ")
-            logger.warning("=" * 80)
+            logger.warning("Перезапуск сервера из-за изменений в коде")
             logger.warning(f"Причина: {str(e)}")
-            logger.warning("=" * 80)
             self._is_running = False
             self.checkpoint_manager.mark_server_stop(clean=True)
             self.server_logger.log_server_shutdown(f"Перезапуск из-за изменений в коде: {str(e)}")
@@ -4413,9 +4378,7 @@ class CodeAgentServer:
             
         except KeyboardInterrupt:
             import traceback
-            logger.warning("=" * 80)
             logger.warning("⚠️ ОБНАРУЖЕН KeyboardInterrupt - ОСТАНОВКА СЕРВЕРА")
-            logger.warning("=" * 80)
             
             # Получаем полный traceback для диагностики
             exc_type, exc_value, exc_tb = sys.exc_info()
@@ -4452,16 +4415,15 @@ class CodeAgentServer:
             
             if is_suspicious:
                 reason = f"Остановка из-за KeyboardInterrupt (НЕ Ctrl+C, вероятный источник: {suspicious_source})"
-                logger.error("=" * 80)
-                logger.error(f"❌ ОБНАРУЖЕНА ПРОБЛЕМА: KeyboardInterrupt вызван НЕ пользователем!")
+                logger.error("---")
+                logger.error(f"Обнаружена проблема: KeyboardInterrupt вызван не пользователем")
                 logger.error(f"📋 Вероятный источник: {suspicious_source}")
                 logger.error(f"📝 Это может быть ошибка в коде или внешнем процессе")
-                logger.error("=" * 80)
+                logger.error("---")
             else:
                 reason = "Остановка пользователем (Ctrl+C)"
                 logger.info(f"✓ Похоже на реальный Ctrl+C от пользователя")
             
-            logger.warning("=" * 80)
             
             self.server_logger.log_server_shutdown(reason)
             self._is_running = False
