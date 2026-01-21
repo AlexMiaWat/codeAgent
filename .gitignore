@@ -265,3 +265,4 @@ package-lock.json
 *.mkv
 *.iso
 nul
+.codeagent_fallback_state.json

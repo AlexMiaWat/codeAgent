@@ -147,6 +147,9 @@ class CodeAgentServer:
         self.status_manager = StatusManager(self.status_file)
         todo_format = self.config.get('project.todo_format', 'txt')
         self.todo_manager = TodoManager(self.project_dir, todo_format=todo_format)
+
+        # Отложенные задачи (задачи, которые LLM Manager решил отложить до конца списка TODO)
+        self.postponed_tasks: List[TodoItem] = []
         
         # Создание агента
         agent_config = self.config.get('agent', {})
@@ -184,6 +187,10 @@ class CodeAgentServer:
         # Счетчик перезапусков
         self._restart_count = 0
         self._restart_count_lock = threading.Lock()
+
+        # Счетчик изменений кода (для остановки только после 15 изменений подряд)
+        self._code_change_count = 0
+        self._code_change_count_lock = threading.Lock()
         
         # Флаг для остановки сервера через API
         self._should_stop = False
@@ -451,10 +458,10 @@ class CodeAgentServer:
     def _filter_completed_tasks(self, tasks: List[TodoItem]) -> List[TodoItem]:
         """
         Фильтрация задач: исключает задачи, которые уже выполнены в checkpoint
-        
+
         Args:
             tasks: Список задач для фильтрации
-            
+
         Returns:
             Отфильтрованный список задач (только невыполненные)
         """
@@ -467,6 +474,274 @@ class CodeAgentServer:
                 # Помечаем задачу как done в TODO для синхронизации
                 self.todo_manager.mark_task_done(task.text)
         return filtered_tasks
+
+    def _analyze_task_completion_comment(self, todo_item: TodoItem) -> Dict[str, Any]:
+        """
+        Анализирует комментарий задачи на предмет незавершенного выполнения
+
+        Args:
+            todo_item: Элемент задачи для анализа
+
+        Returns:
+            Словарь с результатами анализа:
+            {
+                "has_partial_completion": bool,  # Есть ли частичное выполнение
+                "completed_instructions": int,   # Выполнено инструкций
+                "total_instructions": int,       # Всего инструкций
+                "completion_ratio": float        # Процент выполнения (0.0-1.0)
+            }
+        """
+        if not todo_item.comment:
+            return {
+                "has_partial_completion": False,
+                "completed_instructions": 0,
+                "total_instructions": 0,
+                "completion_ratio": 0.0
+            }
+
+        import re
+
+        # Ищем паттерн "Выполнено успешно (X/Y инструкций)"
+        pattern = r'Выполнено успешно \((\d+)/(\d+) инструкций?\)'
+        match = re.search(pattern, todo_item.comment)
+
+        if match:
+            completed = int(match.group(1))
+            total = int(match.group(2))
+
+            return {
+                "has_partial_completion": completed < total,
+                "completed_instructions": completed,
+                "total_instructions": total,
+                "completion_ratio": completed / total if total > 0 else 0.0
+            }
+
+        return {
+            "has_partial_completion": False,
+            "completed_instructions": 0,
+            "total_instructions": 0,
+            "completion_ratio": 0.0
+        }
+
+    async def _check_completed_tasks_for_incomplete_execution(self) -> List[TodoItem]:
+        """
+        Проверяет выполненные задачи на предмет незавершенного выполнения
+
+        Returns:
+            Список выполненных задач, которые нужно доработать
+        """
+        # Получаем все задачи
+        all_tasks = self.todo_manager.get_all_tasks()
+
+        # Фильтруем только выполненные задачи
+        completed_tasks = [task for task in all_tasks if task.done and not task.skipped]
+
+        tasks_to_redo = []
+
+        for task in completed_tasks:
+            # Анализируем комментарий на предмет незавершенного выполнения
+            completion_info = self._analyze_task_completion_comment(task)
+
+            if completion_info["has_partial_completion"]:
+                logger.info(f"⚠️ Выполненная задача имеет незавершенное выполнение: '{task.text[:50]}...'")
+                logger.info(f"   Выполнено: {completion_info['completed_instructions']}/{completion_info['total_instructions']} инструкций")
+
+                # Создаем копию задачи для доработки (убираем статус done)
+                task_for_redo = TodoItem(
+                    text=task.text,
+                    level=task.level,
+                    done=False,  # Важно: помечаем как невыполненную для повторного выполнения
+                    skipped=False,
+                    comment=f"Доработка незавершенной задачи: {task.comment}" if task.comment else "Доработка незавершенной задачи"
+                )
+
+                # Принимаем решение о доработке через LLM Manager
+                decision = await self._decide_incomplete_task_redo(task_for_redo, completion_info)
+
+                if decision == "redo_task":
+                    tasks_to_redo.append(task_for_redo)
+                    logger.info(f"✅ Задача добавлена для доработки: '{task.text[:50]}...'")
+                else:
+                    logger.info(f"📋 LLM Manager решил не дорабатывать задачу: '{task.text[:50]}...'")
+
+        return tasks_to_redo
+
+    async def _decide_incomplete_task_redo(self, todo_item: TodoItem, completion_info: Dict[str, Any]) -> str:
+        """
+        Принимает решение о доработке выполненной, но незавершенной задачи
+
+        Args:
+            todo_item: Задача для доработки
+            completion_info: Информация о выполнении
+
+        Returns:
+            "redo_task" - доработать задачу
+            "skip_redo" - пропустить доработку
+        """
+        completed = completion_info["completed_instructions"]
+        total = completion_info["total_instructions"]
+        ratio = completion_info["completion_ratio"]
+
+        logger.info(f"🔄 Запрашиваю решение о доработке задачи...")
+
+        # Формируем промпт для LLM Manager
+        prompt = f"""Ты - стратегический планировщик задач разработки. Проанализируй выполненную, но незавершенную задачу и реши, стоит ли её дорабатывать.
+
+ЗАДАЧА: "{todo_item.text}"
+
+СТАТУС: Выполнена, но не полностью ({completed}/{total} инструкций = {ratio:.1%})
+
+КОНТЕКСТ:
+- Задача помечена как выполненная в TODO списке
+- Но выполнена только часть инструкций
+- Осталось выполнить {total - completed} инструкций
+
+АНАЛИЗ СИТУАЦИИ:
+- Если задача почти завершена (>90%), имеет смысл её доработать
+- Если задача требует значительной доработки (>50% осталось), возможно лучше оставить как есть
+- Учитывай: задача уже помечена как выполненная - возможно, оставшаяся часть не критична
+
+ПРИМИ РЕШЕНИЕ:
+
+1. **REDO_TASK** - Доработать задачу, выполнить оставшиеся инструкции
+2. **SKIP_REDO** - Оставить как есть, задача считается достаточно выполненной
+
+ОБОСНУЙ решение на основе:
+- Степени завершенности задачи
+- Важности оставшихся инструкций
+- Возможного влияния на проект
+
+ФОРМАТ ОТВЕТА (ТОЛЬКО JSON):
+{{
+    "decision": "redo_task" | "skip_redo",
+    "reason": "Подробное обоснование решения"
+}}"""
+
+        try:
+            # Используем LLM Manager для принятия решения
+            from src.llm.llm_manager import LLMManager
+
+            # Проверяем, есть ли уже инициализированный LLM Manager
+            llm_manager = getattr(self, 'llm_manager', None)
+            if not llm_manager:
+                llm_manager = LLMManager(config_path="config/llm_settings.yaml")
+
+            response = await llm_manager.generate_response(
+                prompt=prompt,
+                response_format={"type": "json_object"}
+            )
+
+            import json
+            decision_data = json.loads(response.content)
+
+            decision = decision_data.get('decision', 'skip_redo').lower()
+            reason = decision_data.get('reason', 'Решение принято автоматически')
+
+            # Валидируем решение
+            if decision not in ['redo_task', 'skip_redo']:
+                logger.warning(f"Недопустимое решение о доработке: {decision}, используем skip_redo")
+                decision = 'skip_redo'
+
+            logger.info(f"🤖 Решение о доработке: {decision.upper()}")
+            logger.info(f"   Причина: {reason}")
+
+            return decision
+
+        except Exception as e:
+            logger.warning(f"Не удалось получить решение о доработке от LLM Manager: {e}")
+            logger.warning("Пропускаю доработку задачи по умолчанию")
+            return "skip_redo"
+
+    async def _decide_task_continuation(self, todo_item: TodoItem, completion_info: Dict[str, Any]) -> str:
+        """
+        Принимает решение о продолжении незавершенной задачи через LLM Manager
+
+        Args:
+            todo_item: Задача с частичным выполнением
+            completion_info: Информация о выполнении из _analyze_task_completion_comment
+
+        Returns:
+            "continue_task" - продолжить выполнение текущей задачи
+            "postpone_task" - отложить задачу до конца списка TODO
+        """
+        if not completion_info["has_partial_completion"]:
+            return "continue_task"
+
+        completed = completion_info["completed_instructions"]
+        total = completion_info["total_instructions"]
+        ratio = completion_info["completion_ratio"]
+
+        logger.info(f"🔍 Обнаружена незавершенная задача: '{todo_item.text[:50]}...'")
+        logger.info(f"   Выполнено: {completed}/{total} инструкций ({ratio:.1%})")
+        logger.info(f"   Запрашиваю решение LLM Manager...")
+
+        # Формируем промпт для LLM Manager
+        prompt = f"""Ты - стратегический планировщик задач разработки. Проанализируй ситуацию и прими решение о продолжении незавершенной задачи.
+
+НЕЗАВЕРШЕННАЯ ЗАДАЧА: "{todo_item.text}"
+
+СТАТУС ВЫПОЛНЕНИЯ: {completed}/{total} инструкций выполнено ({ratio:.1%})
+
+КОНТЕКСТ:
+- Задача была начата ранее, но не завершена полностью
+- Осталось выполнить {total - completed} инструкций
+- Текущий прогресс: {ratio:.1%}
+
+АНАЛИЗ СИТУАЦИИ:
+- Если задача близка к завершению (>80%), имеет смысл продолжить немедленно
+- Если задача на ранней стадии (<50%), возможно лучше отложить до конца списка TODO
+- Учитывай логическую последовательность: некоторые задачи могут требовать завершения перед началом других
+
+ПРИМИ РЕШЕНИЕ:
+
+1. **CONTINUE_TASK** - Продолжить выполнение этой задачи немедленно (следующая инструкция)
+2. **POSTPONE_TASK** - Отложить задачу до конца всего списка TODO
+
+ОБОСНУЙ решение на основе:
+- Текущего прогресса выполнения
+- Логической последовательности задач
+- Потенциальной сложности оставшихся инструкций
+
+ФОРМАТ ОТВЕТА (ТОЛЬКО JSON):
+{{
+    "decision": "continue_task" | "postpone_task",
+    "reason": "Подробное обоснование решения"
+}}"""
+
+        try:
+            # Используем LLM Manager для принятия решения
+            from src.llm.llm_manager import LLMManager
+
+            # Проверяем, есть ли уже инициализированный LLM Manager
+            llm_manager = getattr(self, 'llm_manager', None)
+            if not llm_manager:
+                llm_manager = LLMManager(config_path="config/llm_settings.yaml")
+
+            response = await llm_manager.generate_response(
+                prompt=prompt,
+                response_format={"type": "json_object"}
+            )
+
+            import json
+            decision_data = json.loads(response.content)
+
+            decision = decision_data.get('decision', 'continue_task').lower()
+            reason = decision_data.get('reason', 'Решение принято автоматически')
+
+            # Валидируем решение
+            if decision not in ['continue_task', 'postpone_task']:
+                logger.warning(f"Недопустимое решение о продолжении задачи: {decision}, используем continue_task")
+                decision = 'continue_task'
+
+            logger.info(f"🤖 LLM Manager решил: {decision.upper()}")
+            logger.info(f"   Причина: {reason}")
+
+            return decision
+
+        except Exception as e:
+            logger.warning(f"Не удалось получить решение от LLM Manager: {e}")
+            logger.warning("Продолжаю выполнение задачи по умолчанию")
+            return "continue_task"
     
     def _init_cursor_cli(self) -> Optional[CursorCLIInterface]:
         """
@@ -1208,16 +1483,16 @@ class CodeAgentServer:
                             "wait_time": time.time() - start_time,
                             "error": "Остановка сервера по запросу"
                         }
-                
+
                 # Проверяем необходимость перезапуска
                 if self._check_reload_needed():
-                    logger.warning(f"Обнаружено изменение кода во время ожидания файла результата")
+                    logger.warning(f"Достигнуто 15 изменений кода подряд во время ожидания файла результата - полный перезапуск")
                     return {
                         "success": False,
                         "file_path": str(file_path),
                         "content": None,
                         "wait_time": time.time() - start_time,
-                        "error": "Перезапуск сервера из-за изменения кода"
+                        "error": "Полный перезапуск сервера из-за 15 изменений кода подряд"
                     }
                 
                 # Сначала проверяем cursor_results/ (файловый интерфейс)
@@ -1336,16 +1611,16 @@ class CodeAgentServer:
                             "wait_time": time.time() - start_time,
                             "error": "Остановка сервера по запросу"
                         }
-                
+
                 # Проверяем необходимость перезапуска
                 if self._check_reload_needed():
-                    logger.warning(f"Обнаружено изменение кода во время ожидания файла результата")
+                    logger.warning(f"Достигнуто 15 изменений кода подряд во время ожидания файла результата - полный перезапуск")
                     return {
                         "success": False,
                         "file_path": str(file_path),
                         "content": None,
                         "wait_time": time.time() - start_time,
-                        "error": "Перезапуск сервера из-за изменения кода"
+                        "error": "Полный перезапуск сервера из-за 15 изменений кода подряд"
                     }
                 
                 # Ждем перед следующей проверкой
@@ -2088,9 +2363,17 @@ class CodeAgentServer:
             report_path = Path(self.project_dir) / report_file
             if not report_path.exists():
                 logger.warning(f"Файл репорта не найден: {report_path}")
-                # Вместо жесткой остановки, передаем информацию об отсутствии файла в LLM
-                report_content = f"ОТЧЕТ НЕ НАЙДЕН: Файл репорта '{report_file}' не существует. Это может означать, что инструкция не была выполнена или отчет не был создан. Требуется анализ ситуации и принятие решения о дальнейших действиях."
-                logger.debug(f"Создан специальный контент для анализа отсутствия репорта: {report_file}")
+                # Когда файл репорта не найден, продолжаем линейно без анализа
+                # Это предотвращает зацикливание при проблемах с выполнением инструкций
+                logger.info("Файл репорта не найден - продолжаем выполнение линейно")
+                task_logger.log_info(f"Отчет не найден ({report_file}) - продолжаем линейно")
+
+                return {
+                    "action": "continue",
+                    "reason": f"Файл репорта '{report_file}' не найден. Продолжаем выполнение линейно.",
+                    "next_instruction_name": next_instruction_name,
+                    "free_instruction_text": ""
+                }
             else:
                 with open(report_path, 'r', encoding='utf-8') as f:
                     report_content = f.read()
@@ -2124,7 +2407,7 @@ class CodeAgentServer:
             action = final_decision.get('action', 'continue')
             reason = final_decision.get('reason', '')
 
-            logger.info(f"📋 Решение системы для инструкции {instruction_num}: {action}")
+            logger.info(f"🤖 Решение системы для инструкции {instruction_num}: {action}")
             logger.info(f"📝 Причина: {reason}")
 
             task_logger.log_info(f"Проверка репорта после инструкции {instruction_num}: {action} - {reason}")
@@ -2144,25 +2427,35 @@ class CodeAgentServer:
             }
         finally:
             # Гарантированное закрытие LLM manager в случае ошибки
-            # Это предотвратит "Task exception was never retrieved"
+            # Не создаем фоновую задачу, чтобы избежать "Task exception was never retrieved"
             if llm_manager and llm_manager is self.llm_manager:
                 try:
-                    # Проверяем, можем ли мы закрыть manager
-                    loop = asyncio.get_running_loop()
-                    if not loop.is_closed():
-                        # Создаем задачу для закрытия, но не ждем её завершения
-                        # Это предотвратит блокировку в случае проблем с event loop
-                        asyncio.create_task(self._safe_close_llm_manager(llm_manager))
-                except RuntimeError:
-                    # Event loop уже закрыт, пытаемся закрыть синхронно
+                    # Проверяем состояние event loop
                     try:
-                        # Создаем новый event loop для закрытия
-                        import concurrent.futures
-                        with concurrent.futures.ThreadPoolExecutor() as executor:
-                            future = executor.submit(self._sync_close_llm_manager, llm_manager)
-                            future.result(timeout=5.0)  # Ждем максимум 5 секунд
-                    except Exception as close_error:
-                        logger.warning(f"Не удалось корректно закрыть LLM manager: {close_error}")
+                        loop = asyncio.get_running_loop()
+                        if loop.is_closed():
+                            raise RuntimeError("Event loop is closed")
+                    except RuntimeError:
+                        # Event loop закрыт, пропускаем закрытие
+                        logger.debug("Event loop closed, skipping LLM manager close in finally block")
+                        return
+
+                    # Проверяем, не закрывается ли уже manager
+                    if getattr(self, '_llm_manager_closing', False):
+                        logger.debug("LLM manager уже закрывается, пропускаем")
+                        return
+
+                    # Закрываем синхронно с таймаутом
+                    self._llm_manager_closing = True
+                    await asyncio.wait_for(llm_manager.close(), timeout=10.0)
+                    logger.debug("LLM manager закрыт успешно в finally блоке _check_report_and_decide_next_action")
+
+                except asyncio.TimeoutError:
+                    logger.warning("Таймаут при закрытии LLM manager в finally блоке")
+                except Exception as e:
+                    logger.warning(f"Ошибка при закрытии LLM manager в finally блоке: {e}")
+                finally:
+                    self._llm_manager_closing = False
 
     async def _safe_close_llm_manager(self, llm_manager):
         """Безопасное закрытие LLM manager без блокировки"""
@@ -2406,15 +2699,35 @@ class CodeAgentServer:
     async def _execute_task(self, todo_item: TodoItem, task_number: int = 1, total_tasks: int = 1) -> bool:
         """
         Выполнение одной задачи через Cursor или CrewAI
-        
+
         Args:
             todo_item: Элемент todo-листа для выполнения
             task_number: Номер задачи в текущей итерации
             total_tasks: Общее количество задач
-        
+
         Returns:
             True если задача выполнена успешно
         """
+        # Анализируем комментарий задачи на предмет незавершенного выполнения
+        completion_info = self._analyze_task_completion_comment(todo_item)
+        if completion_info["has_partial_completion"]:
+            logger.info(f"⚠️ Задача имеет частичное выполнение: {completion_info['completed_instructions']}/{completion_info['total_instructions']} инструкций")
+
+            # Запрашиваем решение у LLM Manager
+            decision = await self._decide_task_continuation(todo_item, completion_info)
+
+            if decision == "postpone_task":
+                logger.info(f"🤖 По решению LLM Manager задача '{todo_item.text[:50]}...' отложена до конца списка TODO")
+                # Добавляем задачу в список отложенных
+                if todo_item not in self.postponed_tasks:
+                    self.postponed_tasks.append(todo_item)
+                    logger.info(f"✅ Задача добавлена в список отложенных ({len(self.postponed_tasks)} задач)")
+                # Возвращаем True, чтобы не блокировать выполнение других задач
+                return True
+
+            # Если decision == "continue_task", продолжаем выполнение
+            logger.info(f"🤖 По решению LLM Manager продолжаем выполнение задачи '{todo_item.text[:50]}...'")
+
         # Проверяем полезность задачи - является ли она реальной задачей или мусором
         logger.info(f"Проверка полезности задачи: '{todo_item.text[:60]}...'")
         usefulness_percent, usefulness_comment = self._check_task_usefulness(todo_item)
@@ -2893,27 +3206,70 @@ class CodeAgentServer:
                     elif action == 'stop_and_check':
                         # Останавливаемся на проверке репорта, не переходим к следующей инструкции
                         start_from_instruction = last_completed  # Повторяем эту инструкцию
-                        logger.warning(f"⚠️ По результатам проверки репорта останавливаемся на инструкции {last_completed}: {reason}")
+                        logger.warning(f"🤖 По результатам проверки репорта останавливаемся на инструкции {last_completed}: {reason}")
                         task_logger.log_warning(f"Остановка на инструкции {last_completed} по результатам проверки репорта: {reason}")
 
                     else:
                         # Продолжаем нормально
                         logger.info(f"✓ Проверка репорта пройдена, продолжаем с следующей инструкции")
 
-            # Если количество инструкций совпадает, продолжаем с последней выполненной + 1
-            if total_saved == len(all_templates) and last_completed < len(all_templates):
-                start_from_instruction = last_completed + 1
-                logger.info(f"✓ Восстановление прогресса: продолжаем с инструкции {start_from_instruction}/{len(all_templates)} (последняя выполненная: {last_completed})")
-                task_logger.log_info(f"Восстановление прогресса: продолжаем с инструкции {start_from_instruction}")
-            elif total_saved != len(all_templates):
-                # Количество инструкций изменилось - начинаем сначала
-                logger.warning(f"Количество инструкций изменилось ({total_saved} -> {len(all_templates)}), начинаем сначала")
-                task_logger.log_warning("Количество инструкций изменилось, начинаем сначала")
-                start_from_instruction = 1
+            # Анализируем ситуацию с количеством инструкций
+            if total_saved == len(all_templates):
+                # Количество инструкций совпадает
+                if last_completed < len(all_templates):
+                    start_from_instruction = last_completed + 1
+                    logger.info(f"✓ Восстановление прогресса: продолжаем с инструкции {start_from_instruction}/{len(all_templates)} (последняя выполненная: {last_completed})")
+                    task_logger.log_info(f"Восстановление прогресса: продолжаем с инструкции {start_from_instruction}")
+                else:
+                    # Все инструкции уже выполнены
+                    logger.info(f"Все инструкции уже выполнены ({last_completed}/{total_saved}), начинаем сначала")
+                    start_from_instruction = 1
             else:
-                # Все инструкции уже выполнены
-                logger.info(f"Все инструкции уже выполнены ({last_completed}/{total_saved}), начинаем сначала")
-                start_from_instruction = 1
+                # Количество инструкций изменилось - используем LLM Manager для принятия решения
+                logger.warning(f"Количество инструкций изменилось ({total_saved} -> {len(all_templates)}), анализируем ситуацию...")
+
+                # Получаем или создаем LLM Manager
+                if not hasattr(self, 'llm_manager') or not self.llm_manager:
+                    from src.llm.llm_manager import LLMManager
+                    self.llm_manager = LLMManager()
+
+                # Анализируем изменение количества инструкций
+                task_description = todo_item.text if hasattr(todo_item, 'text') else str(todo_item)
+                decision = await self.llm_manager.analyze_instruction_count_change(
+                    old_count=total_saved,
+                    new_count=len(all_templates),
+                    task_description=task_description,
+                    last_completed_instruction=last_completed,
+                    task_id=task_id
+                )
+
+                decision_type = decision.get("decision", "restart")
+                reason = decision.get("reason", "Не указано")
+
+                logger.info(f"🤖 LLM Manager решил: {decision_type} - {reason}")
+                task_logger.log_info(f"LLM Manager анализ изменения инструкций: {decision_type}")
+
+                if decision_type == "continue_from_last":
+                    # Продолжаем с последней выполненной инструкции
+                    start_from_instruction = last_completed + 1 if last_completed < len(all_templates) else 1
+                    logger.info(f"✓ Продолжаем с инструкции {start_from_instruction}/{len(all_templates)} (последняя выполненная: {last_completed})")
+                    task_logger.log_info(f"Продолжение с инструкции {start_from_instruction}")
+
+                elif decision_type == "continue_from_adjusted":
+                    # Продолжаем с скорректированной инструкции
+                    adjusted = decision.get("adjusted_instruction")
+                    if adjusted and 1 <= adjusted <= len(all_templates):
+                        start_from_instruction = adjusted
+                        logger.info(f"✓ Продолжаем с скорректированной инструкции {start_from_instruction}/{len(all_templates)}")
+                        task_logger.log_info(f"Продолжение с скорректированной инструкции {start_from_instruction}")
+                    else:
+                        logger.warning(f"Некорректный номер скорректированной инструкции: {adjusted}, начинаем сначала")
+                        start_from_instruction = 1
+
+                else:  # restart или неизвестное решение
+                    logger.info(f"🔄 Начинаем выполнение сначала ({decision_type})")
+                    task_logger.log_info(f"Начало выполнения сначала: {decision_type}")
+                    start_from_instruction = 1
         else:
             logger.debug(f"Прогресс инструкций не найден или пустой, начинаем с инструкции 1")
         
@@ -3324,7 +3680,7 @@ class CodeAgentServer:
                     if action == 'execute_free_instruction':
                         # Вставляем свободную инструкцию
                         free_instruction_text = report_check_result.get('free_instruction_text', '')
-                        logger.info(f"🔧 Вставляем свободную инструкцию по решению системы: {reason}")
+                        logger.info(f"🤖 Вставляем свободную инструкцию по решению системы: {reason}")
 
                         success = await self._execute_free_instruction(
                             instruction_text=free_instruction_text,
@@ -3336,6 +3692,12 @@ class CodeAgentServer:
                         if not success:
                             logger.warning("Свободная инструкция не выполнена успешно, продолжаем линейно")
                             task_logger.log_warning("Свободная инструкция не выполнена, продолжаем линейно")
+
+                    elif action == 'stop_and_check':
+                        # Останавливаемся на проверке репорта для дополнительной проверки
+                        logger.info(f"🤖 Останавливаемся на инструкции {instruction_num} для дополнительной проверки: {reason}")
+                        task_logger.log_info(f"Остановка на инструкции {instruction_num} для дополнительной проверки")
+                        # Продолжаем выполнение, но с дополнительной осторожностью
 
                     # Для action == 'continue' просто продолжаем линейно (ничего не делаем)
                 
@@ -3852,12 +4214,17 @@ class CodeAgentServer:
     async def run_iteration(self, iteration: int = 1):
         """
         Выполнение одной итерации цикла
-        
+
         Args:
             iteration: Номер итерации
         """
         logger.info(f"Начало итерации {iteration}")
-        
+
+        # Очищаем список отложенных задач при начале новой итерации
+        if self.postponed_tasks:
+            logger.info(f"🧹 Очищено {len(self.postponed_tasks)} отложенных задач из предыдущей итерации")
+            self.postponed_tasks.clear()
+
         # Увеличиваем счетчик итераций в checkpoint
         self.checkpoint_manager.increment_iteration()
         
@@ -3867,10 +4234,25 @@ class CodeAgentServer:
         
         # Получаем непройденные задачи
         pending_tasks = self.todo_manager.get_pending_tasks()
-        
+
         # Дополнительная фильтрация: исключаем задачи, которые уже выполнены в checkpoint
         # (на случай, если они не были синхронизированы)
         pending_tasks = self._filter_completed_tasks(pending_tasks)
+
+        # Проверяем выполненные задачи на предмет незавершенного выполнения
+        incomplete_completed_tasks = await self._check_completed_tasks_for_incomplete_execution()
+        if incomplete_completed_tasks:
+            # Добавляем незавершенные выполненные задачи к списку на доработку
+            pending_tasks.extend(incomplete_completed_tasks)
+            logger.info(f"📝 Добавлено {len(incomplete_completed_tasks)} выполненных задач для доработки")
+
+        # Перемещаем отложенные задачи в конец списка
+        if self.postponed_tasks:
+            # Убираем отложенные задачи из основного списка (если они там есть)
+            pending_tasks = [task for task in pending_tasks if task not in self.postponed_tasks]
+            # Добавляем отложенные задачи в конец
+            pending_tasks.extend(self.postponed_tasks)
+            logger.info(f"📋 Перемещено {len(self.postponed_tasks)} отложенных задач в конец списка")
         
         if not pending_tasks:
             logger.info("Все задачи выполнены")
@@ -3983,8 +4365,8 @@ class CodeAgentServer:
             
             # Проверяем необходимость перезапуска перед задачей
             if self._check_reload_needed():
-                logger.warning(f"Обнаружено изменение кода перед выполнением задачи {idx}/{total_tasks}")
-                raise ServerReloadException("Перезапуск из-за изменения кода перед выполнением задачи")
+                logger.warning(f"Достигнуто 15 изменений кода подряд перед выполнением задачи {idx}/{total_tasks} - выполняется перезапуск")
+                raise ServerReloadException("Перезапуск из-за 15 изменений кода подряд перед выполнением задачи")
             
             self.status_manager.add_separator()
             task_result = await self._execute_task(todo_item, task_number=idx, total_tasks=total_tasks)
@@ -4004,8 +4386,8 @@ class CodeAgentServer:
             
             # Проверяем необходимость перезапуска после задачи
             if self._check_reload_needed():
-                logger.warning(f"Обнаружено изменение кода после выполнения задачи {idx}/{total_tasks}")
-                raise ServerReloadException("Перезапуск из-за изменения кода после выполнения задачи")
+                logger.warning(f"Достигнуто 15 изменений кода подряд после выполнения задачи {idx}/{total_tasks} - выполняется перезапуск")
+                raise ServerReloadException("Перезапуск из-за 15 изменений кода подряд после выполнения задачи")
             
             # Задержка между задачами
             if self.task_delay > 0:
@@ -4015,9 +4397,14 @@ class CodeAgentServer:
                         if self._should_stop:
                             break
                     if self._check_reload_needed():
-                        raise ServerReloadException("Перезапуск из-за изменения кода во время задержки")
+                        raise ServerReloadException("Перезапуск из-за 15 изменений кода подряд во время задержки")
                     time.sleep(1)
-        
+
+        # Очищаем отложенные задачи после завершения итерации
+        if self.postponed_tasks:
+            logger.info(f"🧹 Очищено {len(self.postponed_tasks)} отложенных задач после завершения итерации")
+            self.postponed_tasks.clear()
+
         return True  # Есть еще задачи
     
     def _check_port_in_use(self, port: int) -> bool:
@@ -4549,17 +4936,17 @@ class CodeAgentServer:
                         task_in_progress = self.server._task_in_progress
                     
                     if task_in_progress:
-                        # Если задача выполняется, откладываем перезапуск до завершения текущей инструкции
-                        logger.info(f"Обнаружено изменение кода во время выполнения задачи - перезапуск будет выполнен после завершения текущей инструкции")
+                        # Если задача выполняется, откладываем обработку изменения до завершения текущей инструкции
+                        logger.info(f"Обнаружено изменение кода во время выполнения задачи - обработка будет выполнена после завершения текущей инструкции")
                         with self.server._reload_lock:
                             self.server._should_reload = True
                             self.server._reload_after_instruction = True
                     else:
-                        # Если задачи нет, перезапускаем немедленно
+                        # Если задачи нет, устанавливаем флаг изменения кода
                         with self.server._reload_lock:
                             self.server._should_reload = True
-                            logger.warning("Обнаружено изменение .py файла - требуется перезапуск")
-                            logger.warning(f"Изменен файл: {event.src_path}")
+                            logger.info(f"Обнаружено изменение .py файла: {event.src_path}")
+                            logger.info("Сервер продолжит работу (перезапуск только после 15 изменений подряд)")
                 finally:
                     # Удаляем файл из обработки через некоторое время
                     def remove_pending():
@@ -4597,12 +4984,19 @@ class CodeAgentServer:
     def _check_reload_needed(self) -> bool:
         """
         Проверка необходимости перезапуска
-        
+
         Returns:
             True если требуется перезапуск
         """
         with self._reload_lock:
             if self._should_reload:
+                # Увеличиваем счетчик изменений кода
+                with self._code_change_count_lock:
+                    self._code_change_count += 1
+                    current_change_count = self._code_change_count
+
+                logger.info(f"Обнаружено изменение кода. Счетчик изменений: {current_change_count}/15")
+
                 # Если перезапуск помечен как "после инструкции" — никогда не выполняем его немедленно.
                 # Это защищает ожидание файлов результатов и длинные шаги от обрыва.
                 if self._reload_after_instruction:
@@ -4617,30 +5011,47 @@ class CodeAgentServer:
                         logger.warning("Перезапуск отложен - выполняется задача")
                         logger.warning("Перезапуск произойдет после завершения текущей инструкции")
                         return False
-                
-                # Задачи нет - можно перезапускать
-                logger.warning("Начало перезапуска сервера")
-                logger.warning(f"Счетчик перезапусков до перезапуска: {self._restart_count}")
-                
-                # Увеличиваем счетчик перезапусков
-                with self._restart_count_lock:
-                    self._restart_count += 1
-                
-                # Перезапускаем Docker контейнер перед перезапуском сервера
-                logger.info("Перезапуск Docker контейнера перед перезапуском сервера...")
-                docker_restart_success = self._restart_cursor_environment()
-                if not docker_restart_success:
-                    logger.warning("Не удалось перезапустить Docker контейнер, но продолжаем перезапуск сервера")
-                
-                logger.warning(f"Перезапуск инициирован. Новый счетчик: {self._restart_count}")
-                
-                self._should_reload = False
-                self._reload_after_instruction = False
-                return True
+
+                # Проверяем, достигнуто ли максимальное количество изменений кода подряд
+                if current_change_count >= 15:
+                    logger.warning("Достигнуто 15 изменений кода подряд - выполняется полный перезапуск сервера")
+                    logger.warning(f"Счетчик перезапусков до перезапуска: {self._restart_count}")
+
+                    # Увеличиваем счетчик перезапусков
+                    with self._restart_count_lock:
+                        self._restart_count += 1
+
+                    # Сбрасываем счетчик изменений кода
+                    with self._code_change_count_lock:
+                        self._code_change_count = 0
+
+                    # Перезапускаем Docker контейнер перед перезапуском сервера
+                    logger.info("Перезапуск Docker контейнера перед перезапуском сервера...")
+                    docker_restart_success = self._restart_cursor_environment()
+                    if not docker_restart_success:
+                        logger.warning("Не удалось перезапустить Docker контейнер, но продолжаем перезапуск сервера")
+
+                    logger.warning(f"Полный перезапуск инициирован. Новый счетчик: {self._restart_count}")
+
+                    self._should_reload = False
+                    self._reload_after_instruction = False
+                    return True
+                else:
+                    # Менее 15 изменений - просто перезагружаем (продолжаем работу)
+                    logger.info(f"Изменение кода #{current_change_count}/15 - сервер продолжает работу без перезапуска")
+
+                    self._should_reload = False
+                    self._reload_after_instruction = False
+                    return False
+
             return False
     
     async def start(self):
         """Запуск сервера агента в бесконечном цикле"""
+        # Сбрасываем счетчик изменений кода при запуске сервера
+        with self._code_change_count_lock:
+            self._code_change_count = 0
+
         logger.info("Запуск Code Agent Server")
         logger.info("Инициализация завершена, начинаем запуск HTTP сервера...")
         
@@ -4692,16 +5103,16 @@ class CodeAgentServer:
                         # Прерываем выполнение немедленно
                         break
                 
-                # Проверяем необходимость перезапуска
+                # Проверяем необходимость перезапуска (только после 15 изменений кода подряд)
                 if self._check_reload_needed():
-                    logger.warning("Выполняется перезапуск сервера")
+                    logger.warning("Выполняется полный перезапуск сервера (достигнуто 15 изменений кода подряд)")
                     logger.warning(f"Счетчик перезапусков: {self._restart_count}")
                     logger.warning("Текущая задача будет прервана, checkpoint будет сохранен")
                     self.checkpoint_manager.mark_server_stop(clean=True)
                     self._is_running = False
                     # Инициируем перезапуск через исключение
                     # main.py перехватит это и перезапустит сервер
-                    raise ServerReloadException("Перезапуск сервера")
+                    raise ServerReloadException("Полный перезапуск сервера после 15 изменений кода подряд")
                 
                 iteration += 1
                 self._current_iteration = iteration
@@ -4711,8 +5122,8 @@ class CodeAgentServer:
                 try:
                     has_tasks = await self.run_iteration(iteration)
                 except ServerReloadException:
-                    # Перезапуск из-за изменений в коде во время выполнения итерации
-                    logger.warning("Перезапуск сервера во время выполнения итерации")
+                    # Полный перезапуск из-за 15 изменений кода подряд во время выполнения итерации
+                    logger.warning("Полный перезапуск сервера во время выполнения итерации (15 изменений кода подряд)")
                     self.checkpoint_manager.mark_server_stop(clean=True)
                     self._is_running = False
                     raise  # Пробрасываем исключение дальше
@@ -4722,13 +5133,13 @@ class CodeAgentServer:
                     if self._should_stop:
                         break
                 
-                # Проверяем необходимость перезапуска после итерации
+                # Проверяем необходимость перезапуска после итерации (только после 15 изменений кода подряд)
                 if self._check_reload_needed():
-                    logger.warning("Выполняется перезапуск сервера ПОСЛЕ ИТЕРАЦИИ")
+                    logger.warning("Выполняется полный перезапуск сервера ПОСЛЕ ИТЕРАЦИИ (достигнуто 15 изменений кода подряд)")
                     logger.warning(f"Счетчик перезапусков: {self._restart_count}")
                     self.checkpoint_manager.mark_server_stop(clean=True)
                     self._is_running = False
-                    raise ServerReloadException("Перезапуск сервера")
+                    raise ServerReloadException("Полный перезапуск сервера после 15 изменений кода подряд")
                 
                 # Проверяем ограничение итераций
                 if self.max_iterations and iteration >= self.max_iterations:
@@ -4749,9 +5160,9 @@ class CodeAgentServer:
                             if self._should_stop:
                                 break
                         if self._check_reload_needed():
-                            logger.warning("Обнаружено изменение кода во время ожидания - перезапуск")
+                            logger.warning("Достигнуто 15 изменений кода подряд во время ожидания - полный перезапуск")
                             self.checkpoint_manager.mark_server_stop(clean=True)
-                            raise ServerReloadException("Перезапуск из-за изменения кода")
+                            raise ServerReloadException("Полный перезапуск из-за 15 изменений кода подряд")
                         time.sleep(1)
                 else:
                     # Если задачи были, ждем интервал перед следующей итерацией
@@ -4761,18 +5172,18 @@ class CodeAgentServer:
                             if self._should_stop:
                                 break
                         if self._check_reload_needed():
-                            logger.warning("Обнаружено изменение кода во время ожидания - перезапуск")
+                            logger.warning("Достигнуто 15 изменений кода подряд во время ожидания - полный перезапуск")
                             self.checkpoint_manager.mark_server_stop(clean=True)
-                            raise ServerReloadException("Перезапуск из-за изменения кода")
+                            raise ServerReloadException("Полный перезапуск из-за 15 изменений кода подряд")
                         time.sleep(1)
                     
         except ServerReloadException as e:
-            # Перезапуск из-за изменений в .py файлах
-            logger.warning("Перезапуск сервера из-за изменений в коде")
+            # Полный перезапуск из-за 15 изменений кода подряд
+            logger.warning("Полный перезапуск сервера (достигнуто 15 изменений кода подряд)")
             logger.warning(f"Причина: {str(e)}")
             self._is_running = False
             self.checkpoint_manager.mark_server_stop(clean=True)
-            self.server_logger.log_server_shutdown(f"Перезапуск из-за изменений в коде: {str(e)}")
+            self.server_logger.log_server_shutdown(f"Полный перезапуск из-за 15 изменений кода подряд: {str(e)}")
             # Пробрасываем исключение дальше для обработки в main.py
             raise
             
@@ -4893,15 +5304,34 @@ class CodeAgentServer:
         """
         logger.info("Закрытие ресурсов сервера...")
 
-        # Проверяем состояние event loop перед закрытием LLM manager
+        # Проверяем состояние event loop перед закрытием
         try:
             loop = asyncio.get_running_loop()
             if loop.is_closed():
-                logger.warning("Event loop is already closed, skipping LLM manager close in server.close()")
+                logger.warning("Event loop is already closed, skipping server close operations")
                 return
         except RuntimeError:
-            logger.warning("No running event loop, skipping LLM manager close in server.close()")
+            logger.warning("No running event loop, skipping server close operations")
             return
+
+        # Отменяем все активные задачи, кроме текущей, перед закрытием ресурсов
+        # Это предотвратит проблемы с cleanup futures и HTTP clients
+        try:
+            current_task = asyncio.current_task()
+            all_tasks = [task for task in asyncio.all_tasks(loop) if task != current_task and not task.done()]
+            if all_tasks:
+                logger.debug(f"Cancelling {len(all_tasks)} background tasks before closing server resources")
+                for task in all_tasks:
+                    task.cancel()
+
+                # Ждем завершения отмененных задач с таймаутом
+                try:
+                    await asyncio.wait_for(asyncio.gather(*all_tasks, return_exceptions=True), timeout=5.0)
+                    logger.debug("All background tasks cancelled successfully")
+                except asyncio.TimeoutError:
+                    logger.warning("Timeout waiting for background tasks to cancel")
+        except Exception as e:
+            logger.warning(f"Error cancelling background tasks: {e}")
 
         # Закрываем LLM manager если он инициализирован и не закрывается уже
         if hasattr(self, 'llm_manager') and self.llm_manager and not getattr(self, '_llm_manager_closing', False):

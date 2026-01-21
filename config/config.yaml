@@ -305,12 +305,13 @@ instructions:
       template: |
         Выполни пункт {plan_item_number} из плана current_plan_{task_id}.md:
         {plan_item_text}
-        
+
         Сохрани промежуточный отчет в docs/results/plan_result_{task_id}.md
         В конце отчета напиши "Отчет завершен!"
       wait_for_file: "docs/results/plan_result_{task_id}.md"
       control_phrase: "Отчет завершен!"
       timeout: 1000
+      check_report: true  # Включить проверку репорта после выполнения
       
     - instruction_id: 3
       name: "Тестирование"
@@ -320,9 +321,9 @@ instructions:
         - Статические тесты
         - Дымовые тесты
         - Интеграционные тесты
-        
+
         ВАЖНО: Обязательно выполни все пункты и создай файл отчета!
-        
+
         1. Напиши тесты в src/test/ (или обнови существующие тесты)
         2. Запусти тесты и проверь результаты
         3. ОБЯЗАТЕЛЬНО создай файл отчета: docs/results/test_{task_id}.md
@@ -331,70 +332,74 @@ instructions:
            - Результаты запуска тестов
            - Выявленные проблемы (если есть)
         4. В конце файла отчета ОБЯЗАТЕЛЬНО напиши: "Тестирование завершено!"
-        
+
         Файл docs/results/test_{task_id}.md должен быть создан обязательно!
       wait_for_file: "docs/results/test_{task_id}.md"
       control_phrase: "Тестирование завершено!"
       timeout: 600
+      check_report: true  # Включить проверку репорта после выполнения
       
     - instruction_id: 4
       name: "Обновление документации"
       for_cursor: true
       template: |
         Создай/обнови текущую документацию с учетом всех последних доработок.
-        
+
         Модифицированные файлы можно увидеть через git:
         - git status
         - git diff
-        
+
         Обнови соответствующие файлы документации и отчитайся о выполненных действиях.
         Отчет в docs/results/last_result.md, в конце "Отчет завершен!"
       wait_for_file: "docs/results/last_result.md"
       control_phrase: "Отчет завершен!"
       timeout: 500
+      check_report: true  # Включить проверку репорта после выполнения
       
     - instruction_id: 5
       name: "Ревью Скептика"
       for_cursor: true
       template: |
         Выступи в роли Скептика.
-        
+
         Проанализируй текущие доработки и документацию в рамках текущей задачи.
-        
+
         Напиши ревью в файле docs/reviews/skeptic_{task_id}_{date}.md
-        
+
         Интересуют:
         - Любые недоработки
         - Отклонения от плана
         - Проблемы в коде или документах
         - Сомнительный код или документы
         - Все что тебя смущает или противоречит
-        
+
         Опиши все в подробном репорте.
         В конце напиши фразу с новой строки: "Отчет готов!"
       wait_for_file: "docs/reviews/skeptic_{task_id}_{date}.md"
       control_phrase: "Отчет готов!"
       timeout: 600
+      check_report: true  # Включить проверку репорта после выполнения
       
     - instruction_id: 6
       name: "Исправление по ревью"
       for_cursor: true
       template: |
         Проанализируй репорт от Скептика из файла docs/reviews/skeptic_{task_id}_{date}.md
-        
+
         Составь новый план реализации/исправления выявленных проблем.
-        
+
         Приступаем к реализации доработок по пункту {task_id} после отчета скептика.
       wait_for_file: "docs/results/last_result.md"
       control_phrase: "Отчет завершен!"
       timeout: 700
+      check_report: true  # Включить проверку репорта после выполнения
       
     - instruction_id: 7
       name: "Частичное тестирование"
       for_cursor: true
       template: |
         Запусти тесты связанные с текущим функциналом и текущей задачей из src/test
-        
+
         Агент курсора должен:
         1. Выполнить требуемые команды для запуска тестов
         2. Создать репорты об ошибках по результатам полного тестирования
@@ -403,6 +408,7 @@ instructions:
       wait_for_file: "docs/results/test_full_{task_id}.md"
       control_phrase: "Тестирование завершено!"
       timeout: 1000
+      check_report: true  # Включить проверку репорта после выполнения
       
     - instruction_id: 8
       name: "Коммит и отправка"
@@ -422,7 +428,35 @@ instructions:
       wait_for_file: "docs/results/last_result.md"
       control_phrase: "Коммит выполнен!"
       timeout: 300
-  
+
+    # Специальная инструкция для проверки репортов (вызывается автоматически)
+    - instruction_id: "report-check"
+      name: "Проверка репорта"
+      for_cursor: false  # Это не инструкция для Cursor, а системная проверка
+      template: |
+        Прочитай репорт по инструкции {report_file}.
+
+        В полной ли мере выполнена задача, сверь с новыми изменениями? Мы можем переходить к следующей инструкции "{next_instruction_name}" или нужно уделить внимание чему-то и выполнить другую инструкцию в этом случае?
+
+        Проанализируй результаты и прими решение о дальнейших действиях.
+      timeout: 500  # Таймаут для проверки репорта
+      system_instruction: true  # Системная инструкция, вызывается автоматически
+
+    # Заготовка для свободной инструкции (вставляется вне очереди по решению системы)
+    - instruction_id: "free"
+      name: "Свободная инструкция"
+      for_cursor: true
+      template: |
+        {free_instruction_text}
+
+        Создай отчет в docs/results/free_instruction_{task_id}_{timestamp}.md
+        В конце отчета напиши "Свободная инструкция выполнена!"
+      wait_for_file: "docs/results/free_instruction_{task_id}_{timestamp}.md"
+      control_phrase: "Свободная инструкция выполнена!"
+      timeout: 600
+      check_report: true  # Включить проверку репорта после выполнения
+      free_instruction: true  # Флаг свободной инструкции
+
   # Инструкция ревизия - Проведение ревизии кода, ревизии документации, удаление лишних файлов репортов и тестов, статусов и выполненных задач внутри docs и plans
   revision:
     - instruction_id: 1

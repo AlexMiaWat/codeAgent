@@ -9,8 +9,31 @@ import sys
 import subprocess
 import socket
 import time
+import asyncio
+import logging
+import warnings
 from pathlib import Path
 from src.server import CodeAgentServer, _setup_logging, ServerReloadException
+
+
+def setup_asyncio_exception_handling():
+    """Настройка обработки необработанных исключений в asyncio задачах"""
+    def handle_exception(loop, context):
+        """Обработчик необработанных исключений в asyncio"""
+        exception = context.get('exception')
+        if exception:
+            error_msg = str(exception)
+            # Подавляем httpx cleanup ошибки при завершении
+            if ("Event loop is closed" in error_msg and
+                any(lib in error_msg.lower() for lib in ['httpx', 'anyio', 'httpcore', 'asyncclient'])):
+                logging.getLogger(__name__).debug(f"Подавлено необработанное исключение cleanup HTTP клиента: {exception}")
+                return
+
+        # Для остальных ошибок используем стандартную обработку
+        logging.getLogger(__name__).error(f"Необработанное исключение в asyncio задаче: {context}")
+
+    # Устанавливаем обработчик исключений
+    asyncio.get_event_loop().set_exception_handler(handle_exception)
 
 
 def stop_server_processes():
@@ -236,15 +259,14 @@ def main():
     """Главная функция для запуска сервера"""
     # Очищаем логи перед стартом
     cleanup_logs()
-    
+
     # Создаем директорию для логов если не существует
     Path("logs").mkdir(exist_ok=True)
-    
+
     # Настраиваем логирование ПОСЛЕ очистки логов
     _setup_logging()
-    
+
     # Импортируем logger после настройки логирования
-    import logging
     logger = logging.getLogger(__name__)
     
     # Загружаем конфигурацию для получения порта и настроек перезапуска
@@ -260,24 +282,33 @@ def main():
         print("Попробуйте завершить процесс вручную или изменить порт в config/config.yaml")
         sys.exit(1)
     
+    # Настраиваем обработку asyncio исключений один раз в начале
+    try:
+        # Пытаемся настроить обработчик для текущего event loop, если он существует
+        current_loop = asyncio.get_running_loop()
+        setup_asyncio_exception_handling()
+    except RuntimeError:
+        pass  # Event loop еще не создан
+
     # Запускаем сервер с поддержкой автоперезапуска
     restart_count = 0
-    
+
     while restart_count < max_restarts:
+        server = None
         try:
             server = CodeAgentServer()
-            server.start()
-            
+            asyncio.run(server.start())
+
             # Если дошли сюда, значит сервер завершился нормально
             # (не из-за перезапуска)
             break
             
         except ServerReloadException:
-            # Перезапуск из-за изменений в .py файлах
+            # Полный перезапуск из-за 15 изменений кода подряд
             restart_count += 1
             if restart_count < max_restarts:
                 print(f"\n{'='*80}")
-                print(f"Перезапуск сервера из-за изменений в коде ({restart_count}/{max_restarts})...")
+                print(f"Полный перезапуск сервера (достигнуто 15 изменений кода подряд) ({restart_count}/{max_restarts})...")
                 print(f"{'='*80}\n")
                 time.sleep(2)
                 continue
@@ -303,6 +334,31 @@ def main():
             import traceback
             traceback.print_exc()
             break
+        finally:
+            # Корректное закрытие ресурсов сервера
+            if server:
+                try:
+                    # Event loop может быть уже закрыт (особенно при перезапуске)
+                    # Поэтому всегда создаем новый event loop для закрытия
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    try:
+                        new_loop.run_until_complete(server.close())
+                    except asyncio.CancelledError:
+                        # Задача была отменена - это нормально при перезапуске
+                        logger.debug("Server close task was cancelled during reload")
+                    finally:
+                        new_loop.close()
+                except Exception as e:
+                    # Подавляем httpx cleanup ошибки при завершении
+                    error_str = str(e)
+                    if ("Event loop is closed" in error_str and
+                        any(lib in error_str.lower() for lib in ['httpx', 'anyio', 'httpcore', 'asyncclient'])):
+                        logger.debug(f"Подавлена ошибка cleanup HTTP клиента при завершении: {e}")
+                    elif isinstance(e, asyncio.CancelledError):
+                        logger.debug("Server close operation was cancelled")
+                    else:
+                        print(f"Ошибка при закрытии сервера: {e}")
 
 
 if __name__ == "__main__":

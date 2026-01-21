@@ -84,7 +84,9 @@ class FallbackStateManager:
         # Устанавливаем время окончания fallback через 1 час (на случай если счетчик не сработает)
         self.state.fallback_until = time.time() + 3600
         self._save_state()
-        logger.info(f"Активирован fallback режим. Следующие {self.state.max_requests} обращений будут использовать резервную модель.")
+        logger.warning(f"🚨 BILLING ERROR | Активирован fallback режим на {self.state.max_requests} обращений")
+        logger.warning(f"🔄 Следующие запросы будут использовать резервную модель для обхода ограничений")
+        logger.info(f"⏱️  Fallback активен в течение 1 часа или до {self.state.max_requests} обращений")
 
     def should_use_fallback(self) -> bool:
         """Проверить, нужно ли использовать fallback"""
@@ -94,14 +96,19 @@ class FallbackStateManager:
         if self.state.fallback_active and current_time < self.state.fallback_until:
             # Если счетчик обращений не превышен
             if self.state.request_count < self.state.max_requests:
+                remaining = self.state.max_requests - self.state.request_count
+                time_left = int(self.state.fallback_until - current_time)
+                logger.debug(f"🔄 Fallback активен: {remaining} обращений осталось, {time_left} сек")
                 return True
             else:
                 # Счетчик превышен - деактивируем fallback
+                logger.info("⏰ Fallback деактивирован: превышен лимит обращений")
                 self.deactivate_fallback()
                 return False
 
         # Если время истекло - деактивируем
         if self.state.fallback_active and current_time >= self.state.fallback_until:
+            logger.info("⏰ Fallback деактивирован: истекло время")
             self.deactivate_fallback()
             return False
 
@@ -110,7 +117,8 @@ class FallbackStateManager:
     def deactivate_fallback(self) -> None:
         """Деактивировать fallback режим"""
         if self.state.fallback_active:
-            logger.info(f"Деактивирован fallback режим после {self.state.request_count} обращений.")
+            logger.info(f"✅ Fallback режим завершен после {self.state.request_count} обращений")
+            logger.info("🔄 Возвращаемся к основной модели")
         self.state.fallback_active = False
         self.state.request_count = 0
         self.state.fallback_until = 0.0
@@ -121,11 +129,13 @@ class FallbackStateManager:
         if self.state.fallback_active:
             self.state.request_count += 1
             self._save_state()
-            logger.debug(f"Fallback обращение #{self.state.request_count}/{self.state.max_requests}")
+            remaining = self.state.max_requests - self.state.request_count
+            logger.info(f"🔄 Fallback обращение #{self.state.request_count}/{self.state.max_requests} (осталось: {remaining})")
 
             # Если достигли лимита - деактивируем
             if self.state.request_count >= self.state.max_requests:
-                logger.info(f"Достигнут лимит обращений в fallback режиме ({self.state.max_requests}). Возврат к основной модели.")
+                logger.warning(f"🚨 Достигнут лимит fallback обращений ({self.state.max_requests})")
+                logger.warning("💰 Возможно, требуется пополнить баланс OpenRouter или проверить API ключ")
                 self.deactivate_fallback()
 
     def get_status(self) -> Dict[str, Any]:

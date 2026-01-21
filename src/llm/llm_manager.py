@@ -228,6 +228,23 @@ class LLMManager:
             logger.info("All LLM manager clients cleared (no event loop)")
             return
 
+        # Отменяем все активные задачи перед закрытием клиентов
+        # Это предотвратит проблемы с cleanup futures
+        try:
+            current_task = asyncio.current_task()
+            all_tasks = [task for task in asyncio.all_tasks(loop) if task != current_task]
+            if all_tasks:
+                logger.debug(f"Cancelling {len(all_tasks)} background tasks before closing clients")
+                for task in all_tasks:
+                    if not task.done():
+                        task.cancel()
+
+                # Ждем завершения отмененных задач
+                await asyncio.gather(*all_tasks, return_exceptions=True)
+                logger.debug("All background tasks cancelled")
+        except Exception as e:
+            logger.warning(f"Error cancelling background tasks: {e}")
+
         for provider_name, client in self.clients.items():
             try:
                 logger.debug(f"Closing client for provider: {provider_name}")
@@ -622,7 +639,7 @@ class LLMManager:
         Returns:
             Словарь с решением:
             {
-                "decision": "continue" | "insert_instruction",
+                "decision": "continue" | "insert_instruction" | "stop_and_check",
                 "reason": "объяснение решения",
                 "next_instruction_name": "название следующей инструкции",
                 "free_instruction_text": "текст свободной инструкции" (если decision == "insert_instruction")
@@ -645,10 +662,11 @@ class LLMManager:
 
 1. **CONTINUE** - Задача выполнена полностью, можно переходить к следующей инструкции "{next_instruction_name}"
 2. **INSERT_INSTRUCTION** - Есть проблемы или недоработки, нужно выполнить дополнительную инструкцию перед продолжением
+3. **STOP_AND_CHECK** - Задача выполнена, но требуется дополнительная проверка перед переходом к следующей инструкции
 
 ФОРМАТ ОТВЕТА (ТОЛЬКО JSON):
 {{
-    "decision": "continue" | "insert_instruction",
+    "decision": "continue" | "insert_instruction" | "stop_and_check",
     "reason": "Подробное объяснение решения на основе анализа репорта",
     "next_instruction_name": "{next_instruction_name}",
     "free_instruction_text": "Если INSERT_INSTRUCTION - текст конкретной инструкции для исправления проблем"
@@ -682,7 +700,7 @@ class LLMManager:
             try:
                 import json
                 decision_data = json.loads(response.content)
-                logger.info(f"✅ Решение принято: {decision_data.get('decision', 'unknown')}")
+                logger.info(f"🤖 Решение принято: {decision_data.get('decision', 'unknown')}")
 
                 # Валидируем обязательные поля
                 if "decision" not in decision_data:
@@ -725,6 +743,132 @@ class LLMManager:
                 "free_instruction_text": ""
             }
 
+    async def analyze_instruction_count_change(
+        self,
+        old_count: int,
+        new_count: int,
+        task_description: str,
+        last_completed_instruction: int,
+        task_id: str
+    ) -> Dict[str, Any]:
+        """
+        Анализирует изменение количества инструкций и принимает решение о продолжении.
+
+        Args:
+            old_count: Предыдущее количество инструкций
+            new_count: Новое количество инструкций
+            task_description: Описание задачи
+            last_completed_instruction: Последняя выполненная инструкция
+            task_id: ID задачи
+
+        Returns:
+            Словарь с решением:
+            {
+                "decision": "restart" | "continue_from_last" | "continue_from_adjusted",
+                "reason": "объяснение решения",
+                "adjusted_instruction": номер инструкции для продолжения (если decision == "continue_from_adjusted")
+            }
+        """
+        logger.info(f"🔍 Анализ изменения количества инструкций: {old_count} -> {new_count}")
+
+        # Формируем промпт для анализа
+        prompt = f"""Ты - эксперт по управлению задачами и процессами разработки.
+
+ПРОБЛЕМА: Количество инструкций в задаче изменилось с {old_count} на {new_count}.
+
+КОНТЕКСТ ЗАДАЧИ:
+{task_description}
+
+ПОСЛЕДНЯЯ ВЫПОЛНЕННАЯ ИНСТРУКЦИЯ: {last_completed_instruction}
+ID ЗАДАЧИ: {task_id}
+
+ПРИМИ РЕШЕНИЕ:
+
+1. **RESTART** - Начать выполнение сначала (если изменения радикальные)
+2. **CONTINUE_FROM_LAST** - Продолжить с последней выполненной инструкции
+3. **CONTINUE_FROM_ADJUSTED** - Продолжить с скорректированного номера инструкции
+
+ФАКТОРЫ ДЛЯ РЕШЕНИЯ:
+- Если инструкции были объединены/упрощены - CONTINUE_FROM_LAST
+- Если добавлены новые инструкции в начало - CONTINUE_FROM_ADJUSTED
+- Если изменения кардинальные - RESTART
+- Если количество уменьшилось незначительно - CONTINUE_FROM_LAST
+
+ФОРМАТ ОТВЕТА (ТОЛЬКО JSON):
+{{
+    "decision": "restart" | "continue_from_last" | "continue_from_adjusted",
+    "reason": "Подробное объяснение решения на основе анализа",
+    "adjusted_instruction": номер инструкции для продолжения (если continue_from_adjusted)
+}}
+
+Правила принятия решения:
+- Если old_count > new_count и разница небольшая - CONTINUE_FROM_LAST
+- Если old_count < new_count - RESTART (безопасный вариант)
+- Если old_count значительно отличается - RESTART
+- Только при незначительных изменениях - CONTINUE_FROM_LAST
+"""
+
+        try:
+            # Получаем ответ от модели с JSON mode для надежного парсинга
+            response = await self.generate_response(
+                prompt=prompt,
+                response_format={"type": "json_object"},
+                use_fastest=True
+            )
+
+            if not response.success:
+                logger.error(f"Ошибка при анализе изменения инструкций: {response.error}")
+                return {
+                    "decision": "restart",
+                    "reason": f"Ошибка анализа: {response.error}",
+                    "adjusted_instruction": None
+                }
+
+            # Парсим JSON ответ
+            try:
+                import json
+                decision_data = json.loads(response.content)
+                logger.info(f"🤖 Решение по изменению инструкций: {decision_data.get('decision', 'unknown')}")
+
+                # Валидируем обязательные поля
+                if "decision" not in decision_data:
+                    decision_data["decision"] = "restart"
+                if "reason" not in decision_data:
+                    decision_data["reason"] = "Решение не указано в ответе модели"
+                if "adjusted_instruction" not in decision_data:
+                    decision_data["adjusted_instruction"] = None
+
+                return decision_data
+
+            except json.JSONDecodeError as e:
+                logger.error(f"Ошибка парсинга JSON ответа: {e}")
+                logger.error(f"Ответ модели: {response.content}")
+
+                # Fallback: пытаемся извлечь решение из текста
+                content_lower = response.content.lower()
+                if "restart" in content_lower:
+                    decision = "restart"
+                elif "continue_from_adjusted" in content_lower:
+                    decision = "continue_from_adjusted"
+                elif "continue_from_last" in content_lower:
+                    decision = "continue_from_last"
+                else:
+                    decision = "restart"  # Безопасный fallback
+
+                return {
+                    "decision": decision,
+                    "reason": "Ошибка парсинга JSON, использовано резервное решение",
+                    "adjusted_instruction": None
+                }
+
+        except Exception as e:
+            logger.error(f"Критическая ошибка при анализе изменения инструкций: {e}", exc_info=True)
+            return {
+                "decision": "restart",
+                "reason": f"Критическая ошибка анализа: {str(e)}",
+                "adjusted_instruction": None
+            }
+
     async def analyze_decision_response(
         self,
         decision_data: Dict[str, Any],
@@ -742,7 +886,7 @@ class LLMManager:
         Returns:
             Словарь с финальными данными для выполнения:
             {
-                "action": "continue" | "execute_free_instruction" | "stop",
+                "action": "continue" | "execute_free_instruction" | "stop_and_check",
                 "next_instruction_name": "название следующей инструкции",
                 "free_instruction_text": "текст свободной инструкции",
                 "reason": "объяснение"
@@ -753,7 +897,7 @@ class LLMManager:
         next_instruction_name = decision_data.get("next_instruction_name", "")
         free_instruction_text = decision_data.get("free_instruction_text", "").strip()
 
-        logger.info(f"📋 Анализ решения: {decision}")
+        logger.info(f"🤖 Анализ решения: {decision}")
         logger.info(f"📝 Причина: {reason}")
 
         if decision == "continue":
@@ -780,6 +924,16 @@ class LLMManager:
                 "action": "execute_free_instruction",
                 "next_instruction_name": next_instruction_name,
                 "free_instruction_text": free_instruction_text,
+                "reason": reason
+            }
+
+        elif decision == "stop":
+            # Останавливаемся на проверке репорта, не переходим к следующей инструкции
+            logger.info(f"⏹️ Останавливаемся на текущей инструкции для дополнительной проверки: {reason}")
+            return {
+                "action": "stop_and_check",
+                "next_instruction_name": next_instruction_name,
+                "free_instruction_text": "",
                 "reason": reason
             }
 
