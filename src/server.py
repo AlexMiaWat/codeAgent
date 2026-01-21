@@ -2383,6 +2383,8 @@ class CodeAgentServer:
                 except (IOError, OSError, UnicodeDecodeError) as e:
                     logger.error(f"Ошибка чтения файла репорта {report_file}: {e}")
                     task_logger.log_error(f"Ошибка чтения файла репорта: {str(e)}", e)
+                    print(f"⚠️ ОШИБКА ЧТЕНИЯ ФАЙЛА РЕПОРТА: {str(e)}")
+                    print("🔄 Продолжаем выполнение по плану (линейно)")
                     return {
                         "action": "continue",
                         "reason": f"Ошибка чтения файла репорта: {str(e)}",
@@ -2400,6 +2402,8 @@ class CodeAgentServer:
                 except Exception as e:
                     logger.error(f"Ошибка инициализации LLM Manager: {e}")
                     task_logger.log_error(f"Ошибка инициализации LLM Manager: {str(e)}", e)
+                    print(f"⚠️ ОШИБКА ИНИЦИАЛИЗАЦИИ LLM MANAGER: {str(e)}")
+                    print("🔄 Продолжаем выполнение по плану (линейно)")
                     return {
                         "action": "continue",
                         "reason": f"Ошибка инициализации LLM Manager: {str(e)}",
@@ -2427,6 +2431,8 @@ class CodeAgentServer:
             except Exception as e:
                 logger.error(f"Ошибка анализа репорта через LLM Manager: {e}")
                 task_logger.log_error(f"Ошибка анализа репорта: {str(e)}", e)
+                print(f"⚠️ ОШИБКА АНАЛИЗА РЕПОРТА LLM MANAGER: {str(e)}")
+                print("🔄 Продолжаем выполнение по плану (линейно)")
                 return {
                     "action": "continue",
                     "reason": f"Ошибка анализа репорта: {str(e)}",
