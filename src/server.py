@@ -2376,33 +2376,63 @@ class CodeAgentServer:
                     "free_instruction_text": ""
                 }
             else:
-                with open(report_path, 'r', encoding='utf-8') as f:
-                    report_content = f.read()
-                logger.debug(f"Прочитан репорт: {report_file} ({len(report_content)} символов)")
+                try:
+                    with open(report_path, 'r', encoding='utf-8') as f:
+                        report_content = f.read()
+                    logger.debug(f"Прочитан репорт: {report_file} ({len(report_content)} символов)")
+                except (IOError, OSError, UnicodeDecodeError) as e:
+                    logger.error(f"Ошибка чтения файла репорта {report_file}: {e}")
+                    task_logger.log_error(f"Ошибка чтения файла репорта: {str(e)}", e)
+                    return {
+                        "action": "continue",
+                        "reason": f"Ошибка чтения файла репорта: {str(e)}",
+                        "next_instruction_name": next_instruction_name,
+                        "free_instruction_text": ""
+                    }
 
             # Используем LLM manager для анализа репорта
             if not hasattr(self, 'llm_manager') or not self.llm_manager:
                 # Инициализируем LLM manager если не инициализирован
-                from src.llm.llm_manager import LLMManager
-                llm_manager = LLMManager()
-                self.llm_manager = llm_manager
+                try:
+                    from src.llm.llm_manager import LLMManager
+                    llm_manager = LLMManager()
+                    self.llm_manager = llm_manager
+                except Exception as e:
+                    logger.error(f"Ошибка инициализации LLM Manager: {e}")
+                    task_logger.log_error(f"Ошибка инициализации LLM Manager: {str(e)}", e)
+                    return {
+                        "action": "continue",
+                        "reason": f"Ошибка инициализации LLM Manager: {str(e)}",
+                        "next_instruction_name": next_instruction_name,
+                        "free_instruction_text": ""
+                    }
             else:
                 llm_manager = self.llm_manager
 
             # Анализируем репорт
-            decision_data = await llm_manager.analyze_report_and_decide(
-                report_content=report_content,
-                report_file=report_file,
-                next_instruction_name=next_instruction_name,
-                task_id=task_id
-            )
+            try:
+                decision_data = await llm_manager.analyze_report_and_decide(
+                    report_content=report_content,
+                    report_file=report_file,
+                    next_instruction_name=next_instruction_name,
+                    task_id=task_id
+                )
 
-            # Анализируем решение
-            final_decision = await llm_manager.analyze_decision_response(
-                decision_data=decision_data,
-                original_report_file=report_file,
-                task_id=task_id
-            )
+                # Анализируем решение
+                final_decision = await llm_manager.analyze_decision_response(
+                    decision_data=decision_data,
+                    original_report_file=report_file,
+                    task_id=task_id
+                )
+            except Exception as e:
+                logger.error(f"Ошибка анализа репорта через LLM Manager: {e}")
+                task_logger.log_error(f"Ошибка анализа репорта: {str(e)}", e)
+                return {
+                    "action": "continue",
+                    "reason": f"Ошибка анализа репорта: {str(e)}",
+                    "next_instruction_name": next_instruction_name,
+                    "free_instruction_text": ""
+                }
 
             # Логируем решение
             action = final_decision.get('action', 'continue')
