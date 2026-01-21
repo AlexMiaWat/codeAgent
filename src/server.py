@@ -5051,7 +5051,109 @@ class CodeAgentServer:
                     return False
 
             return False
-    
+
+    async def _run_server_loop(self, iteration: int):
+        """Основной цикл работы сервера"""
+        while True:
+            # Проверяем запрос на остановку (через API или из-за критических ошибок Cursor)
+            with self._stop_lock:
+                if self._should_stop:
+                    # Проверяем, это остановка через API или из-за ошибок Cursor
+                    with self._cursor_error_lock:
+                        cursor_error_stop = self._cursor_error_count >= self._max_cursor_errors
+
+                    if cursor_error_stop:
+                        logger.error("---")
+                        logger.error("Остановка сервера из-за критических ошибок Cursor")
+                        logger.error("---")
+                        self.checkpoint_manager.mark_server_stop(clean=False)
+                    else:
+                        logger.warning("ОСТАНОВКА СЕРВЕРА ПО ЗАПРОСУ ЧЕРЕЗ API")
+                        logger.warning("Текущая задача будет прервана, checkpoint будет сохранен")
+                        self.checkpoint_manager.mark_server_stop(clean=True)
+
+                    self._is_running = False
+                    self.status_manager.append_status(
+                        f"Code Agent Server остановлен по запросу через API. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                        level=2
+                    )
+                    # Прерываем выполнение немедленно
+                    break
+
+            # Проверяем необходимость перезапуска
+            if self._check_reload_needed():
+                logger.warning("Выполняется перезапуск сервера")
+                logger.warning(f"Счетчик перезапусков: {self._restart_count}")
+                logger.warning("Текущая задача будет прервана, checkpoint будет сохранен")
+                self.checkpoint_manager.mark_server_stop(clean=True)
+                self._is_running = False
+                # Инициируем перезапуск через исключение
+                # main.py перехватит это и перезапустит сервер
+                raise ServerReloadException("Перезапуск сервера")
+
+            iteration += 1
+            self._current_iteration = iteration
+            logger.info(f"Итерация {iteration}")
+
+            # Выполняем итерацию
+            try:
+                has_tasks = await self.run_iteration(iteration)
+            except ServerReloadException:
+                # Перезапуск сервера во время выполнения итерации
+                logger.warning("Перезапуск сервера во время выполнения итерации")
+                self.checkpoint_manager.mark_server_stop(clean=True)
+                self._is_running = False
+                raise  # Пробрасываем исключение дальше
+
+            # Проверяем флаг остановки после итерации (может быть установлен из-за ошибок Cursor)
+            with self._stop_lock:
+                if self._should_stop:
+                    break
+
+            # Проверяем необходимость перезапуска после итерации
+            if self._check_reload_needed():
+                logger.warning("Выполняется перезапуск сервера ПОСЛЕ ИТЕРАЦИИ")
+                logger.warning(f"Счетчик перезапусков: {self._restart_count}")
+                self.checkpoint_manager.mark_server_stop(clean=True)
+                self._is_running = False
+                raise ServerReloadException("Перезапуск сервера после итерации")
+
+            # Проверяем ограничение итераций
+            if self.max_iterations and iteration >= self.max_iterations:
+                logger.info(f"Достигнуто максимальное количество итераций: {self.max_iterations}")
+                self.server_logger.log_server_shutdown(f"Достигнуто максимальное количество итераций: {self.max_iterations}")
+                break
+
+            # Периодически очищаем старые задачи из checkpoint
+            if iteration % 10 == 0:
+                self.checkpoint_manager.clear_old_tasks(keep_last_n=100)
+
+            # Если нет задач, проверяем снова через интервал
+            if not has_tasks:
+                logger.info(f"Ожидание {self.check_interval} секунд перед следующей проверкой")
+                # Проверяем перезапуск и остановку во время ожидания
+                for _ in range(self.check_interval):
+                    with self._stop_lock:
+                        if self._should_stop:
+                            break
+                    if self._check_reload_needed():
+                        logger.warning("Необходим перезапуск во время ожидания")
+                        self.checkpoint_manager.mark_server_stop(clean=True)
+                        raise ServerReloadException("Перезапуск во время ожидания")
+                    time.sleep(1)
+            else:
+                # Если задачи были, ждем интервал перед следующей итерацией
+                # Проверяем перезапуск и остановку во время ожидания
+                for _ in range(self.check_interval):
+                    with self._stop_lock:
+                        if self._should_stop:
+                            break
+                    if self._check_reload_needed():
+                        logger.warning("Необходим перезапуск во время ожидания")
+                        self.checkpoint_manager.mark_server_stop(clean=True)
+                        raise ServerReloadException("Перезапуск во время ожидания")
+                    time.sleep(1)
+
     async def start(self):
         """Запуск сервера агента в бесконечном цикле"""
         # Сбрасываем счетчики изменений кода при запуске сервера
@@ -5060,128 +5162,37 @@ class CodeAgentServer:
 
         logger.info("Запуск Code Agent Server")
         logger.info("Инициализация завершена, начинаем запуск HTTP сервера...")
-        
+
         # Запускаем HTTP сервер
         self._setup_http_server()
         logger.info("HTTP сервер настроен, продолжаем запуск...")
-        
+
         # Запускаем file watcher для автоперезапуска
         self._setup_file_watcher()
-        
+
         # Отмечаем запуск в checkpoint
         session_id = self.session_tracker.current_session_id
         self.checkpoint_manager.mark_server_start(session_id)
-        
+
         self.status_manager.append_status(
             f"Code Agent Server запущен. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             level=1
         )
-        
+
         # Получаем начальную итерацию из checkpoint (для восстановления)
         iteration = self.checkpoint_manager.get_iteration_count()
         self._current_iteration = iteration
         self._is_running = True
-        
+
         try:
-            while True:
-                # Проверяем запрос на остановку (через API или из-за критических ошибок Cursor)
-                with self._stop_lock:
-                    if self._should_stop:
-                        # Проверяем, это остановка через API или из-за ошибок Cursor
-                        with self._cursor_error_lock:
-                            cursor_error_stop = self._cursor_error_count >= self._max_cursor_errors
-                        
-                        if cursor_error_stop:
-                            logger.error("---")
-                            logger.error("Остановка сервера из-за критических ошибок Cursor")
-                            logger.error("---")
-                            self.checkpoint_manager.mark_server_stop(clean=False)
-                        else:
-                            logger.warning("ОСТАНОВКА СЕРВЕРА ПО ЗАПРОСУ ЧЕРЕЗ API")
-                            logger.warning("Текущая задача будет прервана, checkpoint будет сохранен")
-                            self.checkpoint_manager.mark_server_stop(clean=True)
-                        
-                        self._is_running = False
-                        self.status_manager.append_status(
-                            f"Code Agent Server остановлен по запросу через API. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                            level=2
-                        )
-                        # Прерываем выполнение немедленно
-                        break
-                
-                # Проверяем необходимость перезапуска
-                if self._check_reload_needed():
-                    logger.warning("Выполняется перезапуск сервера")
-                    logger.warning(f"Счетчик перезапусков: {self._restart_count}")
-                    logger.warning("Текущая задача будет прервана, checkpoint будет сохранен")
-                    self.checkpoint_manager.mark_server_stop(clean=True)
-                    self._is_running = False
-                    # Инициируем перезапуск через исключение
-                    # main.py перехватит это и перезапустит сервер
-                    raise ServerReloadException("Перезапуск сервера")
-                
-                iteration += 1
-                self._current_iteration = iteration
-                logger.info(f"Итерация {iteration}")
-                
-                # Выполняем итерацию
-                try:
-                    has_tasks = await self.run_iteration(iteration)
-                except ServerReloadException:
-                    # Перезапуск сервера во время выполнения итерации
-                    logger.warning("Перезапуск сервера во время выполнения итерации")
-                    self.checkpoint_manager.mark_server_stop(clean=True)
-                    self._is_running = False
-                    raise  # Пробрасываем исключение дальше
-                
-                # Проверяем флаг остановки после итерации (может быть установлен из-за ошибок Cursor)
-                with self._stop_lock:
-                    if self._should_stop:
-                        break
-                
-                # Проверяем необходимость перезапуска после итерации
-                if self._check_reload_needed():
-                    logger.warning("Выполняется перезапуск сервера ПОСЛЕ ИТЕРАЦИИ")
-                    logger.warning(f"Счетчик перезапусков: {self._restart_count}")
-                    self.checkpoint_manager.mark_server_stop(clean=True)
-                    self._is_running = False
-                    raise ServerReloadException("Перезапуск сервера после итерации")
-                
-                # Проверяем ограничение итераций
-                if self.max_iterations and iteration >= self.max_iterations:
-                    logger.info(f"Достигнуто максимальное количество итераций: {self.max_iterations}")
-                    self.server_logger.log_server_shutdown(f"Достигнуто максимальное количество итераций: {self.max_iterations}")
-                    break
-                
-                # Периодически очищаем старые задачи из checkpoint
-                if iteration % 10 == 0:
-                    self.checkpoint_manager.clear_old_tasks(keep_last_n=100)
-                
-                # Если нет задач, проверяем снова через интервал
-                if not has_tasks:
-                    logger.info(f"Ожидание {self.check_interval} секунд перед следующей проверкой")
-                    # Проверяем перезапуск и остановку во время ожидания
-                    for _ in range(self.check_interval):
-                        with self._stop_lock:
-                            if self._should_stop:
-                                break
-                        if self._check_reload_needed():
-                            logger.warning("Необходим перезапуск во время ожидания")
-                            self.checkpoint_manager.mark_server_stop(clean=True)
-                            raise ServerReloadException("Перезапуск во время ожидания")
-                        time.sleep(1)
-                else:
-                    # Если задачи были, ждем интервал перед следующей итерацией
-                    # Проверяем перезапуск и остановку во время ожидания
-                    for _ in range(self.check_interval):
-                        with self._stop_lock:
-                            if self._should_stop:
-                                break
-                        if self._check_reload_needed():
-                            logger.warning("Необходим перезапуск во время ожидания")
-                            self.checkpoint_manager.mark_server_stop(clean=True)
-                            raise ServerReloadException("Перезапуск во время ожидания")
-                        time.sleep(1)
+            # Основной цикл сервера - оборачиваем в try/catch для CancelledError
+            await self._run_server_loop(iteration)
+        except asyncio.CancelledError:
+            logger.warning("Server main loop was cancelled - performing clean shutdown")
+            # Отмечаем некорректный останов
+            self.checkpoint_manager.mark_server_stop(clean=False)
+            self._is_running = False
+            raise  # Пробрасываем дальше для обработки в main.py
                     
         except ServerReloadException as e:
             # Перезапуск сервера
@@ -5271,37 +5282,46 @@ class CodeAgentServer:
             )
             raise
         finally:
-            self._is_running = False
-            
-            # Останавливаем file watcher
-            if self.file_observer:
-                try:
-                    self.file_observer.stop()
-                    self.file_observer.join(timeout=2)
-                    logger.info("File watcher остановлен")
-                except Exception as e:
-                    logger.warning(f"Ошибка при остановке file watcher: {e}")
-            
-            # Останавливаем HTTP сервер явно
-            if self.http_server:
-                try:
-                    self.http_server.shutdown()
-                    logger.info("HTTP сервер остановлен")
-                except Exception as e:
-                    logger.warning(f"Ошибка при остановке HTTP сервера: {e}")
-            elif self.flask_app:
-                try:
-                    # Flask в отдельном потоке остановится автоматически (daemon=True)
-                    logger.info("HTTP сервер будет остановлен автоматически")
-                except Exception as e:
-                    logger.warning(f"Ошибка при остановке HTTP сервера: {e}")
-            
-            # Гарантируем сохранение checkpoint при любом выходе
             try:
-                if not self.checkpoint_manager.was_clean_shutdown():
+                self._is_running = False
+
+                # Останавливаем file watcher
+                if self.file_observer:
+                    try:
+                        self.file_observer.stop()
+                        self.file_observer.join(timeout=2)
+                        logger.info("File watcher остановлен")
+                    except Exception as e:
+                        logger.warning(f"Ошибка при остановке file watcher: {e}")
+
+                # Останавливаем HTTP сервер явно
+                if self.http_server:
+                    try:
+                        self.http_server.shutdown()
+                        logger.info("HTTP сервер остановлен")
+                    except Exception as e:
+                        logger.warning(f"Ошибка при остановке HTTP сервера: {e}")
+                elif self.flask_app:
+                    try:
+                        # Flask в отдельном потоке остановится автоматически (daemon=True)
+                        logger.info("HTTP сервер будет остановлен автоматически")
+                    except Exception as e:
+                        logger.warning(f"Ошибка при остановке HTTP сервера: {e}")
+
+                # Гарантируем сохранение checkpoint при любом выходе
+                try:
+                    if not self.checkpoint_manager.was_clean_shutdown():
+                        self.checkpoint_manager.mark_server_stop(clean=False)
+                except:
+                    pass
+            except asyncio.CancelledError:
+                # Если задача была отменена во время cleanup, отмечаем как некорректный останов
+                logger.warning("Server cleanup was cancelled")
+                try:
                     self.checkpoint_manager.mark_server_stop(clean=False)
-            except:
-                pass
+                except:
+                    pass
+                # Не пробрасываем CancelledError дальше
 
     async def close(self):
         """
@@ -5334,6 +5354,9 @@ class CodeAgentServer:
                 try:
                     await asyncio.wait_for(asyncio.gather(*all_tasks, return_exceptions=True), timeout=5.0)
                     logger.debug("All background tasks cancelled successfully")
+                except asyncio.CancelledError:
+                    logger.warning("Background task cancellation was interrupted by external cancellation")
+                    # Не пробрасываем CancelledError дальше, так как это может быть частью shutdown
                 except asyncio.TimeoutError:
                     logger.warning("Timeout waiting for background tasks to cancel")
         except Exception as e:
