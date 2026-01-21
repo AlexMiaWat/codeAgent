@@ -5228,7 +5228,7 @@ class CodeAgentServer:
             # Отмечаем некорректный останов
             self.checkpoint_manager.mark_server_stop(clean=False)
             self._is_running = False
-            raise  # Пробрасываем дальше для обработки в main.py
+            # Не пробрасываем CancelledError дальше - это нормальное завершение
                     
         except ServerReloadException as e:
             # Перезапуск сервера

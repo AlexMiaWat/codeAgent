@@ -318,6 +318,10 @@ def main():
         except KeyboardInterrupt:
             print("\nОстановка сервера...")
             break
+        except asyncio.CancelledError:
+            # Задача была отменена - это нормально при завершении
+            print("\nСервер завершен (отмена задачи)")
+            break
         except Exception as e:
             # Детальное логирование критических ошибок
             logger.error(
