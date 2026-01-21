@@ -199,7 +199,56 @@ class LLMManager:
         logger.debug(f"Initialized {default_provider} client with API key: {api_key[:20]}...{api_key[-10:]}")
         
         logger.info(f"Initialized client for provider: {default_provider}")
-    
+
+    async def close(self):
+        """
+        Корректное закрытие всех клиентов.
+        Должен вызываться перед завершением работы приложения.
+        """
+        # Проверяем, не закрыты ли уже клиенты
+        if not self.clients:
+            logger.debug("LLM manager clients already closed")
+            return
+
+        logger.info("Closing LLM manager clients...")
+
+        # Проверяем состояние event loop перед закрытием
+        try:
+            loop = asyncio.get_running_loop()
+            if loop.is_closed():
+                logger.warning("Event loop is already closed, skipping client close operations")
+                # Очищаем словарь клиентов без попытки закрытия
+                self.clients.clear()
+                logger.info("All LLM manager clients cleared (event loop closed)")
+                return
+        except RuntimeError:
+            # Нет запущенного event loop
+            logger.warning("No running event loop, skipping client close operations")
+            self.clients.clear()
+            logger.info("All LLM manager clients cleared (no event loop)")
+            return
+
+        for provider_name, client in self.clients.items():
+            try:
+                logger.debug(f"Closing client for provider: {provider_name}")
+                # Добавляем таймаут для закрытия клиента
+                await asyncio.wait_for(client.close(), timeout=5.0)
+                logger.debug(f"Client for provider {provider_name} closed successfully")
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout closing client for provider {provider_name}")
+            except RuntimeError as e:
+                if "Event loop is closed" in str(e):
+                    logger.warning(f"Event loop closed while closing client for provider {provider_name}")
+                    # В этом случае клиент все равно будет закрыт при завершении процесса
+                else:
+                    logger.warning(f"Runtime error closing client for provider {provider_name}: {e}")
+            except Exception as e:
+                logger.warning(f"Error closing client for provider {provider_name}: {e}")
+
+        # Очищаем словарь клиентов
+        self.clients.clear()
+        logger.info("All LLM manager clients closed")
+
     def get_primary_models(self) -> List[ModelConfig]:
         """Получить рабочие модели"""
         return [m for m in self.models.values() 
@@ -553,6 +602,195 @@ class LLMManager:
         )
         logger.info(f"Возвращаем дефолтный fallback ответ: {fallback_response.content}")
         return fallback_response
+
+    async def analyze_report_and_decide(
+        self,
+        report_content: str,
+        report_file: str,
+        next_instruction_name: str,
+        task_id: str
+    ) -> Dict[str, Any]:
+        """
+        Анализирует репорт и принимает решение о дальнейших действиях.
+
+        Args:
+            report_content: Содержимое репорта
+            report_file: Путь к файлу репорта
+            next_instruction_name: Название следующей инструкции в линейном процессе
+            task_id: ID задачи
+
+        Returns:
+            Словарь с решением:
+            {
+                "decision": "continue" | "insert_instruction",
+                "reason": "объяснение решения",
+                "next_instruction_name": "название следующей инструкции",
+                "free_instruction_text": "текст свободной инструкции" (если decision == "insert_instruction")
+            }
+        """
+        logger.info(f"🔍 Анализ репорта: {report_file}")
+
+        # Формируем промпт для анализа
+        prompt = f"""Ты - опытный аналитик кода и процессов разработки.
+
+ПРОЧИТАЙ СЛЕДУЮЩИЙ РЕПОРТ ПО ВЫПОЛНЕНИЮ ИНСТРУКЦИИ:
+
+{report_content}
+
+ЗАДАЧА: Проанализируй, в полной ли мере выполнена поставленная задача?
+
+СЛЕДУЮЩАЯ ИНСТРУКЦИЯ В ЛИНЕЙНОМ ПРОЦЕССЕ: "{next_instruction_name}"
+
+ПРИМИ РЕШЕНИЕ:
+
+1. **CONTINUE** - Задача выполнена полностью, можно переходить к следующей инструкции "{next_instruction_name}"
+2. **INSERT_INSTRUCTION** - Есть проблемы или недоработки, нужно выполнить дополнительную инструкцию перед продолжением
+
+ФОРМАТ ОТВЕТА (ТОЛЬКО JSON):
+{{
+    "decision": "continue" | "insert_instruction",
+    "reason": "Подробное объяснение решения на основе анализа репорта",
+    "next_instruction_name": "{next_instruction_name}",
+    "free_instruction_text": "Если INSERT_INSTRUCTION - текст конкретной инструкции для исправления проблем"
+}}
+
+Правила принятия решения:
+- Если в отчете есть фраза "Отчет завершен!", "Тестирование завершено!" или аналогичная - это сигнал успешного завершения
+- Если есть явные проблемы, ошибки или недоработки - INSERT_INSTRUCTION
+- Если есть сомнения или частичное выполнение - INSERT_INSTRUCTION
+- Только при полном успешном выполнении - CONTINUE
+"""
+
+        try:
+            # Получаем ответ от модели с JSON mode для надежного парсинга
+            response = await self.generate_response(
+                prompt=prompt,
+                response_format={"type": "json_object"},
+                use_fastest=True
+            )
+
+            if not response.success:
+                logger.error(f"Ошибка при анализе репорта: {response.error}")
+                return {
+                    "decision": "continue",
+                    "reason": f"Ошибка анализа: {response.error}",
+                    "next_instruction_name": next_instruction_name,
+                    "free_instruction_text": ""
+                }
+
+            # Парсим JSON ответ
+            try:
+                import json
+                decision_data = json.loads(response.content)
+                logger.info(f"✅ Решение принято: {decision_data.get('decision', 'unknown')}")
+
+                # Валидируем обязательные поля
+                if "decision" not in decision_data:
+                    decision_data["decision"] = "continue"
+                if "reason" not in decision_data:
+                    decision_data["reason"] = "Решение не указано в ответе модели"
+                if "next_instruction_name" not in decision_data:
+                    decision_data["next_instruction_name"] = next_instruction_name
+                if "free_instruction_text" not in decision_data:
+                    decision_data["free_instruction_text"] = ""
+
+                return decision_data
+
+            except json.JSONDecodeError as e:
+                logger.error(f"Ошибка парсинга JSON ответа: {e}")
+                logger.error(f"Ответ модели: {response.content}")
+
+                # Fallback: пытаемся извлечь решение из текста
+                content_lower = response.content.lower()
+                if "continue" in content_lower and "insert" not in content_lower:
+                    decision = "continue"
+                elif "insert" in content_lower:
+                    decision = "insert_instruction"
+                else:
+                    decision = "continue"  # Безопасный fallback
+
+                return {
+                    "decision": decision,
+                    "reason": "Ошибка парсинга JSON, использовано резервное решение",
+                    "next_instruction_name": next_instruction_name,
+                    "free_instruction_text": ""
+                }
+
+        except Exception as e:
+            logger.error(f"Критическая ошибка при анализе репорта: {e}", exc_info=True)
+            return {
+                "decision": "continue",
+                "reason": f"Критическая ошибка анализа: {str(e)}",
+                "next_instruction_name": next_instruction_name,
+                "free_instruction_text": ""
+            }
+
+    async def analyze_decision_response(
+        self,
+        decision_data: Dict[str, Any],
+        original_report_file: str,
+        task_id: str
+    ) -> Dict[str, Any]:
+        """
+        Анализирует принятое решение и подготавливает данные для выполнения.
+
+        Args:
+            decision_data: Данные решения от analyze_report_and_decide
+            original_report_file: Путь к оригинальному репорт файлу
+            task_id: ID задачи
+
+        Returns:
+            Словарь с финальными данными для выполнения:
+            {
+                "action": "continue" | "execute_free_instruction" | "stop",
+                "next_instruction_name": "название следующей инструкции",
+                "free_instruction_text": "текст свободной инструкции",
+                "reason": "объяснение"
+            }
+        """
+        decision = decision_data.get("decision", "continue")
+        reason = decision_data.get("reason", "")
+        next_instruction_name = decision_data.get("next_instruction_name", "")
+        free_instruction_text = decision_data.get("free_instruction_text", "").strip()
+
+        logger.info(f"📋 Анализ решения: {decision}")
+        logger.info(f"📝 Причина: {reason}")
+
+        if decision == "continue":
+            logger.info(f"➡️ Продолжаем линейно к инструкции: {next_instruction_name}")
+            return {
+                "action": "continue",
+                "next_instruction_name": next_instruction_name,
+                "free_instruction_text": "",
+                "reason": reason
+            }
+
+        elif decision == "insert_instruction":
+            if not free_instruction_text:
+                logger.warning("Решение INSERT_INSTRUCTION, но текст инструкции пустой. Продолжаем линейно.")
+                return {
+                    "action": "continue",
+                    "next_instruction_name": next_instruction_name,
+                    "free_instruction_text": "",
+                    "reason": reason + " (текст инструкции не указан)"
+                }
+
+            logger.info(f"🔧 Вставляем свободную инструкцию: {free_instruction_text[:100]}...")
+            return {
+                "action": "execute_free_instruction",
+                "next_instruction_name": next_instruction_name,
+                "free_instruction_text": free_instruction_text,
+                "reason": reason
+            }
+
+        else:
+            logger.warning(f"Неизвестное решение: {decision}. Продолжаем линейно.")
+            return {
+                "action": "continue",
+                "next_instruction_name": next_instruction_name,
+                "free_instruction_text": "",
+                "reason": f"Неизвестное решение '{decision}': {reason}"
+            }
     
     def _validate_json_response(self, content: str) -> bool:
         """
