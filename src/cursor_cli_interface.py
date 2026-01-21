@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 
 try:
+    from .fallback_state_manager import FallbackStateManager
     from .task_logger import Colors
 except ImportError:
     # Fallback если модуль еще не создан
@@ -96,6 +97,7 @@ class CursorCLIInterface:
         self.project_dir = Path(project_dir) if project_dir else None
         self.agent_role = agent_role
         self.current_chat_id: Optional[str] = None  # Текущий активный chat_id для продолжения диалога
+        self.fallback_state = FallbackStateManager()  # Менеджер состояния fallback
         
         logger.debug(f"Инициализация CursorCLIInterface: default_timeout={default_timeout} секунд")
         
@@ -1542,7 +1544,9 @@ This agent role is used for automated project tasks execution.
                     'spend limit' in stderr_lower or
                     'hit your usage limit' in stderr_lower or
                     'monthly cycle ends' in stderr_lower):
-                    logger.warning("Обнаружена billing error - активируем fallback")
+                    logger.warning("Обнаружена billing error - активируем автоматический fallback режим")
+                    # Активируем автоматический fallback режим для следующих 25 обращений
+                    self.fallback_state.activate_fallback()
                     return True
             
             # Проверяем timeout
@@ -1578,9 +1582,9 @@ This agent role is used for automated project tasks execution.
                                 logger.info(f"Stdout (первые 3 строки):\n{preview}")
                                 logger.debug(f"Полный stdout:\n{result.stdout}")
                         return True
-        
+
         return False
-    
+
     def execute_with_fallback(
         self,
         prompt: str,
@@ -1592,10 +1596,11 @@ This agent role is used for automated project tasks execution.
     ) -> CursorCLIResult:
         """
         Выполнить команду с автоматическим fallback на резервные модели
-        
+
         Сначала пытается выполнить с основной моделью (auto).
         При ошибках (billing, timeout, и т.д.) автоматически пробует резервные модели.
-        
+        После billing error следующие 25 обращений автоматически используют резервную модель.
+
         Args:
             prompt: Инструкция/промпт для выполнения
             working_dir: Рабочая директория
@@ -1603,7 +1608,7 @@ This agent role is used for automated project tasks execution.
             additional_args: Дополнительные аргументы
             new_chat: Создать новый чат
             chat_id: ID чата для продолжения
-            
+
         Returns:
             CursorCLIResult с результатом выполнения (последняя попытка)
         """
@@ -1612,15 +1617,24 @@ This agent role is used for automated project tasks execution.
         primary_model = model_config['model']
         fallback_models = model_config.get('fallback_models', [])
         resilience = model_config.get('resilience', {})
-        
+
         enable_fallback = resilience.get('enable_fallback', True)
         max_attempts = resilience.get('max_fallback_attempts', 3)
         retry_delay = resilience.get('fallback_retry_delay', 2)
-        
-        # Формируем список моделей для попыток
-        models_to_try = [primary_model]
-        if enable_fallback and fallback_models:
-            models_to_try.extend(fallback_models[:max_attempts - 1])
+
+        # Проверяем, нужно ли автоматически использовать fallback
+        if self.fallback_state.should_use_fallback() and fallback_models:
+            # Используем резервную модель
+            models_to_try = [fallback_models[0]]  # Первая резервная модель
+            logger.info(Colors.colorize(
+                f"🔄 Автоматический fallback активен - используем резервную модель '{models_to_try[0]}'",
+                Colors.BRIGHT_CYAN
+            ))
+        else:
+            # Стандартная логика
+            models_to_try = [primary_model]
+            if enable_fallback and fallback_models:
+                models_to_try.extend(fallback_models[:max_attempts - 1])
         
         # Компактный лог fallback моделей
         fallback_info = f"'{primary_model}'"
@@ -1659,6 +1673,12 @@ This agent role is used for automated project tasks execution.
                     # Устанавливаем флаги для отслеживания использования fallback
                     result.fallback_used = True
                     result.primary_model_failed = True
+                elif self.fallback_state.should_use_fallback():
+                    # Успешное выполнение в автоматическом fallback режиме
+                    logger.info(f"✅ Успешно выполнено в автоматическом fallback режиме с моделью '{model}'")
+                    result.fallback_used = True
+                    # Записываем обращение в fallback режиме
+                    self.fallback_state.record_request()
                 else:
                     logger.info(f"✅ Успешно выполнено с основной моделью '{model}'")
                 return result
@@ -1942,7 +1962,9 @@ This agent role is used for automated project tasks execution.
                     'spend limit' in stderr_lower or
                     'hit your usage limit' in stderr_lower or
                     'monthly cycle ends' in stderr_lower):
-                    logger.warning("Обнаружена billing error - активируем fallback")
+                    logger.warning("Обнаружена billing error - активируем автоматический fallback режим")
+                    # Активируем автоматический fallback режим для следующих 25 обращений
+                    self.fallback_state.activate_fallback()
                     return True
             
             # Проверяем timeout
@@ -2200,6 +2222,12 @@ This agent role is used for automated project tasks execution.
                     # Устанавливаем флаги для отслеживания использования fallback
                     result.fallback_used = True
                     result.primary_model_failed = True
+                elif self.fallback_state.should_use_fallback():
+                    # Успешное выполнение в автоматическом fallback режиме
+                    logger.info(f"✅ Успешно выполнено в автоматическом fallback режиме с моделью '{model}'")
+                    result.fallback_used = True
+                    # Записываем обращение в fallback режиме
+                    self.fallback_state.record_request()
                 else:
                     logger.info(f"✅ Успешно выполнено с основной моделью '{model}'")
                 return result
