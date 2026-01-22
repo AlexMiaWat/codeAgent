@@ -11,8 +11,8 @@ Cursor CLI теперь настроен для **автоматического
 
 ### Созданные файлы
 
-1. **`.cursor/cli-config.json`** - конфигурация разрешений (68 строк)
-2. **`.cursor/mcp-approvals.json`** - одобрение MCP серверов (21 строка)
+1. **`cursor.permissions.config_file`** (по умолчанию: `.cursor/cli-config.json`) - конфигурация разрешений (68 строк)
+2. **`cursor.permissions.mcp_approvals_file`** (по умолчанию: `.cursor/mcp-approvals.json`) - одобрение MCP серверов (21 строка)
 3. **`.cursor/README.md`** - описание конфигурации (120 строк)
 4. **`docs/integration/full_access_setup.md`** - основная документация (450+ строк)
 5. **`docs/integration/QUICK_START_FULL_ACCESS.md`** - быстрый старт (150+ строк)
@@ -60,7 +60,7 @@ docker exec -i cursor-agent-life bash -c \
 ## 🔒 Безопасность
 
 ### ✅ Разрешено
-- Операции в `src/`, `docs/`, `test/`, `config/`
+- Операции в директориях из `cursor.permissions.allow_read` и `cursor.permissions.allow_write` (по умолчанию: `src/`, `docs/`, `test/`, `config/`)
 - Git, npm, python, pytest, docker
 - Чтение/запись проектных файлов
 
@@ -83,8 +83,8 @@ docker exec -i cursor-agent-life bash -c \
 ### Конфигурация
 
 - **[README .cursor](.cursor/README.md)** - описание конфигурационных файлов
-- **[cli-config.json](.cursor/cli-config.json)** - разрешения
-- **[mcp-approvals.json](.cursor/mcp-approvals.json)** - одобрение MCP
+- **`cursor.permissions.config_file`** (по умолчанию: `.cursor/cli-config.json`) - разрешения
+- **`cursor.permissions.mcp_approvals_file`** (по умолчанию: `.cursor/mcp-approvals.json`) - одобрение MCP
 
 ---
 
@@ -92,11 +92,11 @@ docker exec -i cursor-agent-life bash -c \
 
 ```bash
 # Проверить конфигурацию
-cat .cursor/cli-config.json
-cat .cursor/mcp-approvals.json
+cat ${cursor.permissions.config_file}  # по умолчанию: .cursor/cli-config.json
+cat ${cursor.permissions.mcp_approvals_file}  # по умолчанию: .cursor/mcp-approvals.json
 
 # Проверить логи
-tail -f logs/code_agent.log
+tail -f ${logging.file}  # по умолчанию: logs/code_agent.log
 
 # Проверить версию
 agent --version
@@ -113,13 +113,13 @@ pytest test/test_full_access_permissions.py -v
 
 1. Проверьте файлы:
    ```bash
-   ls .cursor/cli-config.json
-   ls .cursor/mcp-approvals.json
+   ls ${cursor.permissions.config_file}  # по умолчанию: .cursor/cli-config.json
+   ls ${cursor.permissions.mcp_approvals_file}  # по умолчанию: .cursor/mcp-approvals.json
    ```
 
 2. Проверьте логи:
    ```bash
-   tail -f logs/code_agent.log
+   tail -f ${logging.file}  # по умолчанию: logs/code_agent.log
    ```
 
 3. Проверьте версию:
@@ -131,7 +131,7 @@ pytest test/test_full_access_permissions.py -v
 
 1. Проверьте одобрение:
    ```bash
-   cat .cursor/mcp-approvals.json
+   cat ${cursor.permissions.mcp_approvals_file}  # по умолчанию: .cursor/mcp-approvals.json
    ```
 
 2. Вручную одобрите:
@@ -161,6 +161,27 @@ python -m src.server
 ```
 
 🎉 **Успешной работы!** 🎉
+
+---
+
+## 🔧 Конфигурационные настройки
+
+Все пути в интеграции полного доступа настраиваются через `config/config.yaml`:
+
+### Пути к файлам
+- **Файл разрешений CLI:** `cursor.permissions.config_file` → `.cursor/cli-config.json`
+- **Файл одобрения MCP:** `cursor.permissions.mcp_approvals_file` → `.cursor/mcp-approvals.json`
+- **Файл логов:** `logging.file` → `logs/code_agent.log`
+
+### Разрешенные директории
+- **Чтение файлов:** `cursor.permissions.allow_read` → `["src/**", "docs/**", "test/**", "config/**"]`
+- **Запись файлов:** `cursor.permissions.allow_write` → `["src/**", "docs/**", "test/**", "config/**"]`
+
+### Изменение настроек
+```bash
+# Отредактируйте config/config.yaml для изменения путей
+nano config/config.yaml
+```
 
 ---
 
