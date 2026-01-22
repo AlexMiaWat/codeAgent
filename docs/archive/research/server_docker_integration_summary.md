@@ -40,7 +40,7 @@ CodeAgentServer.run_iteration()
         → cli.execute_instruction(instruction, task_id, working_dir)
           → cli.execute(prompt, working_dir)
             → _ensure_docker_container_running()  # Проверка/запуск контейнера
-            → docker exec -i cursor-agent-life bash -c '/root/.local/bin/agent -p "instruction"'
+            → docker exec -i cursor-agent bash -c '/root/.local/bin/agent -p "instruction"'
 ```
 
 **Что происходит:**
@@ -70,8 +70,8 @@ cursor:
 ```yaml
 services:
   agent:
-    container_name: cursor-agent-life
-    working_dir: /workspace  # Целевой проект (D:\Space\life)
+    container_name: cursor-agent
+    working_dir: /workspace  # Целевой проект (D:\Space\your-project)
     command: ["sleep", "infinity"]
     restart: unless-stopped
 ```
@@ -96,7 +96,7 @@ services:
 
 **Решение:**
 - Увеличить таймаут: `timeout: 600` (10 минут)
-- Проверить логи контейнера: `docker logs cursor-agent-life`
+- Проверить логи контейнера: `docker logs cursor-agent`
 - Протестировать `agent -p` напрямую в контейнере
 
 ## 📊 Структура интеграции
@@ -110,7 +110,7 @@ CodeAgentServer
 │   └── cli.execute_instruction()
 │       └── cli.execute()
 │           ├── _ensure_docker_container_running()  # Проверка контейнера
-│           └── docker exec -i cursor-agent-life bash -c 'agent -p "..."'
+│           └── docker exec -i cursor-agent bash -c 'agent -p "..."'
 │
 └── _execute_task_via_cursor()      # Выполнение задачи через Cursor
     ├── _format_instruction()       # Формирование инструкции
@@ -137,10 +137,10 @@ python test_server_execution.py
 docker compose -f docker/docker-compose.agent.yml ps
 
 # Логи контейнера
-docker logs cursor-agent-life -f
+docker logs cursor-agent -f
 
 # Выполнение команды напрямую
-docker exec -i cursor-agent-life bash -c '/root/.local/bin/agent -p "instruction"'
+docker exec -i cursor-agent bash -c '/root/.local/bin/agent -p "instruction"'
 ```
 
 ## ✅ Итог

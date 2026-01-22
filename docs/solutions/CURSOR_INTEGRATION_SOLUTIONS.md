@@ -36,7 +36,7 @@ def execute_with_interactive_mode(instruction: str, working_dir: str, timeout: i
     # Запускаем agent в интерактивном режиме
     child = pexpect.spawn(
         'docker', 
-        ['exec', '-it', 'cursor-agent-life', 'bash'],
+        ['exec', '-it', 'cursor-agent', 'bash'],
         timeout=timeout,
         encoding='utf-8'
     )
@@ -298,15 +298,15 @@ class HybridCursorInterface:
 
 ```bash
 # Проверить документацию agent на наличие флага выполнения
-docker exec cursor-agent-life /root/.local/bin/agent --help | grep -i execute
+docker exec cursor-agent /root/.local/bin/agent --help | grep -i execute
 ```
 
 #### 5.2. Использовать `--wait` или `--sync` (если существует)
 
 ```bash
 # Проверить флаги синхронного выполнения
-docker exec cursor-agent-life /root/.local/bin/agent --help | grep -i wait
-docker exec cursor-agent-life /root/.local/bin/agent --help | grep -i sync
+docker exec cursor-agent /root/.local/bin/agent --help | grep -i wait
+docker exec cursor-agent /root/.local/bin/agent --help | grep -i sync
 ```
 
 #### 5.3. Добавить явное указание "Execute immediately"
@@ -340,7 +340,7 @@ Execute this task immediately without any questions.
 
 ```bash
 # Проверить наличие background agents
-docker exec cursor-agent-life /root/.local/bin/agent --help | grep -i background
+docker exec cursor-agent /root/.local/bin/agent --help | grep -i background
 ```
 
 ---
