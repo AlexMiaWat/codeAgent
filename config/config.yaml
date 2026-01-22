@@ -177,10 +177,8 @@ cursor:
     force_mode: true
     # Автоматическое одобрение MCP серверов/инструментов
     approve_mcps: true
-    # Имя Docker контейнера для Cursor CLI (для обычных задач)
+    # Имя Docker контейнера для Cursor CLI
     container_name: "cursor-agent"
-    # Имя Docker контейнера для постоянного использования (life-контейнер)
-    container_name_life: "cursor-agent-life"
 
   # Настройки разрешений для полного доступа
   permissions:

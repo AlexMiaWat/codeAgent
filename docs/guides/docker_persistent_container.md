@@ -9,14 +9,14 @@
 
 **Изменения:**
 - Убран `entrypoint` для возможности выполнения команд через `exec`
-- Добавлен `container_name: cursor-agent-life` для удобного доступа
+- Добавлен `container_name: cursor-agent` для удобного доступа
 - Команда: `sleep infinity` для постоянной работы контейнера
 - Добавлен `restart: unless-stopped` для автоматического перезапуска
 
 ```yaml
 services:
   agent:
-    container_name: cursor-agent-life
+    container_name: cursor-agent
     command: ["sleep", "infinity"]
     restart: unless-stopped
 ```
@@ -31,7 +31,7 @@ services:
 **Изменен метод `execute()` для Docker:**
 - Использует `docker exec` вместо `docker compose run --rm`
 - Выполняет команды в запущенном контейнере
-- Команда: `docker exec -i cursor-agent-life /root/.local/bin/agent -p "prompt"`
+- Команда: `docker exec -i cursor-agent /root/.local/bin/agent -p "prompt"`
 
 ### 3. Поддержка специального маркера ✅
 
@@ -74,7 +74,7 @@ docker compose -f docker/docker-compose.agent.yml logs -f
 
 ```bash
 # Через docker exec
-docker exec -i cursor-agent-life /root/.local/bin/agent -p "instruction"
+docker exec -i cursor-agent /root/.local/bin/agent -p "instruction"
 
 # Через docker compose exec (альтернатива)
 docker compose -f docker/docker-compose.agent.yml exec agent /root/.local/bin/agent -p "instruction"
@@ -91,7 +91,7 @@ docker compose -f docker/docker-compose.agent.yml exec agent /root/.local/bin/ag
 
 ```
 docker/docker-compose.agent.yml
-├── container_name: cursor-agent-life
+├── container_name: cursor-agent
 ├── command: sleep infinity
 ├── restart: unless-stopped
 └── volumes:

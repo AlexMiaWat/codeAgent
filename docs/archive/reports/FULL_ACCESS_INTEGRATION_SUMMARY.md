@@ -51,7 +51,7 @@ pytest test/test_full_access_permissions.py -v
 agent -p "Создай файл test.txt" --force --approve-mcps
 
 # Тестовая команда (Docker)
-docker exec -i ${cursor.cli.container_name_life} bash -c \
+docker exec -i ${cursor.cli.container_name} bash -c \
   'printf "%s\n" "Создай файл test.txt" | agent -p --force --approve-mcps'
 ```
 
@@ -174,8 +174,7 @@ python -m src.server
 - **Файл логов:** `logging.file` → `logs/code_agent.log`
 
 ### Docker контейнеры
-- **Обычный контейнер:** `cursor.cli.container_name` → `cursor-agent`
-- **Life-контейнер (постоянный):** `cursor.cli.container_name_life` → `cursor-agent-life`
+- **Имя контейнера:** `cursor.cli.container_name` → `cursor-agent`
 
 ### Разрешенные директории
 - **Чтение файлов:** `cursor.permissions.allow_read` → `["src/**", "docs/**", "test/**", "config/**"]`
