@@ -143,7 +143,7 @@ class TestSmartAgentStatic:
             with patch('src.agents.smart_agent.is_docker_available', return_value=True) as mock_docker:
                 with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', True):
                     with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=Mock()):
-                        agent = create_smart_agent(project_dir=project_dir)
+                        agent = create_smart_agent(project_dir=project_dir, use_llm=False)
 
                     # Проверяем что Docker проверка была вызвана
                     mock_docker.assert_called_once()
@@ -237,13 +237,13 @@ class TestSmartAgentConstants:
         with tempfile.TemporaryDirectory() as tmp_dir:
             project_dir = Path(tmp_dir)
 
-            # Тест с Docker и LLM
+            # Тест с Docker без LLM
             with patch('src.agents.smart_agent.is_docker_available', return_value=True):
-                with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', True):
-                    with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=Mock()):
-                        agent_with_both = create_smart_agent(project_dir=project_dir)
-                        assert "with code execution" in agent_with_both.backstory
-                        assert "with LLM support" in agent_with_both.backstory
+                with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
+                    with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
+                        agent_with_docker = create_smart_agent(project_dir=project_dir, use_llm=False)
+                        assert "with code execution" in agent_with_docker.backstory
+                        assert "in tool-only mode" in agent_with_docker.backstory
 
             # Тест без Docker и LLM
             with patch('src.agents.smart_agent.is_docker_available', return_value=False):

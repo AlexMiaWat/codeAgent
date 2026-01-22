@@ -14,12 +14,9 @@ class TestSmartAgentStatic:
 
     def test_create_smart_agent_function_exists(self):
         """Проверка существования функции create_smart_agent"""
-        try:
-            from src.agents.smart_agent import create_smart_agent
-            assert create_smart_agent is not None
-            assert callable(create_smart_agent)
-        except ImportError as e:
-            pytest.fail(f"Не удалось импортировать create_smart_agent: {e}")
+        from src.agents.smart_agent import create_smart_agent
+        assert create_smart_agent is not None
+        assert callable(create_smart_agent)
 
     def test_create_smart_agent_signature(self):
         """Проверка сигнатуры функции create_smart_agent"""

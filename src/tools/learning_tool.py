@@ -6,6 +6,7 @@ import os
 import json
 import logging
 import unicodedata
+import fcntl
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Set
 from datetime import datetime, timedelta
@@ -168,7 +169,10 @@ class LearningTool(BaseTool):
         """Загрузка данных опыта"""
         try:
             with open(self.experience_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                fcntl.flock(f.fileno(), fcntl.LOCK_SH)  # Shared lock for reading
+                data = json.load(f)
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                return data
         except Exception as e:
             logger.error(f"Failed to load experience from {self.experience_file}: {e}", exc_info=True)
             return {"version": "1.0", "tasks": [], "patterns": {}, "statistics": {}}
@@ -177,7 +181,9 @@ class LearningTool(BaseTool):
         """Сохранение данных опыта"""
         try:
             with open(self.experience_file, 'w', encoding='utf-8') as f:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # Exclusive lock for writing
                 json.dump(data, f, indent=2, ensure_ascii=False)
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         except Exception as e:
             logger.error(f"Failed to save experience to {self.experience_file}: {e}", exc_info=True)
 
@@ -506,10 +512,15 @@ class LearningTool(BaseTool):
 
         # Ищем похожие успешные задачи с улучшенной Unicode обработкой
         current_task_normalized = normalize_unicode_text(current_task)
-        successful_similar = [
-            task for task in data["tasks"]
-            if task["success"] and current_task_normalized in normalize_unicode_text(task["description"])
-        ]
+        current_task_words = set(current_task_normalized.split())
+        successful_similar = []
+        for task in data["tasks"]:
+            if task["success"]:
+                description_normalized = normalize_unicode_text(task["description"])
+                description_words = set(description_normalized.split())
+                # Проверяем, что все слова текущей задачи есть в описании похожей задачи
+                if current_task_words.issubset(description_words):
+                    successful_similar.append(task)
 
         if not successful_similar:
             return f"Рекомендации для задачи '{current_task}': Данные о похожих задачах отсутствуют. Рекомендуется следовать стандартным практикам разработки."

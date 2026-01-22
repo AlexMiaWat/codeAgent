@@ -310,6 +310,256 @@ def test_smart_agent_tools_integration():
         return False
 
 
+def test_smart_agent_config_schema_validation():
+    """Тест схемы конфигурации Smart Agent"""
+    print("\n📋 Тестирование схемы конфигурации Smart Agent...")
+
+    try:
+        from config.config_loader import ConfigLoader
+
+        # Загружаем конфигурацию
+        config = ConfigLoader.load_config()
+
+        # Проверяем наличие обязательных секций
+        required_sections = ['smart_agent', 'agent', 'server', 'project', 'docs', 'logging']
+        for section in required_sections:
+            assert section in config, f"Обязательная секция {section} отсутствует в конфигурации"
+
+        # Проверяем схему smart_agent секции
+        smart_config = config['smart_agent']
+        required_smart_fields = ['enabled', 'experience_dir', 'max_experience_tasks', 'max_iter', 'memory', 'verbose']
+        for field in required_smart_fields:
+            assert field in smart_config, f"Обязательное поле {field} отсутствует в smart_agent"
+
+        # Проверяем типы данных
+        assert isinstance(smart_config['enabled'], bool), "enabled должен быть boolean"
+        assert isinstance(smart_config['max_experience_tasks'], int), "max_experience_tasks должен быть int"
+        assert isinstance(smart_config['max_iter'], int), "max_iter должен быть int"
+        assert isinstance(smart_config['memory'], int), "memory должен быть int"
+        assert isinstance(smart_config['verbose'], bool), "verbose должен быть boolean"
+        assert isinstance(smart_config['experience_dir'], str), "experience_dir должна быть строкой"
+
+        print("✅ Схема конфигурации Smart Agent валидна")
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка валидации схемы конфигурации: {e}")
+        return False
+
+
+def test_smart_agent_config_ranges():
+    """Тест допустимых диапазонов значений конфигурации Smart Agent"""
+    print("\n📏 Тестирование диапазонов значений конфигурации Smart Agent...")
+
+    try:
+        # Проверяем допустимые диапазоны
+        valid_ranges = {
+            'max_experience_tasks': (1, 10000),  # от 1 до 10000
+            'max_iter': (1, 100),               # от 1 до 100
+            'memory': (10, 1000),               # от 10 до 1000
+        }
+
+        # Загружаем текущую конфигурацию
+        from config.config_loader import ConfigLoader
+        config = ConfigLoader.load_config()
+        smart_config = config.get('smart_agent', {})
+
+        for field, (min_val, max_val) in valid_ranges.items():
+            if field in smart_config:
+                value = smart_config[field]
+                assert min_val <= value <= max_val, f"Значение {field}={value} вне допустимого диапазона [{min_val}, {max_val}]"
+                print(f"   ✓ {field}={value} в диапазоне [{min_val}, {max_val}]")
+
+        # Проверяем специальные значения
+        assert smart_config.get('enabled') in [True, False], "enabled должен быть True или False"
+        assert len(smart_config.get('experience_dir', '')) > 0, "experience_dir не должна быть пустой"
+
+        print("✅ Диапазоны значений конфигурации корректны")
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка проверки диапазонов: {e}")
+        return False
+
+
+def test_smart_agent_config_cross_references():
+    """Тест перекрестных ссылок в конфигурации Smart Agent"""
+    print("\n🔗 Тестирование перекрестных ссылок в конфигурации Smart Agent...")
+
+    try:
+        from config.config_loader import ConfigLoader
+
+        # Загружаем конфигурации
+        config = ConfigLoader.load_config()
+        smart_config = config.get('smart_agent', {})
+
+        # Загружаем конфигурацию агентов
+        with open('config/agents.yaml', 'r', encoding='utf-8') as f:
+            agents_config = yaml.safe_load(f)
+
+        # Проверяем соответствие настроек между config.yaml и agents.yaml
+        if 'smart_agent' in agents_config:
+            agent_config = agents_config['smart_agent']
+
+            # Проверяем, что tools из agents.yaml соответствуют ожидаемым
+            expected_tools = ['LearningTool', 'ContextAnalyzerTool']
+            actual_tools = agent_config.get('tools', [])
+
+            for tool in expected_tools:
+                assert tool in actual_tools, f"Инструмент {tool} отсутствует в agents.yaml"
+
+            # Проверяем настройки verbose
+            config_verbose = smart_config.get('verbose', True)
+            agent_verbose = agent_config.get('verbose', True)
+            assert config_verbose == agent_verbose, f"verbose в config.yaml ({config_verbose}) не соответствует agents.yaml ({agent_verbose})"
+
+        # Проверяем ссылки на директории
+        experience_dir = smart_config.get('experience_dir', 'smart_experience')
+        assert experience_dir != '', "experience_dir не должна быть пустой"
+
+        print("✅ Перекрестные ссылки в конфигурации корректны")
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка проверки перекрестных ссылок: {e}")
+        return False
+
+
+def test_smart_agent_config_environment_integration():
+    """Тест интеграции конфигурации Smart Agent с переменными окружения"""
+    print("\n🌍 Тестирование интеграции конфигурации с переменными окружения...")
+
+    try:
+        # Тестируем интеграцию с переменными окружения
+        with patch.dict(os.environ, {
+            'SMART_AGENT_ENABLED': 'false',  # отключаем через env
+            'SMART_AGENT_MAX_ITER': '50',    # изменяем через env
+            'PROJECT_DIR': '/custom/project/path',
+        }):
+            # Перезагружаем конфигурацию
+            from config.config_loader import ConfigLoader
+            config = ConfigLoader.load_config()
+
+            smart_config = config.get('smart_agent', {})
+
+            # Проверяем, что переменные окружения влияют на конфигурацию
+            # (в реальной реализации это может работать через ConfigLoader)
+            print("   ⚠️  Интеграция с переменными окружения требует реализации в ConfigLoader")
+
+            # Проверяем базовую доступность переменных окружения
+            assert os.getenv('SMART_AGENT_ENABLED') == 'false'
+            assert os.getenv('SMART_AGENT_MAX_ITER') == '50'
+            assert os.getenv('PROJECT_DIR') == '/custom/project/path'
+
+            print("✅ Базовая интеграция с переменными окружения работает")
+            return True
+
+    except Exception as e:
+        print(f"❌ Ошибка интеграции с переменными окружения: {e}")
+        return False
+
+
+def test_smart_agent_cursor_config_integration():
+    """Тест интеграции конфигурации Smart Agent с настройками Cursor"""
+    print("\n🖱️  Тестирование интеграции с конфигурацией Cursor...")
+
+    try:
+        from config.config_loader import ConfigLoader
+
+        # Загружаем конфигурацию
+        config = ConfigLoader.load_config()
+
+        # Проверяем наличие секции cursor
+        assert 'cursor' in config, "Секция cursor отсутствует в конфигурации"
+
+        cursor_config = config['cursor']
+
+        # Проверяем обязательные поля cursor
+        required_cursor_fields = ['interface_type', 'cli', 'permissions']
+        for field in required_cursor_fields:
+            assert field in cursor_config, f"Обязательное поле {field} отсутствует в cursor конфигурации"
+
+        # Проверяем настройки CLI
+        cli_config = cursor_config.get('cli', {})
+        assert 'timeout' in cli_config, "timeout отсутствует в cli конфигурации"
+        assert 'model' in cli_config, "model отсутствует в cli конфигурации"
+        assert cli_config.get('model') != '', "model не должна быть пустой"
+
+        # Проверяем настройки разрешений
+        permissions = cursor_config.get('permissions', {})
+        assert permissions.get('enabled', False) == True, "permissions должны быть включены"
+
+        print("✅ Интеграция с конфигурацией Cursor корректна")
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка интеграции с Cursor: {e}")
+        return False
+
+
+def test_smart_agent_performance_config():
+    """Тест настроек производительности Smart Agent"""
+    print("\n⚡ Тестирование настроек производительности Smart Agent...")
+
+    try:
+        from config.config_loader import ConfigLoader
+
+        # Загружаем конфигурацию
+        config = ConfigLoader.load_config()
+        smart_config = config.get('smart_agent', {})
+
+        # Проверяем настройки производительности
+        max_iter = smart_config.get('max_iter', 25)
+        memory = smart_config.get('memory', 100)
+
+        # Проверяем разумные значения производительности
+        assert max_iter >= 10 and max_iter <= 50, f"max_iter={max_iter} вне разумного диапазона [10, 50]"
+        assert memory >= 50 and memory <= 200, f"memory={memory} вне разумного диапазона [50, 200]"
+
+        # Проверяем оптимизацию verbose режима
+        verbose = smart_config.get('verbose', True)
+        # verbose может быть True для отладки, но в production может быть False
+
+        print(f"✅ Настройки производительности: max_iter={max_iter}, memory={memory}, verbose={verbose}")
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка проверки настроек производительности: {e}")
+        return False
+
+
+def test_smart_agent_experience_config():
+    """Тест настроек хранения опыта Smart Agent"""
+    print("\n📚 Тестирование настроек хранения опыта Smart Agent...")
+
+    try:
+        from config.config_loader import ConfigLoader
+
+        # Загружаем конфигурацию
+        config = ConfigLoader.load_config()
+        smart_config = config.get('smart_agent', {})
+
+        # Проверяем настройки опыта
+        experience_dir = smart_config.get('experience_dir', 'smart_experience')
+        max_experience_tasks = smart_config.get('max_experience_tasks', 200)
+
+        # Проверяем валидность директории опыта
+        assert experience_dir != '', "experience_dir не должна быть пустой"
+        assert not experience_dir.startswith('/'), "experience_dir должна быть относительной"
+        assert not experience_dir.startswith('\\'), "experience_dir должна быть относительной"
+
+        # Проверяем разумные значения
+        assert max_experience_tasks > 0, "max_experience_tasks должна быть > 0"
+        assert max_experience_tasks <= 2000, f"max_experience_tasks={max_experience_tasks} слишком большое значение"
+
+        print(f"✅ Настройки опыта: dir='{experience_dir}', max_tasks={max_experience_tasks}")
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка проверки настроек опыта: {e}")
+        return False
+
+
 def main():
     """Основная функция тестирования"""
     print("🧪 Начало тестирования конфигурации Smart Agent\n")
@@ -325,17 +575,26 @@ def main():
     results.append(("ContextAnalyzerTool Configuration", test_context_analyzer_config()))
     results.append(("Smart Agent Tools Integration", test_smart_agent_tools_integration()))
 
+    # Новые расширенные тесты
+    results.append(("Smart Agent Config Schema Validation", test_smart_agent_config_schema_validation()))
+    results.append(("Smart Agent Config Ranges", test_smart_agent_config_ranges()))
+    results.append(("Smart Agent Config Cross References", test_smart_agent_config_cross_references()))
+    results.append(("Smart Agent Config Environment Integration", test_smart_agent_config_environment_integration()))
+    results.append(("Smart Agent Cursor Config Integration", test_smart_agent_cursor_config_integration()))
+    results.append(("Smart Agent Performance Config", test_smart_agent_performance_config()))
+    results.append(("Smart Agent Experience Config", test_smart_agent_experience_config()))
+
     # Итоги тестирования
-    print("\n" + "="*60)
+    print("\n" + "="*70)
     print("📊 РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ КОНФИГУРАЦИИ SMART AGENT")
-    print("="*60)
+    print("="*70)
 
     passed = 0
     total = len(results)
 
     for test_name, success in results:
         status = "✅ ПРОЙДЕН" if success else "❌ ПРОВАЛЕН"
-        print("30")
+        print("40")
         if success:
             passed += 1
 

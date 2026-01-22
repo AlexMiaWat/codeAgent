@@ -457,7 +457,7 @@ def run_advanced_integration_tests():
 
     for test_name, success in results:
         status = "✅ ПРОЙДЕН" if success else "❌ ПРОВАЛЕН"
-        print("40")
+        print(f"{test_name:<40} {status}")
 
         if success:
             passed += 1

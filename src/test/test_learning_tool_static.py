@@ -45,7 +45,7 @@ class TestLearningToolStatic:
 
         # Проверяем сигнатуру __init__
         init_sig = inspect.signature(LearningTool.__init__)
-        expected_params = ['self', 'experience_dir', 'max_experience_tasks', 'enable_indexing', 'cache_size', 'cache_ttl_seconds', 'kwargs']
+        expected_params = ['self', 'experience_dir', 'max_experience_tasks', 'enable_indexing', 'cache_size', 'cache_ttl_seconds', 'enable_cache_persistence', 'kwargs']
 
         actual_params = list(init_sig.parameters.keys())
         assert actual_params == expected_params

@@ -1,7 +1,7 @@
 # Полное руководство по тестированию Code Agent
 
-**Дата обновления:** 2026-01-22
-**Версия:** 2.2
+**Дата обновления:** 2026-01-23
+**Версия:** 2.3
 
 ---
 
@@ -265,24 +265,38 @@ pytest test/test_smart_agent*.py -v
 # Отдельные категории тестов
 pytest test/test_smart_agent_integration.py -v  # Проверка структуры и взаимодействия компонентов
 pytest test/test_smart_agent_smoke.py -v       # Дымовые тесты базовой функциональности
-pytest src/test/test_smart_agent_static.py -v      # Статические тесты импортов и классов
+pytest test/test_smart_agent_static.py -v      # Статические тесты импортов и классов
 pytest test/test_smart_agent.py -v             # Основные тесты с новыми параметрами производительности
 pytest test/test_smart_agent_simple.py -v      # Простые функциональные тесты
 
+# Расширенные тесты конфигурации (2026-01-23)
+pytest test/test_smart_agent_env_config.py -v     # Тесты переменных окружения Smart Agent
+pytest test/test_smart_experience_storage.py -v   # Тесты хранения и управления опытом
+pytest test/test_smart_agent_performance.py -v    # Тесты производительности и кэширования
+pytest test/test_smart_agent_git_integration.py -v # Тесты Git интеграции и автоматических коммитов
+pytest test/test_smart_agent_monitoring.py -v     # Тесты логирования и мониторинга
+pytest test/test_smart_agent_docker_config.py -v  # Тесты Docker конфигурации
+
 # Новые тесты инструментов (2026-01-22)
-pytest src/test/test_context_analyzer_static.py -v # Статические тесты ContextAnalyzerTool
-pytest src/test/test_learning_tool_static.py -v    # Статические тесты LearningTool
+pytest test/test_context_analyzer_static.py -v # Статические тесты ContextAnalyzerTool
+pytest test/test_learning_tool_static.py -v    # Статические тесты LearningTool
 pytest test/test_tools_integration.py -v       # Интеграционные тесты взаимодействия инструментов
 ```
 
 **Включает:**
 - `test_smart_agent_integration.py` - Проверка структуры классов и методов с новыми параметрами (60s)
 - `test_smart_agent_smoke.py` - Дымовые тесты импортов и создания объектов (30s)
-- `src/test/test_smart_agent_static.py` - Статические тесты импортов и структуры (30s)
+- `test_smart_agent_static.py` - Статические тесты импортов и структуры (30s)
 - `test_smart_agent.py` - Основные тесты Smart Agent с оптимизированными настройками (120s)
 - `test_smart_agent_simple.py` - Простые функциональные тесты (60s)
-- `src/test/test_context_analyzer_static.py` - Тесты Unicode нормализации и поиска (новая возможность)
-- `src/test/test_learning_tool_static.py` - Тесты накопления и использования опыта
+- `test_smart_agent_env_config.py` - Тесты переменных окружения и их приоритетов (45s)
+- `test_smart_experience_storage.py` - Тесты создания директории опыта, сохранения/загрузки задач (60s)
+- `test_smart_agent_performance.py` - Тесты производительности кэширования и памяти (90s)
+- `test_smart_agent_git_integration.py` - Тесты автоматических коммитов и Git интеграции (75s)
+- `test_smart_agent_monitoring.py` - Тесты логирования, ротации логов и метрик (60s)
+- `test_smart_agent_docker_config.py` - Тесты Docker конфигурации и контейнеров (45s)
+- `test_context_analyzer_static.py` - Тесты Unicode нормализации и поиска (новая возможность)
+- `test_learning_tool_static.py` - Тесты накопления и использования опыта
 - `test_tools_integration.py` - Тесты совместной работы инструментов
 
 **Особенности тестирования:**
@@ -293,6 +307,10 @@ pytest test/test_tools_integration.py -v       # Интеграционные т
 - ✅ Проверяется корректность импортов и инициализации
 - ✅ Тестируется новая Unicode поддержка в ContextAnalyzerTool
 - ✅ Проверяется работа с расширенным опытом задач (max_experience_tasks=200)
+- ✅ Тестируется потокобезопасность LearningTool через file locking
+- ✅ Проверяется улучшенный алгоритм поиска похожих задач
+- ✅ Тестируется Git интеграция и автоматические коммиты
+- ✅ Проверяется система логирования и мониторинга производительности
 
 ---
 
@@ -377,7 +395,7 @@ python test/run_tests.py --help
 | LLM Core | `--llm` | Тестирование базовой функциональности LLM | 2 |
 | Validation | `--validation` | Валидация конфигурации и безопасности | 1 |
 | Checkpoint | `--checkpoint` | Тестирование системы checkpoint | 2 |
-| Smart Agent | pytest | ✅ **ОТДЕЛЬНО** - Тестирование Smart Agent с Docker поддержкой | 5 |
+| Smart Agent | pytest | ✅ **ОТДЕЛЬНО** - Тестирование Smart Agent с Docker поддержкой | 14 |
 | Full Cycle | `--full` | Полный цикл работы агента | 2 |
 
 ---
@@ -633,11 +651,19 @@ python test/compare_keys.py
 - ✅ Переработаны Smart Agent тесты (теперь 5 файлов + 3 новых файла инструментов)
 - ✅ Добавлен отдельный раздел для Smart Agent тестов с подробным описанием
 - ✅ Обновлена таблица категорий тестов (8 категорий)
-- ✅ Исправлено количество Smart Agent тестов (8 файлов вместо 5)
+- ✅ Расширено количество Smart Agent тестов (12 файлов: 6 основных + 6 новых специализированных)
 - ✅ Добавлены команды запуска Smart Agent тестов через pytest
 - ✅ Добавлены тесты для новых параметров производительности (max_iter=25, memory=100)
 - ✅ Добавлены тесты Unicode нормализации в ContextAnalyzerTool
 - ✅ Добавлены интеграционные тесты взаимодействия инструментов
+
+**2026-01-23 (Обновление 2.3):**
+- ✅ Добавлены специализированные тесты конфигурации Smart Agent (env_config, docker_config)
+- ✅ Добавлены тесты хранения опыта (experience_storage) с потокобезопасностью
+- ✅ Добавлены тесты производительности и кэширования (performance)
+- ✅ Добавлены тесты Git интеграции и автоматических коммитов (git_integration)
+- ✅ Добавлены тесты мониторинга и логирования (monitoring)
+- ✅ Обновлено общее количество Smart Agent тестов до 12 файлов
 
 **2026-01-22 (Обновление 2.2):**
 - ✅ Добавлена поддержка тестирования оптимизированной конфигурации Smart Agent

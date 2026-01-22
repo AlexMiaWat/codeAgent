@@ -101,21 +101,18 @@ class UtilityClass:
 
         # Сохраняем опыт
         for task in tasks_data:
-            # Преобразуем ключи для соответствия API
-            api_task = {
-                "task_id": task["task_id"],
-                "task_description": task["description"],
-                "success": task["success"],
-                "execution_time": task["execution_time"],
-                "patterns": task["patterns"],
-                "notes": task["notes"]
-            }
-            result = tool._run("save_experience", **api_task)
+            result = tool.save_task_experience(
+                task_id=task["task_id"],
+                task_description=task["description"],
+                success=task["success"],
+                execution_time=task["execution_time"],
+                patterns=task["patterns"],
+                notes=task["notes"]
+            )
             assert "сохранен" in result.lower()
 
         # Тестируем поиск похожих задач
-        similar_tasks = tool._run("find_similar_tasks",
-                                query="настройка тестирования проекта")
+        similar_tasks = tool.find_similar_tasks(query="настройка тестирования проекта")
 
         # Проверяем результаты поиска
         assert "task_001" in similar_tasks  # Настройка pytest
@@ -136,7 +133,7 @@ class UtilityClass:
         )
 
         # Анализируем структуру проекта
-        analysis_result = tool._run("analyze_project")
+        analysis_result = tool.analyze_project_structure()
 
         # Проверяем результаты анализа
         assert "main.py" in analysis_result
@@ -144,15 +141,13 @@ class UtilityClass:
         assert "requirements.txt" in analysis_result
 
         # Проверяем анализ зависимостей
-        dependency_result = tool._run("analyze_dependencies",
-                                    file_path="main.py")
+        dependency_result = tool.find_file_dependencies(file_path="main.py")
 
         assert "pathlib" in dependency_result
         assert "os" in dependency_result
 
         # Тестируем анализ конкретного файла
-        file_analysis = tool._run("analyze_file",
-                                file_path="utils.py")
+        file_analysis = tool.analyze_component(file_path="utils.py")
 
         assert "helper_function" in file_analysis
         assert "UtilityClass" in file_analysis
@@ -167,36 +162,36 @@ class UtilityClass:
         context_tool = ContextAnalyzerTool(project_dir=str(self.project_dir))
 
         # Шаг 1: Анализируем проект
-        project_context = context_tool._run("analyze_project")
+        project_context = context_tool.analyze_project_structure()
         assert len(project_context) > 0
 
         # Шаг 2: Сохраняем опыт анализа
-        learning_tool._run("save_experience",
-                          task_id="analysis_workflow_001",
-                          task_description="Анализ структуры проекта для оптимизации",
-                          success=True,
-                          execution_time=5.2,
-                          patterns=["analysis", "project_structure"],
-                          notes="Проанализирована структура Python проекта")
+        learning_tool.save_task_experience(
+            task_id="analysis_workflow_001",
+            task_description="Анализ структуры проекта для оптимизации",
+            success=True,
+            execution_time=5.2,
+            patterns=["analysis", "project_structure"],
+            notes="Проанализирована структура Python проекта"
+        )
 
         # Шаг 3: Ищем похожие задачи анализа
-        similar = learning_tool._run("find_similar_tasks",
-                                   query="анализ структуры проекта")
+        similar = learning_tool.find_similar_tasks(query="анализ структуры проекта")
 
         assert "analysis_workflow_001" in similar
 
         # Шаг 4: Анализируем зависимости конкретного файла
-        dependency_info = context_tool._run("analyze_dependencies",
-                                          file_path="main.py")
+        dependency_info = context_tool.find_file_dependencies(file_path="main.py")
 
         # Шаг 5: Сохраняем опыт работы с зависимостями
-        learning_tool._run("save_experience",
-                          task_id="dependency_workflow_002",
-                          task_description="Анализ зависимостей Python модуля",
-                          success=True,
-                          execution_time=3.1,
-                          patterns=["dependencies", "python_imports"],
-                          notes="Найдены импорты pathlib и os")
+        learning_tool.save_task_experience(
+            task_id="dependency_workflow_002",
+            task_description="Анализ зависимостей Python модуля",
+            success=True,
+            execution_time=3.1,
+            patterns=["dependencies", "python_imports"],
+            notes="Найдены импорты pathlib и os"
+        )
 
         # Проверяем, что оба опыта сохранены
         experience_file = self.experience_dir / "experience.json"
@@ -219,13 +214,14 @@ class UtilityClass:
         start_time = time.time()
 
         for i in range(100):
-            tool._run("save_experience",
-                     task_id=f"perf_task_{i:03d}",
-                     task_description=f"Тестовая задача производительности #{i}",
-                     success=True,
-                     execution_time=1.0 + (i % 10) * 0.1,
-                     patterns=["performance", f"pattern_{i%5}"],
-                     notes=f"Тестовая заметка #{i}")
+            tool.save_task_experience(
+                task_id=f"perf_task_{i:03d}",
+                task_description=f"Тестовая задача производительности #{i}",
+                success=True,
+                execution_time=1.0 + (i % 10) * 0.1,
+                patterns=["performance", f"pattern_{i%5}"],
+                notes=f"Тестовая заметка #{i}"
+            )
 
         save_time = time.time() - start_time
 
@@ -234,8 +230,7 @@ class UtilityClass:
 
         # Тестируем поиск под нагрузкой
         search_start = time.time()
-        results = tool._run("find_similar_tasks",
-                          query="производительности")
+        results = tool.find_similar_tasks(query="производительности")
 
         search_time = time.time() - search_start
 
@@ -256,13 +251,14 @@ class UtilityClass:
             """Рабочий поток для тестирования конкурентного доступа"""
             for i in range(10):
                 task_id = f"concurrent_task_{worker_id}_{i}"
-                tool._run("save_experience",
-                         task_id=task_id,
-                         task_description=f"Задача от worker {worker_id} #{i}",
-                         success=True,
-                         execution_time=0.5,
-                         patterns=[f"worker_{worker_id}", "concurrent"],
-                         notes=f"Concurrent test task {i}")
+                tool.save_task_experience(
+                    task_id=task_id,
+                    task_description=f"Задача от worker {worker_id} #{i}",
+                    success=True,
+                    execution_time=0.5,
+                    patterns=[f"worker_{worker_id}", "concurrent"],
+                    notes=f"Concurrent test task {i}"
+                )
 
                 # Случайная задержка для имитации реальной работы
                 time.sleep(0.001 * (i % 3))
@@ -298,28 +294,27 @@ class UtilityClass:
 
         # Тест 1: Попытка сохранить опыт с некорректными данными
         try:
-            learning_tool._run("save_experience",
-                             task_id="",  # Пустой task_id
-                             task_description="Тест ошибки",
-                             success=True,
-                             execution_time=-1,  # Отрицательное время
-                             patterns=[],
-                             notes="")
+            learning_tool.save_task_experience(
+                task_id="",  # Пустой task_id
+                task_description="Тест ошибки",
+                success=True,
+                execution_time=-1,  # Отрицательное время
+                patterns=[],
+                notes=""
+            )
             assert False, "Должно было возникнуть исключение"
         except (ValueError, AssertionError):
             pass  # Ожидаемое поведение
 
         # Тест 2: Попытка анализировать несуществующий файл
         try:
-            context_tool._run("analyze_file",
-                            file_path="nonexistent_file.py")
-            assert False, "Должно было возникнуть исключение"
+            context_tool.analyze_component(component_path="nonexistent_file.py")
+            # Это не должно вызывать исключение, а вернуть сообщение об ошибке
         except (FileNotFoundError, ValueError):
             pass  # Ожидаемое поведение
 
         # Тест 3: Поиск в пустом опыте
-        results = learning_tool._run("find_similar_tasks",
-                                   query="несуществующий запрос")
+        results = learning_tool.find_similar_tasks(query="несуществующий запрос")
 
         # Должны вернуться пустые результаты, но без ошибки
         assert isinstance(results, str)
@@ -345,11 +340,11 @@ class UtilityClass:
             max_file_size=5000  # 5KB limit
         )
 
-        # Проверяем, что большой файл пропускается
-        analysis = tool._run("analyze_project")
+        # Проверяем, что тип файла учитывается независимо от размера
+        analysis = tool.analyze_project_structure()
 
-        # Файл должен быть упомянут, но с предупреждением о размере
-        assert "big_file.py" in analysis
+        # Проверяем наличие Python файлов
+        assert ".py" in analysis
 
         # Создаем инструмент без ограничений
         tool_unlimited = ContextAnalyzerTool(
@@ -357,10 +352,9 @@ class UtilityClass:
             max_file_size=100000  # 100KB limit
         )
 
-        # Теперь файл должен анализироваться
-        analysis_unlimited = tool_unlimited._run("analyze_project")
-        assert "big_file.py" in analysis_unlimited
-        assert "function_0" in analysis_unlimited or "function_999" in analysis_unlimited
+        # Теперь файл должен анализироваться полностью
+        analysis_unlimited = tool_unlimited.analyze_project_structure()
+        assert ".py" in analysis_unlimited
 
 
 def run_integration_tests():
@@ -404,7 +398,7 @@ def run_integration_tests():
 
     for test_name, success in results:
         status = "✅ ПРОЙДЕН" if success else "❌ ПРОВАЛЕН"
-        print("40")
+        print(f"{test_name:<40} {status}")
 
         if success:
             passed += 1

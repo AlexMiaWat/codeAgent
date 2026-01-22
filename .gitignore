@@ -236,6 +236,7 @@ test_*_experience_*/
 # Test results in docs
 docs/results/test_*.md
 docs/results/test_full_task_*.md
+docs/results/test_full_task_1769119092.md
 docs/results/*_test_*.md
 docs/results/*_results*.md
 docs/results/free_instruction_*.md
