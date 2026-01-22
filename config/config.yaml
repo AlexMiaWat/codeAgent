@@ -46,7 +46,6 @@ agent:
   
   # Используемые инструменты
   tools:
-    - CodeInterpreterTool
     - FileReadTool
     - FileWriteTool
   
@@ -791,15 +790,23 @@ testing:
 # ВАЖНО: Для автоматической отправки коммитов требуется настройка аутентификации
 # См. документацию: docs/guides/GIT_AUTHENTICATION_SETUP.md
 git:
-  auto_commit: false  # Автоматические коммиты (рекомендуется false)
+  auto_commit: true  # Автоматические коммиты включены для совместимости
   commit_message_template: |
     feat: {task_name} (задача {task_id})
-    
+
     {task_description}
-    
+
     Выполнено через Code Agent
   branch: main
   remote: origin
+
+  # Настройки автоматического push для разных веток
+  smart_git:
+    # Ветка smart - специальная ветка для автоматических коммитов
+    enabled: true
+    allowed_branches: ["smart"]  # Только ветка smart разрешена для авто-push
+    auto_push_timeout: 60        # Таймаут push в секундах
+    remote: origin               # Remote для push
 
 # В config/config.yaml добавить:
 mcp_servers:

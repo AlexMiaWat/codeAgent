@@ -25,7 +25,21 @@ except ImportError:
 
 class ConfigLoader:
     """Загрузчик конфигурации из YAML и переменных окружения"""
-    
+
+    @staticmethod
+    def load_config(config_path: str = "config/config.yaml") -> Dict[str, Any]:
+        """
+        Статический метод загрузки конфигурации
+
+        Args:
+            config_path: Путь к файлу конфигурации
+
+        Returns:
+            Словарь с конфигурацией
+        """
+        loader = ConfigLoader(config_path)
+        return loader.config
+
     def __init__(self, config_path: str = "config/config.yaml", allowed_base_dirs: Optional[List[Path]] = None):
         """
         Инициализация загрузчика конфигурации

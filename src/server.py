@@ -2953,26 +2953,38 @@ class CodeAgentServer:
                 if control_phrase and control_phrase.strip() == "Коммит выполнен!":
                     logger.info(f"Инструкция {instruction_num} с коммитом выполнена успешно - выполняем автоматический push из сервера")
                     task_logger.log_info("Автоматический push после успешного коммита")
-                    
+
                     try:
+                        # Получаем настройки smart_git из конфигурации
+                        git_config = self.config.get('git', {})
+                        smart_git_config = git_config.get('smart_git', {})
+                        allowed_branches = smart_git_config.get('allowed_branches', ['smart'])
+                        push_timeout = smart_git_config.get('auto_push_timeout', 60)
+
                         push_result = auto_push_after_commit(
                             working_dir=Path(self.project_dir),
                             remote="origin",
-                            timeout=60
+                            timeout=push_timeout,
+                            allowed_branches=allowed_branches
                         )
                         
                         if push_result.get("success"):
                             logger.info(f"✅ Автоматический push выполнен успешно: {push_result.get('branch')} -> origin/{push_result.get('branch')}")
                             task_logger.log_info(f"Push выполнен: {push_result.get('branch')}")
-                            
+
                             commit_info = push_result.get("commit_info")
                             if commit_info:
                                 logger.info(f"Коммит: {commit_info.get('hash_short')} - {commit_info.get('message')}")
+                        elif not push_result.get("push_allowed", True):
+                            # Push не разрешен для данной ветки - это не ошибка
+                            branch = push_result.get('branch', 'неизвестная')
+                            logger.info(f"ℹ️ Автоматический push пропущен: ветка '{branch}' не разрешена для авто-push")
+                            task_logger.log_info(f"Push пропущен: ветка '{branch}' не в списке разрешенных")
                         else:
                             error_msg = push_result.get("error", "Неизвестная ошибка")
                             logger.warning(f"⚠️ Автоматический push не удался: {error_msg}")
                             task_logger.log_warning(f"Push не удался: {error_msg}")
-                            
+
                             # Push не удался, но это не критично - коммит уже создан
                             # Логируем предупреждение, но не прерываем выполнение задачи
                     except Exception as e:
@@ -3183,14 +3195,25 @@ class CodeAgentServer:
                         if control_phrase and control_phrase.strip() == "Коммит выполнен!":
                             logger.info("Ревизия: коммит выполнен - выполняем автоматический push из сервера")
                             try:
+                                # Получаем настройки smart_git из конфигурации
+                                git_config = self.config.get('git', {})
+                                smart_git_config = git_config.get('smart_git', {})
+                                allowed_branches = smart_git_config.get('allowed_branches', ['smart'])
+                                push_timeout = smart_git_config.get('auto_push_timeout', 60)
+
                                 push_result = auto_push_after_commit(
                                     working_dir=Path(self.project_dir),
                                     remote="origin",
-                                    timeout=60
+                                    timeout=push_timeout,
+                                    allowed_branches=allowed_branches
                                 )
                                 
                                 if push_result.get("success"):
                                     logger.info(f"✅ Автоматический push выполнен успешно: {push_result.get('branch')} -> origin/{push_result.get('branch')}")
+                                elif not push_result.get("push_allowed", True):
+                                    # Push не разрешен для данной ветки - это не ошибка
+                                    branch = push_result.get('branch', 'неизвестная')
+                                    logger.info(f"ℹ️ Автоматический push пропущен: ветка '{branch}' не разрешена для авто-push")
                                 else:
                                     error_msg = push_result.get("error", "Неизвестная ошибка")
                                     logger.warning(f"⚠️ Автоматический push не удался: {error_msg}")

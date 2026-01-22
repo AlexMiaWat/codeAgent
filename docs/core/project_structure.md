@@ -32,6 +32,7 @@ codeAgent/
 │   ├── config_loader.py     # Загрузчик конфигурации
 │   ├── status_manager.py    # Управление статусами проекта
 │   ├── todo_manager.py      # Управление todo-листом
+│   ├── git_utils.py         # Утилиты для работы с Git
 │   ├── checkpoint_manager.py # Система контрольных точек
 │   ├── task_logger.py       # Система логирования
 │   ├── agents/              # Определения агентов CrewAI
@@ -40,8 +41,13 @@ codeAgent/
 │   ├── llm/                 # Интеграция с LLM
 │   │   ├── llm_manager.py
 │   │   └── model_discovery.py
-│   └── tools/               # Пользовательские инструменты
-│       └── __init__.py
+│   ├── tools/               # Пользовательские инструменты
+│   │   └── __init__.py
+│   └── test/                # Статические тесты компонентов
+│       ├── __init__.py
+│       ├── test_context_analyzer_static.py
+│       ├── test_learning_tool_static.py
+│       └── test_smart_agent_static.py
 ├── test/                    # Тесты
 │   ├── test_*.py            # Основные тесты
 │   ├── integration/         # Интеграционные тесты
@@ -128,6 +134,12 @@ codeAgent/
   - Управление иерархией задач
   - Отметка выполненных задач
 
+- **git_utils.py** - Утилиты для работы с Git:
+  - Выполнение git команд с таймаутом
+  - Получение информации о коммитах и ветках
+  - Автоматический push после коммитов
+  - Контроль разрешений веток для авто-push
+
 #### agents/
 
 Определения агентов CrewAI:
@@ -140,6 +152,14 @@ codeAgent/
 #### tools/
 
 Пользовательские инструменты для агентов (для расширения функциональности)
+
+#### test/
+
+Статические тесты компонентов (в src/ для быстрого доступа):
+
+- **test_context_analyzer_static.py** - Тесты анализатора контекста
+- **test_learning_tool_static.py** - Тесты инструмента обучения
+- **test_smart_agent_static.py** - Тесты Smart Agent
 
 ### test/
 

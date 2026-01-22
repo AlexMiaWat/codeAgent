@@ -85,7 +85,7 @@ def create_smart_agent(
     try:
         # LearningTool для обучения на предыдущих задачах
         learning_tool = LearningTool(
-            experience_dir=experience_dir,
+            experience_dir=str(project_dir / experience_dir),
             max_experience_tasks=max_experience_tasks
         )
         tools.append(learning_tool)

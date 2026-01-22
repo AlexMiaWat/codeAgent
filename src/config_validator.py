@@ -40,7 +40,29 @@ class ConfigValidationError(Exception):
 
 class ConfigValidator:
     """Валидатор конфигурации Code Agent"""
-    
+
+    @staticmethod
+    def load_and_validate(config_path: str = "config/config.yaml") -> Dict[str, Any]:
+        """
+        Загрузка и валидация конфигурации
+
+        Args:
+            config_path: Путь к файлу конфигурации
+
+        Returns:
+            Валидированная конфигурация
+
+        Raises:
+            ConfigValidationError: Если конфигурация невалидна
+        """
+        # Импорт здесь, чтобы избежать циклических импортов
+        from .config_loader import ConfigLoader
+
+        config = ConfigLoader.load_config(config_path)
+        validator = ConfigValidator(config)
+        validator.validate()
+        return config
+
     # Обязательные секции
     REQUIRED_SECTIONS = ['project', 'agent', 'server']
     

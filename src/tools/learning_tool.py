@@ -7,8 +7,10 @@ import json
 import logging
 import unicodedata
 from pathlib import Path
-from typing import Dict, List, Any, Optional
-from datetime import datetime
+from typing import Dict, List, Any, Optional, Set
+from datetime import datetime, timedelta
+from functools import lru_cache
+import hashlib
 from crewai.tools.base_tool import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -24,6 +26,8 @@ def normalize_unicode_text(text: str) -> str:
     Returns:
         Нормализованный текст
     """
+    if text is None:
+        return ""
     if not text:
         return text
 
@@ -58,27 +62,47 @@ class LearningTool(BaseTool):
     max_experience_tasks: int = 1000
     experience_file: str = "experience.json"  # Будет переопределен в __init__
 
-    def __init__(self, experience_dir: str = "smart_experience", max_experience_tasks: int = 1000, **kwargs):
+    # Настройки индексации и кеширования
+    enable_indexing: bool = True
+    cache_size: int = 1000
+    cache_ttl_seconds: int = 3600  # 1 час
+
+    def __init__(self, experience_dir: str = "smart_experience", max_experience_tasks: int = 1000,
+                 enable_indexing: bool = True, cache_size: int = 1000, cache_ttl_seconds: int = 3600, **kwargs):
         """
         Инициализация LearningTool
 
         Args:
             experience_dir: Директория для хранения опыта
             max_experience_tasks: Максимальное количество задач в опыте
+            enable_indexing: Включить индексацию для быстрого поиска
+            cache_size: Максимальный размер кэша
+            cache_ttl_seconds: Время жизни кэша в секундах
         """
         super().__init__(**kwargs)
         self.experience_dir = Path(experience_dir)
         self.max_experience_tasks = max_experience_tasks
+        self.enable_indexing = enable_indexing
+        self.cache_size = cache_size
+        self.cache_ttl_seconds = cache_ttl_seconds
         self.experience_file = self.experience_dir / "experience.json"
 
         # Создаем директорию опыта если не существует
         self.experience_dir.mkdir(parents=True, exist_ok=True)
 
+        # Инициализируем структуры индексации и кеширования
+        self._search_index: Dict[str, Set[str]] = {}
+        self._cache_timestamps: Dict[str, datetime] = {}
+        self._pattern_index: Dict[str, List[str]] = {}
+
         # Инициализируем файл опыта если не существует
         if not self.experience_file.exists():
             self._init_experience_file()
+        else:
+            # Загружаем существующий опыт и строим индексы
+            self._load_and_index_experience()
 
-    def _init_experience_file(self):
+    def _init_experience_file(self) -> None:
         """Инициализация файла опыта"""
         initial_data = {
             "version": "1.0",
@@ -95,13 +119,43 @@ class LearningTool(BaseTool):
         with open(self.experience_file, 'w', encoding='utf-8') as f:
             json.dump(initial_data, f, indent=2, ensure_ascii=False)
 
+    def _load_and_index_experience(self) -> None:
+        """Загрузка опыта и построение индексов для быстрого поиска"""
+        data = self._load_experience()
+        tasks = data.get("tasks", [])
+
+        if self.enable_indexing:
+            # Строим индекс для поиска по словам
+            self._search_index = {}
+            self._pattern_index = {}
+
+            for task in tasks:
+                task_id = task.get("task_id", "")
+                description = normalize_unicode_text(task.get("description", ""))
+                patterns = task.get("patterns", [])
+
+                # Индексируем слова из описания
+                words = set(description.split())
+                for word in words:
+                    if word not in self._search_index:
+                        self._search_index[word] = set()
+                    self._search_index[word].add(task_id)
+
+                # Индексируем паттерны
+                for pattern in patterns:
+                    if pattern not in self._pattern_index:
+                        self._pattern_index[pattern] = []
+                    self._pattern_index[pattern].append(task_id)
+
+            logger.debug(f"Built search index with {len(self._search_index)} words and {len(self._pattern_index)} patterns")
+
     def _load_experience(self) -> Dict[str, Any]:
         """Загрузка данных опыта"""
         try:
             with open(self.experience_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
-            logger.error(f"Failed to load experience: {e}")
+            logger.error(f"Failed to load experience from {self.experience_file}: {e}", exc_info=True)
             return {"version": "1.0", "tasks": [], "patterns": {}, "statistics": {}}
 
     def _save_experience(self, data: Dict[str, Any]):
@@ -110,7 +164,7 @@ class LearningTool(BaseTool):
             with open(self.experience_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"Failed to save experience: {e}")
+            logger.error(f"Failed to save experience to {self.experience_file}: {e}", exc_info=True)
 
     def _run(self, action: str, **kwargs) -> str:
         """
@@ -136,8 +190,8 @@ class LearningTool(BaseTool):
                 return f"Unknown action: {action}"
 
         except Exception as e:
-            logger.error(f"Error in LearningTool._run: {e}")
-            return f"Error: {str(e)}"
+            logger.error(f"Error in LearningTool._run with action '{action}': {e}", exc_info=True)
+            return f"Error executing action '{action}': {str(e)}"
 
     def save_task_experience(self, task_id: str, task_description: str,
                            success: bool, execution_time: Optional[float] = None,
@@ -156,6 +210,27 @@ class LearningTool(BaseTool):
         Returns:
             Сообщение о сохранении
         """
+        # Валидация входных параметров
+        if not task_id or not isinstance(task_id, str):
+            raise ValueError("task_id must be a non-empty string")
+
+        if not task_description or not isinstance(task_description, str):
+            raise ValueError("task_description must be a non-empty string")
+
+        if not isinstance(success, bool):
+            raise ValueError("success must be a boolean")
+
+        if execution_time is not None and (not isinstance(execution_time, (int, float)) or execution_time < 0):
+            raise ValueError("execution_time must be a non-negative number or None")
+
+        if patterns is not None and not isinstance(patterns, list):
+            raise ValueError("patterns must be a list or None")
+
+        if patterns is not None:
+            for pattern in patterns:
+                if not isinstance(pattern, str):
+                    raise ValueError("all patterns must be strings")
+
         data = self._load_experience()
 
         # Создаем запись о задаче
@@ -195,7 +270,97 @@ class LearningTool(BaseTool):
 
         self._save_experience(data)
 
+        # Обновляем индексы после сохранения
+        if self.enable_indexing:
+            self._update_indexes(task_record)
+
+        # Очищаем кэш, так как данные изменились
+        self._find_similar_tasks_cached.cache_clear()
+        self._invalidate_expired_cache()
+
         return f"Опыт задачи '{task_description}' сохранен. Статус: {'успешно' if success else 'неудачно'}"
+
+    def _update_indexes(self, task_record: Dict[str, Any]) -> None:
+        """Обновление индексов при добавлении новой задачи"""
+        if not self.enable_indexing:
+            return
+
+        task_id = task_record.get("task_id", "")
+        description = normalize_unicode_text(task_record.get("description", ""))
+        patterns = task_record.get("patterns", [])
+
+        # Обновляем поисковый индекс
+        words = set(description.split())
+        for word in words:
+            if word not in self._search_index:
+                self._search_index[word] = set()
+            self._search_index[word].add(task_id)
+
+        # Обновляем индекс паттернов
+        for pattern in patterns:
+            if pattern not in self._pattern_index:
+                self._pattern_index[pattern] = []
+            if task_id not in self._pattern_index[pattern]:
+                self._pattern_index[pattern].append(task_id)
+
+    def _get_cache_key(self, method: str, *args, **kwargs) -> str:
+        """Генерация ключа кэша для метода"""
+        key_data = f"{method}:{args}:{sorted(kwargs.items())}"
+        return hashlib.md5(key_data.encode()).hexdigest()
+
+    def _is_cache_valid(self, cache_key: str) -> bool:
+        """Проверка валидности кэша"""
+        if cache_key not in self._cache_timestamps:
+            return False
+        cache_time = self._cache_timestamps[cache_key]
+        return datetime.now() - cache_time < timedelta(seconds=self.cache_ttl_seconds)
+
+    def _invalidate_expired_cache(self) -> None:
+        """Удаление просроченного кэша"""
+        current_time = datetime.now()
+        expired_keys = [
+            key for key, timestamp in self._cache_timestamps.items()
+            if current_time - timestamp >= timedelta(seconds=self.cache_ttl_seconds)
+        ]
+        for key in expired_keys:
+            self._cache_timestamps.pop(key, None)
+
+    @lru_cache(maxsize=100)
+    def _find_similar_tasks_cached(self, query_hash: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """Кешированная версия поиска похожих задач"""
+        return self._find_similar_tasks_uncached(query_hash, limit)
+
+    def _find_similar_tasks_uncached(self, query_normalized: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """Не кешированная версия поиска похожих задач"""
+        data = self._load_experience()
+
+        if self.enable_indexing and self._search_index:
+            # Используем индекс для быстрого поиска
+            query_words = set(query_normalized.split())
+            candidate_task_ids = set()
+
+            # Находим все задачи, содержащие хотя бы одно слово из запроса
+            for word in query_words:
+                if word in self._search_index:
+                    candidate_task_ids.update(self._search_index[word])
+
+            # Фильтруем задачи по точному совпадению запроса
+            similar_tasks = []
+            for task in data["tasks"]:
+                if task.get("task_id") in candidate_task_ids:
+                    description_normalized = normalize_unicode_text(task["description"])
+                    if query_normalized in description_normalized:
+                        similar_tasks.append(task)
+        else:
+            # Fallback для случаев без индексации
+            similar_tasks = []
+            for task in data["tasks"]:
+                description_normalized = normalize_unicode_text(task["description"])
+                if query_normalized in description_normalized:
+                    similar_tasks.append(task)
+
+        # Ограничиваем количество результатов
+        return similar_tasks[-limit:]
 
     def find_similar_tasks(self, query: str, limit: int = 5) -> str:
         """
@@ -208,17 +373,18 @@ class LearningTool(BaseTool):
         Returns:
             Список похожих задач
         """
-        data = self._load_experience()
         query_normalized = normalize_unicode_text(query)
+        query_hash = hashlib.md5(query_normalized.encode()).hexdigest()
 
-        similar_tasks = []
-        for task in data["tasks"]:
-            description_normalized = normalize_unicode_text(task["description"])
-            if query_normalized in description_normalized:
-                similar_tasks.append(task)
-
-        # Ограничиваем количество результатов
-        similar_tasks = similar_tasks[-limit:]
+        # Проверяем кэш
+        cache_key = self._get_cache_key("find_similar_tasks", query_hash, limit)
+        if self._is_cache_valid(cache_key):
+            similar_tasks = self._find_similar_tasks_cached(query_hash, limit)
+        else:
+            # Очищаем просроченный кэш
+            self._invalidate_expired_cache()
+            similar_tasks = self._find_similar_tasks_uncached(query_normalized, limit)
+            self._cache_timestamps[cache_key] = datetime.now()
 
         if not similar_tasks:
             return f"Похожие задачи не найдены для запроса: '{query}'"

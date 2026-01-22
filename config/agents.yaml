@@ -42,7 +42,7 @@ smart_agent:
     You use LearningTool and ContextAnalyzerTool to improve task execution quality.
     Optimized for performance with best_of_two strategy and parallel model evaluation.
   allow_code_execution: true
+  verbose: true
   tools:
     - LearningTool
     - ContextAnalyzerTool
-    - CodeInterpreterTool

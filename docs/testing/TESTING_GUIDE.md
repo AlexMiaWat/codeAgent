@@ -265,24 +265,24 @@ pytest test/test_smart_agent*.py -v
 # Отдельные категории тестов
 pytest test/test_smart_agent_integration.py -v  # Проверка структуры и взаимодействия компонентов
 pytest test/test_smart_agent_smoke.py -v       # Дымовые тесты базовой функциональности
-pytest test/test_smart_agent_static.py -v      # Статические тесты импортов и классов
+pytest src/test/test_smart_agent_static.py -v      # Статические тесты импортов и классов
 pytest test/test_smart_agent.py -v             # Основные тесты с новыми параметрами производительности
 pytest test/test_smart_agent_simple.py -v      # Простые функциональные тесты
 
 # Новые тесты инструментов (2026-01-22)
-pytest test/test_context_analyzer_static.py -v # Статические тесты ContextAnalyzerTool
-pytest test/test_learning_tool_static.py -v    # Статические тесты LearningTool
+pytest src/test/test_context_analyzer_static.py -v # Статические тесты ContextAnalyzerTool
+pytest src/test/test_learning_tool_static.py -v    # Статические тесты LearningTool
 pytest test/test_tools_integration.py -v       # Интеграционные тесты взаимодействия инструментов
 ```
 
 **Включает:**
 - `test_smart_agent_integration.py` - Проверка структуры классов и методов с новыми параметрами (60s)
 - `test_smart_agent_smoke.py` - Дымовые тесты импортов и создания объектов (30s)
-- `test_smart_agent_static.py` - Статические тесты импортов и структуры (30s)
+- `src/test/test_smart_agent_static.py` - Статические тесты импортов и структуры (30s)
 - `test_smart_agent.py` - Основные тесты Smart Agent с оптимизированными настройками (120s)
 - `test_smart_agent_simple.py` - Простые функциональные тесты (60s)
-- `test_context_analyzer_static.py` - Тесты Unicode нормализации и поиска (новая возможность)
-- `test_learning_tool_static.py` - Тесты накопления и использования опыта
+- `src/test/test_context_analyzer_static.py` - Тесты Unicode нормализации и поиска (новая возможность)
+- `src/test/test_learning_tool_static.py` - Тесты накопления и использования опыта
 - `test_tools_integration.py` - Тесты совместной работы инструментов
 
 **Особенности тестирования:**

@@ -24,6 +24,8 @@ def normalize_unicode_text(text: str) -> str:
     Returns:
         Нормализованный текст
     """
+    if text is None:
+        return ""
     if not text:
         return text
 
@@ -57,10 +59,13 @@ class ContextAnalyzerTool(BaseTool):
     project_dir: str = "."
     docs_dir: str = "docs"
     max_file_size: int = 1000000
-    supported_extensions: list = [".md", ".txt", ".rst", ".py", ".js", ".ts", ".json", ".yaml", ".yml"]
+    supported_extensions: list = [".md", ".txt", ".rst", ".py", ".js", ".ts", ".json", ".yaml", ".yml", ".java", ".cpp", ".hpp", ".c", ".h"]
+    supported_languages: list = ["python", "javascript", "typescript", "java", "cpp", "c"]
+    max_dependency_depth: int = 5
 
     def __init__(self, project_dir: str = ".", docs_dir: str = "docs",
-                 max_file_size: int = 1000000, supported_extensions: List[str] = None, **kwargs):
+                 max_file_size: int = 1000000, supported_extensions: List[str] = None,
+                 supported_languages: List[str] = None, max_dependency_depth: int = 5, **kwargs):
         """
         Инициализация ContextAnalyzerTool
 
@@ -69,12 +74,16 @@ class ContextAnalyzerTool(BaseTool):
             docs_dir: Директория с документацией
             max_file_size: Максимальный размер файла для анализа
             supported_extensions: Поддерживаемые расширения файлов
+            supported_languages: Поддерживаемые языки программирования
+            max_dependency_depth: Максимальная глубина анализа зависимостей
         """
         super().__init__(**kwargs)
         self.project_dir = Path(project_dir)
         self.docs_dir = self.project_dir / docs_dir
         self.max_file_size = max_file_size
-        self.supported_extensions = supported_extensions or [".md", ".txt", ".rst", ".py", ".js", ".ts", ".json", ".yaml", ".yml"]
+        self.supported_extensions = supported_extensions or self.supported_extensions
+        self.supported_languages = supported_languages or self.supported_languages
+        self.max_dependency_depth = max_dependency_depth
 
         # Кэш для анализа
         self._analysis_cache: Dict[str, Any] = {}
@@ -106,8 +115,8 @@ class ContextAnalyzerTool(BaseTool):
                 return f"Unknown action: {action}"
 
         except Exception as e:
-            logger.error(f"Error in ContextAnalyzerTool._run: {e}")
-            return f"Error: {str(e)}"
+            logger.error(f"Error in ContextAnalyzerTool._run with action '{action}': {e}", exc_info=True)
+            return f"Error executing action '{action}': {str(e)}"
 
     def analyze_project_structure(self) -> str:
         """
@@ -117,6 +126,10 @@ class ContextAnalyzerTool(BaseTool):
             Описание структуры проекта
         """
         try:
+            # Проверяем кэш анализа структуры
+            cache_key = "project_structure"
+            if cache_key in self._analysis_cache:
+                return self._analysis_cache[cache_key]
             structure = {
                 "directories": {},
                 "file_types": {},
@@ -170,10 +183,13 @@ class ContextAnalyzerTool(BaseTool):
             for dir_name, file_count in list(structure["directories"].items())[:10]:  # Ограничиваем вывод
                 result += f"• {dir_name}: {file_count} элементов\n"
 
+            # Кэшируем результат
+            self._analysis_cache[cache_key] = result
+
             return result
 
         except Exception as e:
-            logger.error(f"Error analyzing project structure: {e}")
+            logger.error(f"Error analyzing project structure for {self.project_dir}: {e}", exc_info=True)
             return f"Ошибка анализа структуры проекта: {str(e)}"
 
     def find_file_dependencies(self, file_path: str) -> str:
@@ -198,65 +214,65 @@ class ContextAnalyzerTool(BaseTool):
             if target_file.stat().st_size > self.max_file_size:
                 return f"Файл слишком большой для анализа: {target_file.stat().st_size} байт"
 
-            dependencies = set()
+            # Проверяем кэш зависимостей
+            cache_key = str(target_file.relative_to(self.project_dir))
+            if cache_key in self._dependency_cache:
+                dependencies = self._dependency_cache[cache_key]
+            else:
+                dependencies = set()
 
-            # Анализируем импорты в Python файлах
-            if target_file.suffix == ".py":
+                # Анализируем зависимости в зависимости от типа файла
+                file_extension = target_file.suffix.lower()
+                file_name = target_file.name.lower()
+
                 try:
                     with open(target_file, 'r', encoding='utf-8') as f:
                         content = f.read()
 
-                    # Находим импорты
-                    import_patterns = [
-                        r'^import\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)',
-                        r'^from\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\s+import'
-                    ]
+                    # Python файлы
+                    if file_extension == ".py":
+                        dependencies.update(self._analyze_python_dependencies(content))
 
-                    for pattern in import_patterns:
-                        matches = re.findall(pattern, content, re.MULTILINE)
-                        for match in matches:
-                            # Преобразуем в путь к файлу
-                            module_path = match.replace('.', '/')
-                            possible_files = [
-                                f"{module_path}.py",
-                                f"{module_path}/__init__.py"
-                            ]
+                    # JavaScript/TypeScript файлы
+                    elif file_extension in [".js", ".ts", ".jsx", ".tsx"]:
+                        dependencies.update(self._analyze_js_ts_dependencies(content))
 
-                            for possible_file in possible_files:
-                                if (self.project_dir / possible_file).exists():
-                                    dependencies.add(possible_file)
+                    # Java файлы
+                    elif file_extension == ".java":
+                        dependencies.update(self._analyze_java_dependencies(content))
 
+                    # C/C++ файлы
+                    elif file_extension in [".cpp", ".hpp", ".c", ".h"]:
+                        dependencies.update(self._analyze_cpp_dependencies(content))
+
+                    # Markdown файлы
+                    elif file_extension == ".md":
+                        dependencies.update(self._analyze_markdown_links(content))
+
+                    # YAML/JSON конфигурационные файлы
+                    elif file_extension in [".yaml", ".yml", ".json"]:
+                        if file_name == "pyproject.toml":
+                            dependencies.update(self._analyze_pyproject_dependencies(content))
+                        elif file_name == "package.json":
+                            dependencies.update(self._analyze_package_json_dependencies(content))
+                        else:
+                            dependencies.update(self._analyze_config_dependencies(content, file_extension))
+
+                    # Специальные файлы зависимостей
+                    elif file_name == "requirements.txt":
+                        dependencies.update(self._analyze_requirements_txt_dependencies(content))
+                    elif file_name == "pyproject.toml":
+                        dependencies.update(self._analyze_pyproject_dependencies(content))
+                    elif file_name == "package.json":
+                        dependencies.update(self._analyze_package_json_dependencies(content))
+
+                    # Кэшируем результат
+                    self._dependency_cache[cache_key] = dependencies
+
+                except UnicodeDecodeError:
+                    logger.warning(f"Cannot decode file {target_file} with UTF-8 encoding")
                 except Exception as e:
-                    logger.error(f"Error analyzing Python imports: {e}")
-
-            # Анализируем ссылки в Markdown файлах
-            elif target_file.suffix == ".md":
-                try:
-                    with open(target_file, 'r', encoding='utf-8') as f:
-                        content = f.read()
-
-                    # Находим ссылки на файлы
-                    link_patterns = [
-                        r'\[([^\]]+)\]\(([^)]+\.md)\)',  # Markdown ссылки
-                        r'\[([^\]]+)\]\(([^)]+\.py)\)',  # Ссылки на Python файлы
-                        r'([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*\.py)',  # Python файлы в тексте
-                    ]
-
-                    for pattern in link_patterns:
-                        matches = re.findall(pattern, content)
-                        for match in matches:
-                            if isinstance(match, tuple):
-                                file_ref = match[1]
-                            else:
-                                file_ref = match
-
-                            # Проверяем существование файла
-                            ref_path = self.project_dir / file_ref
-                            if ref_path.exists():
-                                dependencies.add(file_ref)
-
-                except Exception as e:
-                    logger.error(f"Error analyzing Markdown links: {e}")
+                    logger.error(f"Error analyzing dependencies for {target_file}: {e}")
 
             if not dependencies:
                 return f"Зависимости для файла {file_path} не найдены."
@@ -268,8 +284,273 @@ class ContextAnalyzerTool(BaseTool):
             return result
 
         except Exception as e:
-            logger.error(f"Error finding dependencies: {e}")
+            logger.error(f"Error finding dependencies for file '{file_path}': {e}", exc_info=True)
             return f"Ошибка поиска зависимостей: {str(e)}"
+
+    def _analyze_python_dependencies(self, content: str) -> Set[str]:
+        """Анализ зависимостей Python файлов"""
+        dependencies = set()
+
+        # Находим импорты
+        import_patterns = [
+            r'^import\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)',
+            r'^from\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\s+import'
+        ]
+
+        for pattern in import_patterns:
+            matches = re.findall(pattern, content, re.MULTILINE)
+            for match in matches:
+                # Преобразуем в путь к файлу
+                module_path = match.replace('.', '/')
+                possible_files = [
+                    f"{module_path}.py",
+                    f"{module_path}/__init__.py"
+                ]
+
+                for possible_file in possible_files:
+                    if (self.project_dir / possible_file).exists():
+                        dependencies.add(possible_file)
+
+        return dependencies
+
+    def _analyze_js_ts_dependencies(self, content: str) -> Set[str]:
+        """Анализ зависимостей JavaScript/TypeScript файлов"""
+        dependencies = set()
+
+        # Импорты ES6
+        import_patterns = [
+            r'import\s+.*?\s+from\s+[\'"]([^\'"]+)[\'"]',
+            r'import\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)',
+            r'require\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)'
+        ]
+
+        for pattern in import_patterns:
+            matches = re.findall(pattern, content)
+            for match in matches:
+                # Преобразуем в путь к файлу
+                if not match.startswith('.'):
+                    continue  # Пропускаем внешние зависимости
+
+                # Обрабатываем относительные пути
+                if match.endswith('/'):
+                    match = match[:-1]
+
+                possible_extensions = ['.js', '.ts', '.jsx', '.tsx', '/index.js', '/index.ts']
+                for ext in possible_extensions:
+                    dep_path = match + ext
+                    if (self.project_dir / dep_path).exists():
+                        dependencies.add(dep_path)
+                        break
+
+        return dependencies
+
+    def _analyze_java_dependencies(self, content: str) -> Set[str]:
+        """Анализ зависимостей Java файлов"""
+        dependencies = set()
+
+        # Импорты классов
+        import_pattern = r'^import\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\s*;'
+        matches = re.findall(import_pattern, content, re.MULTILINE)
+
+        for match in matches:
+            # Преобразуем в путь к файлу
+            class_path = match.replace('.', '/') + '.java'
+            if (self.project_dir / class_path).exists():
+                dependencies.add(class_path)
+
+        return dependencies
+
+    def _analyze_cpp_dependencies(self, content: str) -> Set[str]:
+        """Анализ зависимостей C/C++ файлов"""
+        dependencies = set()
+
+        # Include директивы
+        include_pattern = r'#include\s+["<]([^">]+)[">]'
+        matches = re.findall(include_pattern, content)
+
+        for match in matches:
+            # Проверяем локальные include файлы
+            if match.startswith('.'):
+                continue  # Пропускаем системные include
+
+            possible_files = [match]
+            if not match.endswith('.h') and not match.endswith('.hpp'):
+                possible_files.extend([match + '.h', match + '.hpp'])
+
+            for dep_file in possible_files:
+                if (self.project_dir / dep_file).exists():
+                    dependencies.add(dep_file)
+                    break
+
+        return dependencies
+
+    def _analyze_markdown_links(self, content: str) -> Set[str]:
+        """Анализ ссылок в Markdown файлах"""
+        dependencies = set()
+
+        # Находим ссылки на файлы
+        link_patterns = [
+            r'\[([^\]]+)\]\(([^)]+\.md)\)',  # Markdown ссылки
+            r'\[([^\]]+)\]\(([^)]+\.py)\)',  # Ссылки на Python файлы
+            r'\[([^\]]+)\]\(([^)]+\.(?:js|ts|java|cpp|h|hpp))\)',  # Ссылки на код
+            r'([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*\.(?:py|js|ts|java|cpp|h|hpp))',  # Файлы в тексте
+        ]
+
+        for pattern in link_patterns:
+            matches = re.findall(pattern, content)
+            for match in matches:
+                if isinstance(match, tuple):
+                    file_ref = match[1]
+                else:
+                    file_ref = match
+
+                # Проверяем существование файла
+                ref_path = self.project_dir / file_ref
+                if ref_path.exists():
+                    dependencies.add(file_ref)
+
+        return dependencies
+
+    def _analyze_requirements_txt_dependencies(self, content: str) -> Set[str]:
+        """Анализ зависимостей из requirements.txt"""
+        dependencies = set()
+
+        for line in content.split('\n'):
+            line = line.strip()
+            if line and not line.startswith('#'):
+                # Удаляем комментарии и версии
+                dep = line.split('#')[0].strip()
+                dep = dep.split(';')[0].strip()  # Удаляем условия
+                dep = dep.split('>=')[0].strip()
+                dep = dep.split('==')[0].strip()
+                dep = dep.split('<')[0].strip()
+                dep = dep.split('>')[0].strip()
+                dep = dep.split('!')[0].strip()
+
+                if dep and dep != line:  # Если что-то изменилось
+                    dependencies.add(dep)
+
+        return dependencies
+
+    def _analyze_pyproject_dependencies(self, content: str) -> Set[str]:
+        """Анализ зависимостей из pyproject.toml"""
+        dependencies = set()
+
+        try:
+            import tomllib
+            data = tomllib.loads(content)
+        except ImportError:
+            # Для Python < 3.11 используем tomli
+            try:
+                import tomli as tomllib
+                data = tomllib.loads(content)
+            except ImportError:
+                logger.warning("tomli/tomllib not available for pyproject.toml parsing")
+                return dependencies
+
+        # Ищем секции зависимостей
+        dependency_sections = [
+            "project.dependencies",
+            "project.optional-dependencies",
+            "tool.poetry.dependencies",
+            "tool.poetry.dev-dependencies",
+            "build-system.requires"
+        ]
+
+        def extract_deps(obj):
+            """Рекурсивное извлечение зависимостей"""
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    if isinstance(value, str):
+                        # Удаляем версии из зависимостей
+                        dep = value.split('>=')[0].split('==')[0].split('<')[0].split('>')[0].split(';')[0].strip()
+                        if dep and not dep.startswith('python'):
+                            dependencies.add(dep)
+                    elif isinstance(value, list):
+                        for item in value:
+                            extract_deps(item)
+                    elif isinstance(value, dict):
+                        extract_deps(value)
+            elif isinstance(obj, list):
+                for item in obj:
+                    if isinstance(item, str):
+                        dep = item.split('>=')[0].split('==')[0].split('<')[0].split('>')[0].split(';')[0].strip()
+                        if dep and not dep.startswith('python'):
+                            dependencies.add(dep)
+                    elif isinstance(item, dict):
+                        extract_deps(item)
+
+        # Проходим по всем секциям зависимостей
+        for section_path in dependency_sections:
+            current_data = data
+            try:
+                for part in section_path.split('.'):
+                    current_data = current_data[part]
+                extract_deps(current_data)
+            except (KeyError, TypeError):
+                continue
+
+        return dependencies
+
+    def _analyze_package_json_dependencies(self, content: str) -> Set[str]:
+        """Анализ зависимостей из package.json"""
+        dependencies = set()
+
+        try:
+            import json
+            data = json.loads(content)
+
+            # Ищем все секции зависимостей
+            dep_sections = [
+                "dependencies",
+                "devDependencies",
+                "peerDependencies",
+                "optionalDependencies",
+                "bundledDependencies"
+            ]
+
+            for section in dep_sections:
+                if section in data and isinstance(data[section], dict):
+                    for dep_name in data[section].keys():
+                        dependencies.add(dep_name)
+
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(f"Error parsing package.json: {e}")
+
+        return dependencies
+
+    def _analyze_config_dependencies(self, content: str, file_extension: str) -> Set[str]:
+        """Анализ зависимостей в конфигурационных файлах"""
+        dependencies = set()
+
+        try:
+            if file_extension == ".json":
+                import json
+                data = json.loads(content)
+            else:  # YAML
+                import yaml
+                data = yaml.safe_load(content)
+
+            # Рекурсивно ищем строковые значения, которые могут быть путями к файлам
+            def find_file_paths(obj, path=""):
+                if isinstance(obj, dict):
+                    for key, value in obj.items():
+                        find_file_paths(value, f"{path}.{key}" if path else key)
+                elif isinstance(obj, list):
+                    for i, item in enumerate(obj):
+                        find_file_paths(item, f"{path}[{i}]")
+                elif isinstance(obj, str):
+                    # Проверяем, выглядит ли значение как путь к файлу
+                    if any(obj.endswith(ext) for ext in self.supported_extensions):
+                        if (self.project_dir / obj).exists():
+                            dependencies.add(obj)
+
+            find_file_paths(data)
+
+        except Exception as e:
+            logger.debug(f"Could not parse config file: {e}")
+
+        return dependencies
 
     def get_task_context(self, task_description: str) -> str:
         """
@@ -281,6 +562,13 @@ class ContextAnalyzerTool(BaseTool):
         Returns:
             Контекстная информация
         """
+        # Валидация входных параметров
+        if not task_description or not isinstance(task_description, str):
+            raise ValueError("task_description must be a non-empty string")
+
+        if len(task_description) > 10000:  # Ограничение на длину
+            raise ValueError("task_description is too long (max 10000 characters)")
+
         try:
             context_info = {
                 "relevant_files": [],
@@ -362,7 +650,7 @@ class ContextAnalyzerTool(BaseTool):
             return result
 
         except Exception as e:
-            logger.error(f"Error getting task context: {e}")
+            logger.error(f"Error getting task context for '{task_description[:50]}...': {e}", exc_info=True)
             return f"Ошибка получения контекста: {str(e)}"
 
     def analyze_component(self, component_path: str) -> str:
@@ -433,10 +721,36 @@ class ContextAnalyzerTool(BaseTool):
                 result += f"**Размер:** {analysis['size']} байт\n"
                 result += f"**Язык:** {analysis.get('language', 'неизвестен')}\n"
 
+                # Анализируем зависимости с учетом глубины
+                deps_result = self.find_file_dependencies(str(component))
+                if "•" in deps_result:
+                    deps_lines = deps_result.split("\n")[2:]  # Пропускаем заголовок
+                    analysis["dependencies"] = [line.strip("• ").strip() for line in deps_lines if line.strip()]
+
+                    # Анализируем зависимости зависимостей (глубина 2)
+                    if self.max_dependency_depth > 1:
+                        deep_deps = set()
+                        for dep in analysis["dependencies"][:5]:  # Ограничиваем для производительности
+                            dep_result = self.find_file_dependencies(dep)
+                            if "•" in dep_result:
+                                dep_lines = dep_result.split("\n")[2:]
+                                for line in dep_lines:
+                                    deep_dep = line.strip("• ").strip()
+                                    if deep_dep and deep_dep != dep:
+                                        deep_deps.add(deep_dep)
+
+                        if deep_deps:
+                            analysis["deep_dependencies"] = list(deep_deps)[:10]  # Ограничиваем вывод
+
                 if analysis["dependencies"]:
                     result += "**Зависимости:**\n"
                     for dep in analysis["dependencies"]:
                         result += f"• {dep}\n"
+
+                    if "deep_dependencies" in analysis and analysis["deep_dependencies"]:
+                        result += "\n**Глубокие зависимости:**\n"
+                        for dep in analysis["deep_dependencies"]:
+                            result += f"  • {dep}\n"
 
             return result
 

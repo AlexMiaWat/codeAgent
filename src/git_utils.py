@@ -62,10 +62,10 @@ def execute_git_command(
 def get_current_branch(working_dir: Optional[Path] = None) -> Optional[str]:
     """
     Получить текущую ветку
-    
+
     Args:
         working_dir: Рабочая директория
-    
+
     Returns:
         Название текущей ветки или None при ошибке
     """
@@ -73,12 +73,48 @@ def get_current_branch(working_dir: Optional[Path] = None) -> Optional[str]:
         ["git", "branch", "--show-current"],
         working_dir=working_dir
     )
-    
+
     if success and stdout:
         return stdout.strip()
     else:
         logger.warning(f"Не удалось получить текущую ветку: {stderr}")
         return None
+
+
+def is_branch_allowed_for_auto_push(
+    branch: Optional[str] = None,
+    allowed_branches: Optional[List[str]] = None,
+    working_dir: Optional[Path] = None
+) -> bool:
+    """
+    Проверить, разрешена ли автоматическая отправка для текущей ветки
+
+    Args:
+        branch: Название ветки (если None - получить текущую)
+        allowed_branches: Список разрешенных веток (если None - только 'smart')
+        working_dir: Рабочая директория
+
+    Returns:
+        True если push разрешен для данной ветки
+    """
+    if not branch:
+        branch = get_current_branch(working_dir)
+        if not branch:
+            logger.warning("Не удалось определить текущую ветку для проверки разрешений")
+            return False
+
+    # По умолчанию разрешена только ветка 'smart'
+    if allowed_branches is None:
+        allowed_branches = ["smart"]
+
+    is_allowed = branch in allowed_branches
+
+    if is_allowed:
+        logger.debug(f"Автоматический push разрешен для ветки '{branch}'")
+    else:
+        logger.debug(f"Автоматический push запрещен для ветки '{branch}' (разрешены: {allowed_branches})")
+
+    return is_allowed
 
 
 def get_last_commit_info(working_dir: Optional[Path] = None) -> Optional[Dict[str, str]]:
@@ -234,21 +270,24 @@ def push_to_remote(
 def auto_push_after_commit(
     working_dir: Optional[Path] = None,
     remote: str = "origin",
-    timeout: int = 60
+    timeout: int = 60,
+    allowed_branches: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
     Автоматически отправить коммиты после успешного коммита
-    
+
     Проверяет:
-    1. Существование последнего коммита
-    2. Наличие неотправленных коммитов
-    3. Выполняет push
-    
+    1. Разрешение push для текущей ветки
+    2. Существование последнего коммита
+    3. Наличие неотправленных коммитов
+    4. Выполняет push
+
     Args:
         working_dir: Рабочая директория
         remote: Название remote
         timeout: Таймаут выполнения push
-    
+        allowed_branches: Список разрешенных веток для push (если None - только 'smart')
+
     Returns:
         Словарь с результатом операции
     """
@@ -270,7 +309,16 @@ def auto_push_after_commit(
             return result
         
         result["branch"] = branch
-        
+
+        # Проверяем разрешение для автоматического push в данной ветке
+        if not is_branch_allowed_for_auto_push(branch, allowed_branches, working_dir):
+            logger.info(f"Автоматический push пропущен: ветка '{branch}' не разрешена для авто-push")
+            result["error"] = f"Автоматический push не разрешен для ветки '{branch}'"
+            result["push_allowed"] = False
+            return result
+
+        result["push_allowed"] = True
+
         # Получаем информацию о последнем коммите
         commit_info = get_last_commit_info(working_dir)
         if not commit_info:
