@@ -125,7 +125,7 @@ cursor:
    - Устранение проблем
    - Дополнительная настройка
 
-2. **`docs/integration/QUICK_START_FULL_ACCESS.md`** (быстрый старт)
+2. **`docs/integration/full_access_setup.md`** (консолидированная документация)
    - Что было сделано
    - Как использовать
    - Проверка
@@ -137,7 +137,7 @@ cursor:
    - Безопасность
    - Обновление конфигурации
 
-4. **`FULL_ACCESS_CHEATSHEET.md`** (шпаргалка)
+4. **`full_access_setup.md#шпаргалка`** (раздел шпаргалки)
    - Быстрые команды
    - Проверка
    - Решение проблем
@@ -249,10 +249,10 @@ agent -p "Создай файл test.txt" --force --approve-mcps
 | `.cursor/mcp-approvals.json` | 21 | Одобрение MCP серверов |
 | `.cursor/README.md` | 120 | Описание конфигурации |
 | `docs/integration/full_access_setup.md` | 450+ | Основная документация |
-| `docs/integration/QUICK_START_FULL_ACCESS.md` | 150+ | Быстрый старт |
-| `docs/integration/FULL_ACCESS_INTEGRATION_REPORT.md` | 400+ | Этот отчет |
+| `docs/integration/full_access_setup.md` | 400+ | Консолидированная документация |
+| `docs/integration/full_access_integration_report.md` | 400+ | Этот отчет |
 | `test/test_full_access_permissions.py` | 280+ | Тесты |
-| `FULL_ACCESS_CHEATSHEET.md` | 100+ | Шпаргалка |
+| `full_access_setup.md#шпаргалка` | - | Раздел шпаргалки |
 
 **Итого:** 8 новых файлов, ~1600 строк кода и документации
 
@@ -272,8 +272,8 @@ agent -p "Создай файл test.txt" --force --approve-mcps
 ## 📚 Ссылки
 
 - [full_access_setup.md](full_access_setup.md) - Основная документация
-- [QUICK_START_FULL_ACCESS.md](QUICK_START_FULL_ACCESS.md) - Быстрый старт
-- [FULL_ACCESS_CHEATSHEET.md](FULL_ACCESS_CHEATSHEET.md) - Шпаргалка
+- [full_access_setup.md](full_access_setup.md) - Консолидированная документация
+- [full_access_setup.md#шпаргалка](full_access_setup.md#шпаргалка) - Шпаргалка
 
 ---
 

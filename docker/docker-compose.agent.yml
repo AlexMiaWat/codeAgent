@@ -15,7 +15,7 @@ services:
     container_name: cursor-agent  # Имя контейнера для целевого проекта
     volumes:
       # Монтируем целевую директорию проекта (укажите путь к вашему проекту)
-      - ../../your-project:/workspace:rw
+      - ../../smartAgent:/workspace:rw
       # Монтируем домашнюю директорию для сохранения конфигурации agent
       - agent-home:/root
       # Монтируем SSH-ключи для доступа к GitHub (git push на этапе 8)

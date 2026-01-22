@@ -51,10 +51,10 @@ output_file = "docs/results/mini_docs_for_user.md"
 # Используем улучшенный формат с гарантией выполнения
 instruction = PromptFormatter.format_task_with_execution_guarantee(
     task_name="Создание краткой документации проекта",
-    task_description="""Ты архитектор системы. Проанализируй всю документацию проекта Life и создай краткую выжимку в 100 строк.
+    task_description="""Ты архитектор системы. Проанализируй всю документацию проекта your-project  и создай краткую выжимку в 100 строк.
 
 В выжимке должны быть:
-1. Название и назначение проекта Life
+1. Название и назначение проекта your-project 
 2. Основные технологии и инструменты
 3. Архитектура и структура проекта
 4. Ключевые компоненты и модули
@@ -170,7 +170,7 @@ if output_path.exists():
     print("Проверка содержимого:")
     checks = {
         "Есть заголовки": any(line.startswith('#') for line in lines),
-        "Упоминается Life": any('life' in line.lower() for line in lines),
+        "Упоминается your-project ": any('your-project ' in line.lower() for line in lines),
         "Есть структура": len([l for l in lines if l.startswith('#')]) >= 3,
         "Достаточно информации": len(content) > 500,
         "Контрольная фраза": "Документация создана!" in content or "документация" in content.lower()

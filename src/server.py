@@ -1233,7 +1233,11 @@ class CodeAgentServer:
                         logger.warning(f"Непредвиденная ошибка Cursor (#{self._cursor_error_count}): {error_message}")
                         logger.warning("Перезапускаем Docker контейнер из-за непредвиденной ошибки...")
                         task_logger.log_warning(f"Непредвиденная ошибка Cursor - перезапуск Docker: {error_message}")
-                        
+
+                        # Получаем конфигурацию CLI
+                        cursor_config = self.config.get('cursor', {})
+                        cli_config = cursor_config.get('cli', {})
+
                         # Сначала проверяем, установлен ли агент в контейнере
                         container_name = cli_config.get('container_name')
                         logger.info(f"Проверка установки Cursor Agent в контейнере {container_name}...")
@@ -1355,6 +1359,10 @@ class CodeAgentServer:
             logger.info("Шаг 2: Перезапуск Docker контейнера...")
             if self.cursor_cli and hasattr(self.cursor_cli, 'cli_command'):
                 if self.cursor_cli.cli_command == "docker-compose-agent":
+                    # Получаем конфигурацию CLI
+                    cursor_config = self.config.get('cursor', {})
+                    cli_config = cursor_config.get('cli', {})
+
                     # Перезапускаем Docker контейнер
                     compose_file = Path(__file__).parent.parent / "docker" / "docker-compose.agent.yml"
                     container_name = cli_config.get('container_name')  # Имя из docker-compose.agent.yml
@@ -2733,6 +2741,8 @@ class CodeAgentServer:
                 '{task_id}', task_id
             )
 
+            logger.info(f"📝 Сформированная свободная инструкция: {formatted_instruction[:200]}...")
+
             # Получаем параметры выполнения
             timeout = free_template.get('timeout', 600)
             wait_for_file = free_template.get('wait_for_file', f"docs/results/free_instruction_{task_id}_{timestamp}.md")
@@ -2743,6 +2753,10 @@ class CodeAgentServer:
 
             logger.info(Colors.colorize(
                 f"📝 Текст инструкции: {instruction_text[:100]}{'...' if len(instruction_text) > 100 else ''}",
+                Colors.BRIGHT_CYAN
+            ))
+            logger.info(Colors.colorize(
+                f"📝 Полная сформированная инструкция: {formatted_instruction[:200]}{'...' if len(formatted_instruction) > 200 else ''}",
                 Colors.BRIGHT_CYAN
             ))
             logger.info(Colors.colorize(
@@ -5014,6 +5028,30 @@ class CodeAgentServer:
                 self.reload_cooldown = 10  # Минимальный интервал между перезапусками (секунды) - увеличено для защиты от ложных срабатываний
                 self.file_hashes = {}  # Кэш хешей файлов для проверки реальных изменений
                 self.pending_changes = set()  # Множество файлов с изменениями в процессе обработки
+
+            def _initialize_file_hashes(self, watch_dirs: List[str]):
+                """Инициализировать хэши всех .py файлов в отслеживаемых директориях"""
+                logger.info("Инициализация хэшей файлов для защиты от ложных срабатываний...")
+                import glob
+
+                for watch_dir in watch_dirs:
+                    # Ищем все .py файлы в директории рекурсивно
+                    pattern = f"{watch_dir}/**/*.py"
+                    try:
+                        for py_file in glob.glob(pattern, recursive=True):
+                            # Проверяем, нужно ли игнорировать файл
+                            if self._should_ignore_file(py_file):
+                                continue
+
+                            # Вычисляем хэш файла
+                            file_hash = self._get_file_hash(py_file)
+                            if file_hash:
+                                self.file_hashes[py_file] = file_hash
+                                logger.debug(f"Инициализирован хэш для файла: {py_file}")
+                    except Exception as e:
+                        logger.warning(f"Ошибка при инициализации хэшей в директории {watch_dir}: {e}")
+
+                logger.info(f"Инициализировано хэшей для {len(self.file_hashes)} файлов")
                 self.ignored_patterns = [
                     # Игнорируемые директории и паттерны
                     '__pycache__',
@@ -5198,14 +5236,17 @@ class CodeAgentServer:
         # Создаем observer
         self.file_observer = Observer()
         handler = PyFileHandler(self)
-        
+
+        # Инициализируем хэши файлов перед запуском отслеживания
+        handler._initialize_file_hashes(watch_dirs)
+
         for watch_dir in watch_dirs:
             try:
                 self.file_observer.schedule(handler, watch_dir, recursive=True)
                 logger.info(f"Отслеживание изменений .py файлов в: {watch_dir}")
             except Exception as e:
                 logger.warning(f"Не удалось добавить директорию для отслеживания {watch_dir}: {e}")
-        
+
         # Запускаем observer
         self.file_observer.start()
         logger.info("File watcher запущен для автоперезапуска при изменении .py файлов")

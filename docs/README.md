@@ -1,7 +1,7 @@
 # Документация Code Agent
 
-**Дата обновления:** 2026-01-26  
-**Версия:** 2.3
+**Дата обновления:** 2026-01-22  
+**Версия:** 2.4
 
 ---
 
@@ -26,29 +26,26 @@
 ### 📂 guides/ - Руководства
 - **[setup.md](guides/setup.md)** - Установка и настройка
 - **[api_keys_setup.md](guides/api_keys_setup.md)** - Настройка API ключей
-- **[GIT_AUTHENTICATION_SETUP.md](guides/GIT_AUTHENTICATION_SETUP.md)** - Настройка Git
-- **[SERVER_MONITORING_GUIDE.md](guides/SERVER_MONITORING_GUIDE.md)** - Мониторинг сервера
+- **[git_authentication_setup.md](guides/git_authentication_setup.md)** - Настройка Git
+- **[server_monitoring_guide.md](guides/server_monitoring_guide.md)** - Мониторинг сервера
 - **[docker_integration_guide.md](guides/docker_integration_guide.md)** - Docker интеграция
 - **[cursor_cli_fallback.md](guides/cursor_cli_fallback.md)** - Fallback для Cursor CLI
 - **[cursor_results_mechanism.md](guides/cursor_results_mechanism.md)** - Механизм результатов Cursor
 - **[cursor_setup_recommendations.md](guides/cursor_setup_recommendations.md)** - Рекомендации по настройке Cursor
 - **[docker_persistent_container.md](guides/docker_persistent_container.md)** - Постоянные Docker контейнеры
 - **[START_HERE.md](guides/START_HERE.md)** - С чего начать
-- **[testing.md](guides/testing.md)** - Руководство по тестированию
 
 ### 📂 integration/ - Интеграции
 - **[cursor_integration.md](integration/cursor_integration.md)** - Интеграция с Cursor
 - **[full_access_setup.md](integration/full_access_setup.md)** - Полный доступ Cursor
-- **[QUICK_START_FULL_ACCESS.md](integration/QUICK_START_FULL_ACCESS.md)** - Быстрый старт полного доступа
-- **[FULL_ACCESS_CHEATSHEET.md](integration/FULL_ACCESS_CHEATSHEET.md)** - Шпаргалка полного доступа
-- **[FULL_ACCESS_INTEGRATION_REPORT.md](integration/FULL_ACCESS_INTEGRATION_REPORT.md)** - Отчет об интеграции
+- **[full_access_integration_report.md](integration/full_access_integration_report.md)** - Отчет об интеграции
 - **[llm_integration.md](integration/llm_integration.md)** - Интеграция с LLM
 - **[llm_limitations.md](integration/llm_limitations.md)** - Ограничения LLM
 
 ### 📂 testing/ - Тестирование
 - **[TESTING_GUIDE.md](testing/TESTING_GUIDE.md)** - Полное руководство по тестированию
 - **[README.md](testing/README.md)** - Обзор тестирования
-- **[COMPREHENSIVE_TEST_REPORT.md](testing/COMPREHENSIVE_TEST_REPORT.md)** - Комплексный отчет
+- **[COMPREHENSIVE_TEST_REPORT.md](testing/COMPREHENSIVE_TEST_REPORT.md)** - Комплексный отчет *(исторический)*
 - **[CURSOR_TESTS_DOCKER.md](testing/CURSOR_TESTS_DOCKER.md)** - Тесты Cursor в Docker
 
 ### 📂 features/ - Функции
@@ -69,12 +66,11 @@
 - **[conceptual_improvements.md](planning/conceptual_improvements.md)** - Концептуальные улучшения
 
 ### 📂 solutions/ - Решения проблем
-- **[CURSOR_INTEGRATION_SOLUTIONS.md](solutions/CURSOR_INTEGRATION_SOLUTIONS.md)** - Решения проблем Cursor
-- **[HYBRID_INTERFACE_TEST_RESULTS.md](solutions/HYBRID_INTERFACE_TEST_RESULTS.md)** - Результаты тестов гибридного интерфейса
+- **[CURSOR_INTEGRATION_SOLUTIONS.md](solutions/CURSOR_INTEGRATION_SOLUTIONS.md)** - Решения проблем Cursor *(исторический)*
+- **[HYBRID_INTERFACE_TEST_RESULTS.md](solutions/HYBRID_INTERFACE_TEST_RESULTS.md)** - Результаты тестов гибридного интерфейса *(исторический)*
 - **[IMPROVEMENT_PLAN.md](solutions/IMPROVEMENT_PLAN.md)** - План улучшений
 - **[IMPROVEMENT_PROCESS.md](solutions/IMPROVEMENT_PROCESS.md)** - Процесс улучшений
-- **[INTEGRATION_FIX_SUMMARY.md](solutions/INTEGRATION_FIX_SUMMARY.md)** - Сводка исправлений интеграции
-- **[MINI_DOCS_CREATION_REPORT.md](solutions/MINI_DOCS_CREATION_REPORT.md)** - Отчет о создании мини-документации
+- **[INTEGRATION_FIX_SUMMARY.md](solutions/INTEGRATION_FIX_SUMMARY.md)** - Сводка исправлений интеграции *(исторический)*
 - **[SKEPTIC_ANALYSIS_REPORT.md](solutions/SKEPTIC_ANALYSIS_REPORT.md)** - Анализ скептика
 
 ### 📂 changelog/ - История изменений
@@ -93,7 +89,6 @@
 
 ### 🔧 Специализированные документы
 - **[checkpoint_recovery.md](checkpoint_recovery.md)** - Восстановление после сбоев
-- **[quick_recovery_guide.md](quick_recovery_guide.md)** - Быстрое восстановление
 - **[logging_system.md](logging_system.md)** - Система логирования
 - **[LLM_MANAGER_EXPLAINED.md](LLM_MANAGER_EXPLAINED.md)** - Объяснение LLM Manager
 - **[cursor-logging-instruction.md](cursor-logging-instruction.md)** - Инструкции по логированию Cursor
@@ -107,7 +102,7 @@
 1. **[../README.md](../README.md)** - Основная информация о проекте
 2. **[guides/START_HERE.md](guides/START_HERE.md)** - С чего начать
 3. **[guides/setup.md](guides/setup.md)** - Установка и настройка
-4. **[integration/QUICK_START_FULL_ACCESS.md](integration/QUICK_START_FULL_ACCESS.md)** - Быстрый старт Cursor интеграции
+4. **[integration/full_access_setup.md](integration/full_access_setup.md)** - Настройка полного доступа Cursor
 
 ### Для разработчиков
 1. **[testing/TESTING_GUIDE.md](testing/TESTING_GUIDE.md)** - Руководство по тестированию
@@ -115,9 +110,6 @@
 3. **[core/api_endpoints.md](core/api_endpoints.md)** - HTTP API
 
 ### Специализированные руководства
-- **[quick_start_logging.md](quick_start_logging.md)** - Быстрый старт логирования
-- **[quick_start_auto_todo.md](quick_start_auto_todo.md)** - Автогенерация TODO
-- **[quick_recovery_guide.md](quick_recovery_guide.md)** - Восстановление после сбоев
 - **[root/QUICK_START_HYBRID.md](root/QUICK_START_HYBRID.md)** - Гибридный режим
 
 ---
@@ -127,7 +119,7 @@
 **Установка и настройка:**
 - [guides/setup.md](guides/setup.md) - Основная установка
 - [guides/api_keys_setup.md](guides/api_keys_setup.md) - Настройка API ключей
-- [guides/GIT_AUTHENTICATION_SETUP.md](guides/GIT_AUTHENTICATION_SETUP.md) - Git аутентификация
+- [guides/git_authentication_setup.md](guides/git_authentication_setup.md) - Git аутентификация
 - [configuration/server_config.md](configuration/server_config.md) - Конфигурация сервера
 
 **Интеграция:**
@@ -151,6 +143,6 @@
 
 ---
 
-**Всего документов:** 75+ файлов
-**Последнее обновление:** 2026-01-26
+**Всего документов:** 70+ файлов
+**Последнее обновление:** 2026-01-22
 **Версия проекта:** 2.3

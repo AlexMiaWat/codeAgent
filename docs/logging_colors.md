@@ -293,4 +293,4 @@ python examples/logging_demo.py
 
 Для получения дополнительной информации см.:
 - [Система логирования](logging_system.md)
-- [Быстрый старт](quick_start_logging.md)
+- [Быстрый старт](logging_system.md#быстрый-старт)

@@ -27,7 +27,7 @@
 ### Документация
 
 - [x] `docs/checkpoint_recovery.md` - Полная документация
-- [x] `docs/quick_recovery_guide.md` - Краткое руководство
+- [x] `docs/checkpoint_recovery.md` (быстрое руководство в начале) - Руководство по восстановлению
 - [x] `CHECKPOINT_SYSTEM_SUMMARY.md` - Резюме реализации
 - [x] `checkpoint_checklist.md` - Этот чеклист
 - [x] `README.md` - Обновлен с информацией о checkpoint
@@ -258,7 +258,7 @@
 
 ✅ **4 документа**
 - Полная документация (checkpoint_recovery.md)
-- Краткое руководство (quick_recovery_guide.md)
+- Руководство по восстановлению (checkpoint_recovery.md)
 - Резюме реализации (CHECKPOINT_SYSTEM_SUMMARY.md)
 - Этот чеклист (checkpoint_checklist.md)
 

@@ -88,7 +88,6 @@ codeAgent/
 │   │   ├── CURSOR_INTEGRATION_SOLUTIONS.md  # Решения интеграции с Cursor
 │   │   ├── INTEGRATION_FIX_SUMMARY.md   # Резюме исправлений
 │   │   ├── HYBRID_INTERFACE_TEST_RESULTS.md  # Результаты тестов гибридного интерфейса
-│   │   └── MINI_DOCS_CREATION_REPORT.md  # Отчет о создании mini_docs
 │   │
 │   ├── 📂 planning/                     # Планирование
 │   │   ├── implementation_roadmap.md    # Дорожная карта реализации

@@ -100,7 +100,7 @@ WARNING: ⚠️ Автоматический push не удался: <причи
 ### Требования
 
 1. **SSH-ключ настроен** для доступа к удаленному репозиторию
-   - См. `docs/guides/GIT_AUTHENTICATION_SETUP.md`
+   - См. `docs/guides/git_authentication_setup.md`
 
 2. **Git настроен** в целевом проекте
    - Remote `origin` должен быть настроен
@@ -193,7 +193,7 @@ WARNING: ⚠️ Автоматический push не удался: <причи
 
 ## Связанные документы
 
-- `docs/guides/GIT_AUTHENTICATION_SETUP.md` - Настройка SSH для Git
+- `docs/guides/git_authentication_setup.md` - Настройка SSH для Git
 - `config/config.yaml` - Конфигурация инструкций (инструкция 8)
 
 ---

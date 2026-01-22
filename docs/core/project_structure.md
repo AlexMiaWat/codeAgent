@@ -88,7 +88,7 @@ codeAgent/
 #### guides/ - Руководства пользователя
 - **setup.md** - Пошаговое руководство по установке и настройке
 - **API_KEYS_SETUP.md** - Безопасная настройка API ключей
-- **SERVER_MONITORING_GUIDE.md** - Руководство по мониторингу сервера
+- **server_monitoring_guide.md** - Руководство по мониторингу сервера
 
 #### integration/ - Документация интеграций
 - **cursor_integration.md** - Интеграция с Cursor IDE
