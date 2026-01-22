@@ -111,10 +111,11 @@ def test_smart_agent_creation():
     try:
         from src.agents import create_smart_agent
 
-        # Создаем агента
+        # Создаем агента (с явным отключением Docker для надежности тестов)
         agent = create_smart_agent(
             project_dir=Path("."),
-            experience_dir="test_smart_experience"
+            experience_dir="test_smart_experience",
+            use_docker=False  # Отключаем Docker для тестов
         )
 
         # Проверяем основные свойства
@@ -126,7 +127,8 @@ def test_smart_agent_creation():
         assert "LearningTool" in tool_names
         assert "ContextAnalyzerTool" in tool_names
 
-        print("✅ Smart Agent создан успешно"        print(f"   Роль: {agent.role}")
+        print("✅ Smart Agent создан успешно")
+        print(f"   Роль: {agent.role}")
         print(f"   Количество инструментов: {len(agent.tools)}")
         print(f"   Инструменты: {tool_names}")
 

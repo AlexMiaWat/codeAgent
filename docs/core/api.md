@@ -347,3 +347,160 @@ class TodoManager:
     todo_file: Optional[Path]
     items: List[TodoItem]
 ```
+
+---
+
+## Smart Agent
+
+### create_smart_agent()
+
+Создание интеллектуального агента с поддержкой машинного обучения и Docker.
+
+```python
+from src.agents import create_smart_agent
+from pathlib import Path
+
+# Базовое создание агента
+agent = create_smart_agent(
+    project_dir=Path("my_project"),
+    goal="Execute complex tasks with enhanced intelligence",
+    backstory="Smart agent with learning capabilities",
+    allow_code_execution=True,
+    use_docker=None,  # Автоопределение Docker (None), принудительно (True), отключить (False)
+    verbose=True,
+    use_llm_manager=True,
+    llm_config_path="config/llm_settings.yaml",
+    experience_dir="smart_experience"
+)
+```
+
+**Параметры:**
+
+- `project_dir: Path` - Директория проекта для анализа
+- `goal: str` - Цель агента (опционально)
+- `backstory: str` - История/контекст агента (опционально)
+- `allow_code_execution: bool` - Разрешить выполнение кода (по умолчанию: True)
+- `use_docker: Optional[bool]` - ✅ **НОВОЕ** - Использовать Docker: None=авто, True=принудительно, False=отключить
+- `verbose: bool` - Подробный вывод (по умолчанию: True)
+- `use_llm_manager: bool` - Использовать LLM Manager (по умолчанию: True)
+- `llm_config_path: str` - Путь к конфигурации LLM (по умолчанию: "config/llm_settings.yaml")
+- `experience_dir: str` - Директория для хранения опыта (по умолчанию: "smart_experience")
+
+**Возвращает:** Настроенный CrewAI агент с инструментами LearningTool, ContextAnalyzerTool и опционально CodeInterpreterTool.
+
+---
+
+### Docker Utils
+
+#### DockerChecker
+
+Класс для проверки доступности Docker и управления контейнерами.
+
+```python
+from src.tools import DockerChecker
+
+# Проверка доступности Docker
+available = DockerChecker.is_docker_available()
+
+# Получение версии Docker
+version = DockerChecker.get_docker_version()
+
+# Проверка прав доступа
+perms_ok, perms_msg = DockerChecker.check_docker_permissions()
+
+# Получение списка запущенных контейнеров
+containers = DockerChecker.get_running_containers()
+
+# Проверка конкретного контейнера
+is_running = DockerChecker.is_container_running("cursor-agent-life")
+```
+
+**Статические методы:**
+
+- `is_docker_available() -> bool` - Проверяет доступность Docker daemon
+- `get_docker_version() -> Optional[str]` - Возвращает версию Docker
+- `check_docker_permissions() -> Tuple[bool, str]` - Проверяет права доступа к Docker
+- `get_running_containers() -> List[str]` - Возвращает список имен запущенных контейнеров
+- `is_container_running(container_name: str) -> bool` - Проверяет статус конкретного контейнера
+
+#### DockerManager
+
+Класс для управления Docker-контейнерами.
+
+```python
+from src.tools import DockerManager
+
+# Создание менеджера
+manager = DockerManager(
+    image_name="cursor-agent:latest",
+    container_name="cursor-agent-life"
+)
+
+# Запуск контейнера
+success, message = manager.start_container(workspace_path="/path/to/project")
+
+# Остановка контейнера
+success, message = manager.stop_container()
+
+# Выполнение команды в контейнере
+success, stdout, stderr = manager.execute_command("python --version")
+```
+
+**Методы:**
+
+- `__init__(image_name: str, container_name: str)` - Инициализация менеджера
+- `start_container(workspace_path: Optional[str]) -> Tuple[bool, str]` - Запуск контейнера с монтированием workspace
+- `stop_container() -> Tuple[bool, str]` - Остановка контейнера
+- `execute_command(command: str, working_dir: str) -> Tuple[bool, str, str]` - Выполнение команды в контейнере
+
+---
+
+### LearningTool
+
+Инструмент машинного обучения для анализа предыдущих задач и обучения на опыте.
+
+```python
+from src.tools import LearningTool
+
+tool = LearningTool(experience_dir="smart_experience")
+
+# Получение статистики выполнения
+stats = tool._run("get_statistics")
+
+# Анализ предыдущих задач
+analysis = tool._run("analyze_previous_tasks")
+
+# Поиск похожих задач
+similar = tool._run("find_similar_task", task_description="Create API endpoint")
+```
+
+**Методы:**
+
+- `_run(action: str, **kwargs)` - Выполнение действия инструмента
+- Поддерживаемые действия: `get_statistics`, `analyze_previous_tasks`, `find_similar_task`, `store_experience`
+
+---
+
+### ContextAnalyzerTool
+
+Инструмент для анализа структуры проекта и зависимостей.
+
+```python
+from src.tools import ContextAnalyzerTool
+
+tool = ContextAnalyzerTool(project_dir=Path("my_project"))
+
+# Анализ структуры проекта
+structure = tool._run("analyze_project")
+
+# Поиск зависимостей файла
+deps = tool._run("find_dependencies", file_path="src/main.py")
+
+# Анализ связей между файлами
+links = tool._run("analyze_file_links")
+```
+
+**Методы:**
+
+- `_run(action: str, **kwargs)` - Выполнение действия инструмента
+- Поддерживаемые действия: `analyze_project`, `find_dependencies`, `analyze_file_links`

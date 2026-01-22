@@ -5,17 +5,13 @@ llm:
   retry_attempts: 1
   strategy: best_of_two
   model_roles:
-    primary:
-    - meta-llama/llama-3.2-1b-instruct
-    - microsoft/wizardlm-2-8x22b
-    duplicate:
-    - google/gemma-2-27b-it
-    - undi95/remm-slerp-l2-13b
+    primary: []
+    duplicate: []
     reserve:
-    - mistralai/mistral-small-24b-instruct-2501
-    fallback:
-    - meta-llama/llama-3.2-3b-instruct
     - kwaipilot/kat-coder-pro:free
+    fallback:
+    - microsoft/wizardlm-2-8x22b
+    - meta-llama/llama-3.2-1b-instruct
   parallel:
     enabled: true
     models:
@@ -26,12 +22,12 @@ llm:
     - relevance
     - completeness
     - quality
-  _last_updated: '2026-01-19T15:19:42.496214'
+  _last_updated: '2026-01-22T19:59:22.710864'
   _update_source: auto_test_results
   _stats:
     total_tested: 7
-    working_count: 5
-    fastest_model: meta-llama/llama-3.2-1b-instruct
+    working_count: 0
+    fastest_model: null
 providers:
   openrouter:
     base_url: https://openrouter.ai/api/v1

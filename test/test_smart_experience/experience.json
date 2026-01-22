@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "tasks": [],
+  "patterns": {},
+  "statistics": {
+    "total_tasks": 0,
+    "successful_tasks": 0,
+    "failed_tasks": 0,
+    "average_execution_time": 0
+  }
+}

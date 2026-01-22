@@ -49,6 +49,7 @@ make test-llm          # LLM тесты
 make test-validation   # Валидация
 make test-checkpoint   # Checkpoint тесты
 make test-full         # Полный цикл
+make test-smart        # Smart Agent тесты
 ```
 
 ---
@@ -333,6 +334,7 @@ python test/run_tests.py --help
 | Validation | `--validation` | Валидация конфигурации и безопасности | 1 |
 | Checkpoint | `--checkpoint` | Тестирование системы checkpoint | 2 |
 | Full Cycle | `--full` | Полный цикл работы агента | 2 |
+| Smart Agent | `--smart` | ✅ **НОВОЕ** - Тестирование Smart Agent с Docker поддержкой | 6 |
 
 ---
 
@@ -358,6 +360,11 @@ python test/run_tests.py --help
 
 **Validation тесты:**
 - Настроенный `PROJECT_DIR` в `.env`
+
+**Smart Agent тесты:**
+- ✅ **НОВОЕ** - Доступ к Docker (опционально, fallback режим при недоступности)
+- Настроенная директория опыта `smart_experience/` (создается автоматически)
+- Установленная библиотека `crewai[tools]` для CodeInterpreterTool
 
 ---
 

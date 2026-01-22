@@ -8,7 +8,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Set
-from crewai_tools import BaseTool
+from crewai.tools.base_tool import BaseTool
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +28,13 @@ class ContextAnalyzerTool(BaseTool):
     Инструмент для анализа контекста проекта.
     Позволяет анализировать структуру, зависимости и предоставлять контекстную информацию.
     """
+    project_dir: str = "."
+    docs_dir: str = "docs"
+    max_file_size: int = 1000000
+    supported_extensions: list = [".md", ".txt", ".rst", ".py", ".js", ".ts", ".json", ".yaml", ".yml"]
 
     def __init__(self, project_dir: str = ".", docs_dir: str = "docs",
-                 max_file_size: int = 1000000, supported_extensions: List[str] = None):
+                 max_file_size: int = 1000000, supported_extensions: List[str] = None, **kwargs):
         """
         Инициализация ContextAnalyzerTool
 
@@ -40,7 +44,7 @@ class ContextAnalyzerTool(BaseTool):
             max_file_size: Максимальный размер файла для анализа
             supported_extensions: Поддерживаемые расширения файлов
         """
-        super().__init__()
+        super().__init__(**kwargs)
         self.project_dir = Path(project_dir)
         self.docs_dir = self.project_dir / docs_dir
         self.max_file_size = max_file_size

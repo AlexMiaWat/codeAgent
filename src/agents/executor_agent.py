@@ -103,10 +103,17 @@ When working with the project, you have access to:
             )
         except Exception as e:
             logger.warning(f"Failed to create OpenRouter LLM: {e}")
-            # Fallback: устанавливаем фиктивный OPENAI_API_KEY для использования по умолчанию
-            if not os.getenv('OPENAI_API_KEY'):
-                os.environ['OPENAI_API_KEY'] = 'sk-dummy'
-                logger.info("Using dummy OpenAI key (agent will not work without proper LLM)")
+            # Fallback: используем CrewAILLMWrapper с автоматическим fallback
+            try:
+                from ..llm.crewai_llm_wrapper import create_llm_for_crewai
+                llm_kwargs['llm'] = create_llm_for_crewai(use_fastest=True)
+                logger.info("Using CrewAILLMWrapper with automatic fallback mechanism")
+            except Exception as fallback_error:
+                logger.error(f"Failed to create CrewAILLMWrapper fallback: {fallback_error}")
+                # Последний fallback - устанавливаем фиктивный OPENAI_API_KEY для предотвращения краха
+                if not os.getenv('OPENAI_API_KEY'):
+                    os.environ['OPENAI_API_KEY'] = 'sk-dummy'
+                    logger.warning("Using dummy OpenAI key as last resort (agent may not work properly)")
     
     agent = Agent(
         role=role,

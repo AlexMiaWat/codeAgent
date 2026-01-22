@@ -69,7 +69,6 @@ poetry.lock
 .vim/
 
 # Emacs
-*~
 \#*\#
 .\#*
 
@@ -126,16 +125,18 @@ smart_experience/temp/
 smart_experience/cache/
 smart_experience/logs/
 
-# Test configuration overrides
-test_config.local.yaml
+# API keys and credentials
 *.key
 *.pem
 *.p12
 secrets.yaml
 credentials.json
+*_key*
+*_secret*
+*api_key*
 
 # ===================================
-# Project Specific
+# Project Specific - Code Agent
 # ===================================
 # Logs
 logs/
@@ -154,12 +155,14 @@ codeAgentProjectStatus.md
 .test_checkpoint.json
 .test_checkpoint.json.backup
 
-# Backup files
+# Task logger files
+task_task_*.log
+
+# Temporary and backup files
 *.backup
 *.bak
 *.tmp
 *.temp
-*~
 
 # Config backups
 config/*.backup
@@ -184,23 +187,27 @@ nosetests.xml
 test-results/
 junit.xml
 
-# Test execution summaries
+# Test execution summaries and reports
 test_execution_summary.md
 *_test_summary.md
 *_test_results.txt
 test_full_task_*.md
 test_results_task_*.md
 
-# Test output files
+# Test output and temporary files
 test/output/
 test/temp/
 test/*.log
 test/**/*.log
 
-# Test reports and results
+# Test results in docs
 docs/results/test_*.md
 docs/results/*_test_*.md
 docs/results/*_results*.md
+docs/results/free_instruction_*.md
+
+# Test configuration overrides
+test_config.local.yaml
 
 # ===================================
 # Docker
@@ -220,7 +227,7 @@ docker-compose.override.yml
 .langchain/
 .openai/
 
-# Model cache
+# Model cache and files
 models/
 *.model
 *.bin
@@ -278,10 +285,18 @@ package-lock.json
 *.rar
 *.7z
 
-# Large files that shouldn't be in git
+# Large media files
 *.mp4
 *.avi
 *.mov
 *.mkv
 *.iso
+
+# Screenshots and images (generated)
+temp/*.png
+temp/*.jpg
+temp/*.jpeg
+*.screenshot.*
+
+# Process files
 nul

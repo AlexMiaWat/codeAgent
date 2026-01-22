@@ -7,7 +7,8 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, List, Any, Optional
-from crewai_tools import BaseTool
+from datetime import datetime
+from crewai.tools.base_tool import BaseTool
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +28,11 @@ class LearningTool(BaseTool):
     Инструмент для обучения на предыдущих задачах.
     Позволяет сохранять опыт, искать похожие задачи и давать рекомендации.
     """
+    experience_dir: str = "smart_experience"
+    max_experience_tasks: int = 1000
+    experience_file: str = "experience.json"  # Будет переопределен в __init__
 
-    def __init__(self, experience_dir: str = "smart_experience", max_experience_tasks: int = 1000):
+    def __init__(self, experience_dir: str = "smart_experience", max_experience_tasks: int = 1000, **kwargs):
         """
         Инициализация LearningTool
 
@@ -36,7 +40,7 @@ class LearningTool(BaseTool):
             experience_dir: Директория для хранения опыта
             max_experience_tasks: Максимальное количество задач в опыте
         """
-        super().__init__()
+        super().__init__(**kwargs)
         self.experience_dir = Path(experience_dir)
         self.max_experience_tasks = max_experience_tasks
         self.experience_file = self.experience_dir / "experience.json"
@@ -134,7 +138,7 @@ class LearningTool(BaseTool):
             "description": task_description,
             "success": success,
             "execution_time": execution_time,
-            "timestamp": str(Path.cwd()),  # Можно заменить на реальный timestamp
+            "timestamp": datetime.now().isoformat()
             "notes": notes,
             "patterns": patterns or []
         }
