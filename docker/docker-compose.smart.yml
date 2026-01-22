@@ -1,0 +1,61 @@
+# docker-compose.yml для smartAgent (расширенная версия Cursor CLI)
+# Использование:
+#   Запуск постоянного контейнера: docker compose -f docker/docker-compose.smart.yml up -d
+#   Выполнение команды: docker compose -f docker/docker-compose.smart.yml exec smart-agent -p "instruction"
+#   Остановка: docker compose -f docker/docker-compose.smart.yml down
+#
+# Переменные окружения загружаются из .env файла в корне проекта
+
+services:
+  smart-agent:
+    build:
+      context: ..  # Контекст - корень проекта
+      dockerfile: docker/Dockerfile.agent
+    image: cursor-agent-smart:latest
+    container_name: cursor-agent-smart  # Имя контейнера для smart агента
+    volumes:
+      # Монтируем директорию проекта (используем PROJECT_DIR или текущую директорию)
+      - ${SMART_AGENT_PROJECT_DIR:-${PROJECT_DIR:-/workspace}}:/workspace:rw
+      # Монтируем директорию опыта smartAgent (если существует)
+      - ${SMART_AGENT_EXPERIENCE_DIR:-./smart_experience}:/smart_experience:rw
+      # Монтируем домашнюю директорию для сохранения конфигурации агента
+      - smart-agent-home:/root
+      # Монтируем SSH-ключи для доступа к GitHub
+      - ${HOME}/.ssh:/root/.ssh:rw
+    working_dir: /workspace
+    environment:
+      - AGENT_WORKING_DIR=/workspace
+      - AGENT_HOME=/root
+      # Smart режим
+      - SMART_AGENT_ENABLED=${SMART_AGENT_ENABLED:-true}
+      - SMART_AGENT_EXPERIENCE_DIR=/smart_experience
+      # API ключ для аутентификации
+      - CURSOR_API_KEY=${CURSOR_API_KEY:-}
+      # Установка UTF-8 локали для поддержки кириллицы
+      - LANG=C.utf8
+      - LC_ALL=C.utf8
+      # GIT_SSH_COMMAND будет установлен скриптом /start.sh при запуске контейнера
+    # Используем скрипт запуска с логированием из Dockerfile
+    entrypoint: ["/bin/bash", "/start.sh"]
+    # Убираем stdin для non-interactive режима
+    stdin_open: false
+    tty: false
+    # Настройка логирования для docker logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"  # Больше файлов для smart агента
+    # Автоматический перезапуск
+    restart: unless-stopped
+    # Дополнительные ресурсы для smart агента
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+volumes:
+  smart-agent-home:
+    driver: local

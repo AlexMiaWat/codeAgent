@@ -1,0 +1,4 @@
+cursor:
+  cli:
+    container_name: cursor-agent-life
+    test: value

@@ -124,6 +124,17 @@ logging:
   cursor_interactions: true  # Логировать все взаимодействия с Cursor
   screenshot_on_error: true  # Сохранять скриншоты при ошибках
 
+# Настройки Smart Agent
+smart_agent:
+  # Включить smart режим
+  enabled: true
+
+  # Директория для хранения опыта выполнения задач
+  experience_dir: "smart_experience"
+
+  # Максимальное количество задач в истории опыта
+  max_experience_tasks: 100
+
 # Настройки взаимодействия с Cursor IDE
 cursor:
   # Тип интерфейса взаимодействия
