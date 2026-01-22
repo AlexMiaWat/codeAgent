@@ -138,7 +138,7 @@ class LearningTool(BaseTool):
             "description": task_description,
             "success": success,
             "execution_time": execution_time,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
             "notes": notes,
             "patterns": patterns or []
         }
