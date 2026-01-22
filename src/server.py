@@ -4275,6 +4275,9 @@ class CodeAgentServer:
         # Запускаем file watcher для автоперезапуска
         self._setup_file_watcher()
         
+        # Проверяем статус компонентов системы
+        self._log_system_status()
+
         # Отмечаем запуск в checkpoint
         session_id = self.session_tracker.current_session_id
         self.checkpoint_manager.mark_server_start(session_id)
@@ -4283,6 +4286,67 @@ class CodeAgentServer:
             f"Code Agent Server запущен. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             level=1
         )
+
+    def _log_system_status(self):
+        """Логирует статус компонентов системы для пользователя"""
+        logger.info("=" * 60)
+        logger.info("📊 СТАТУС КОМПОНЕНТОВ СИСТЕМЫ")
+        logger.info("=" * 60)
+
+        # Проверяем Docker
+        try:
+            from .tools.docker_utils import is_docker_available
+            docker_available = is_docker_available()
+            if docker_available:
+                logger.info("🐳 Docker: ✅ Доступен")
+            else:
+                logger.warning("🐳 Docker: ⚠️  Недоступен (code execution отключен)")
+        except Exception as e:
+            logger.warning(f"🐳 Docker: ❌ Ошибка проверки ({e})")
+
+        # Проверяем LLM
+        try:
+            from .llm.crewai_llm_wrapper import create_llm_for_crewai
+            llm = create_llm_for_crewai(use_fastest=True, use_parallel=False)
+            if llm:
+                logger.info("🧠 LLM: ✅ Настроен")
+            else:
+                logger.warning("🧠 LLM: ⚠️  Недоступен (работа в tool-only режиме)")
+        except Exception as e:
+            logger.warning(f"🧠 LLM: ❌ Ошибка настройки ({e})")
+
+        # Проверяем Cursor CLI
+        try:
+            cursor_available = self.is_cursor_cli_available()
+            if cursor_available:
+                logger.info("🎯 Cursor CLI: ✅ Доступен")
+            else:
+                logger.warning("🎯 Cursor CLI: ⚠️  Недоступен (интеграция ограничена)")
+        except Exception as e:
+            logger.warning(f"🎯 Cursor CLI: ❌ Ошибка проверки ({e})")
+
+        # Проверяем Smart Agent
+        try:
+            from .agents.smart_agent import create_smart_agent
+            smart_agent = create_smart_agent(
+                project_dir=self.config.get('project', {}).get('base_dir', '.'),
+                use_docker=False,  # Не проверяем Docker повторно
+                use_llm=False,     # Не проверяем LLM повторно
+                verbose=False
+            )
+            if smart_agent and len(smart_agent.tools) >= 2:
+                logger.info(f"🤖 Smart Agent: ✅ Готов ({len(smart_agent.tools)} инструментов)")
+            else:
+                logger.warning("🤖 Smart Agent: ⚠️  Ограниченная функциональность")
+        except Exception as e:
+            logger.warning(f"🤖 Smart Agent: ❌ Ошибка инициализации ({e})")
+
+        logger.info("=" * 60)
+        logger.info("💡 Советы по улучшению:")
+        logger.info("   - Установите Docker для выполнения кода")
+        logger.info("   - Настройте API ключи для LLM в .env файле")
+        logger.info("   - Убедитесь, что Cursor установлен и доступен")
+        logger.info("=" * 60)
         
         # Получаем начальную итерацию из checkpoint (для восстановления)
         iteration = self.checkpoint_manager.get_iteration_count()

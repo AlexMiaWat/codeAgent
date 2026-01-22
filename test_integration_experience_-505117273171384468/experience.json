@@ -1,0 +1,59 @@
+{
+  "version": "1.0",
+  "tasks": [
+    {
+      "task_id": "integration_test_001",
+      "description": "Создание тестовой структуры проекта",
+      "success": true,
+      "execution_time": 2.5,
+      "timestamp": "2026-01-22T20:31:04.261590",
+      "notes": "Успешно создана структура с src/, docs/, test/",
+      "patterns": [
+        "project_setup",
+        "structure_creation"
+      ]
+    },
+    {
+      "task_id": "integration_test_002",
+      "description": "Тестовая задача #2",
+      "success": true,
+      "execution_time": 2.0,
+      "timestamp": "2026-01-22T20:31:04.289926",
+      "notes": "Задача 2 выполнена",
+      "patterns": [
+        "test_task_2"
+      ]
+    },
+    {
+      "task_id": "integration_test_003",
+      "description": "Тестовая задача #3",
+      "success": false,
+      "execution_time": 3.0,
+      "timestamp": "2026-01-22T20:31:04.303273",
+      "notes": "Задача 3 выполнена",
+      "patterns": [
+        "test_task_3"
+      ]
+    }
+  ],
+  "patterns": {
+    "project_setup": [
+      "integration_test_001"
+    ],
+    "structure_creation": [
+      "integration_test_001"
+    ],
+    "test_task_2": [
+      "integration_test_002"
+    ],
+    "test_task_3": [
+      "integration_test_003"
+    ]
+  },
+  "statistics": {
+    "total_tasks": 3,
+    "successful_tasks": 2,
+    "failed_tasks": 1,
+    "average_execution_time": 2.5
+  }
+}

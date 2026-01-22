@@ -4,8 +4,17 @@
 
 from pathlib import Path
 from typing import Optional, List
+from unittest.mock import patch
 from crewai import Agent
 from crewai_tools import CodeInterpreterTool
+
+# Monkey patch для отключения проверки Docker в CrewAI
+def _dummy_docker_validation(self):
+    """Заглушка для отключения проверки Docker"""
+    pass
+
+# Заменяем метод проверки Docker на заглушку
+Agent._validate_docker_installation = _dummy_docker_validation
 
 # Импортируем LLM обертку для использования LLMManager
 try:

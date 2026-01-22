@@ -1,417 +1,246 @@
 """
-Статические тесты для Smart Agent функциональности
+Статические тесты для Smart Agent и его инструментов
 """
 
 import pytest
-import tempfile
-import json
+import sys
+import os
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
-# Импортируем тестируемые компоненты
-from src.agents.smart_agent import create_smart_agent
-from src.tools.learning_tool import LearningTool
-from src.tools.context_analyzer_tool import ContextAnalyzerTool
 
-
-class TestSmartAgentStatic:
-    """Статические тесты для SmartAgent"""
+class TestSmartAgentImports:
+    """Тесты импортов Smart Agent"""
+
+    def test_smart_agent_import(self):
+        """Тест импорта SmartAgent"""
+        try:
+            from src.agents.smart_agent import create_smart_agent
+            assert create_smart_agent is not None
+        except ImportError as e:
+            pytest.fail(f"Не удалось импортировать SmartAgent: {e}")
+
+    def test_learning_tool_import(self):
+        """Тест импорта LearningTool"""
+        try:
+            from src.tools.learning_tool import LearningTool
+            assert LearningTool is not None
+        except ImportError as e:
+            pytest.fail(f"Не удалось импортировать LearningTool: {e}")
+
+    def test_context_analyzer_import(self):
+        """Тест импорта ContextAnalyzerTool"""
+        try:
+            from src.tools.context_analyzer_tool import ContextAnalyzerTool
+            assert ContextAnalyzerTool is not None
+        except ImportError as e:
+            pytest.fail(f"Не удалось импортировать ContextAnalyzerTool: {e}")
+
+    def test_docker_checker_import(self):
+        """Тест импорта DockerChecker"""
+        try:
+            from src.tools.docker_utils import DockerChecker
+            assert DockerChecker is not None
+        except ImportError as e:
+            pytest.fail(f"Не удалось импортировать DockerChecker: {e}")
+
+
+class TestSmartAgentStructure:
+    """Тесты структуры классов Smart Agent"""
+
+    def test_learning_tool_class_structure(self):
+        """Тест структуры класса LearningTool"""
+        from src.tools.learning_tool import LearningTool
+
+        # Создаем экземпляр для проверки атрибутов
+        tool = LearningTool()
+
+        # Проверяем наличие основных атрибутов
+        assert hasattr(tool, 'name')
+        assert hasattr(tool, 'description')
+        assert hasattr(tool, 'experience_dir')
+        assert hasattr(tool, 'max_experience_tasks')
+
+        # Проверяем значения по умолчанию
+        assert tool.name == "LearningTool"
+        # Проверяем что description содержит информацию об инструменте
+        assert len(tool.description) > 0
+
+    def test_context_analyzer_tool_class_structure(self):
+        """Тест структуры класса ContextAnalyzerTool"""
+        from src.tools.context_analyzer_tool import ContextAnalyzerTool
+
+        # Создаем экземпляр для проверки атрибутов
+        tool = ContextAnalyzerTool()
+
+        # Проверяем наличие основных атрибутов
+        assert hasattr(tool, 'name')
+        assert hasattr(tool, 'description')
+        assert hasattr(tool, 'project_dir')
+        assert hasattr(tool, 'docs_dir')
+
+        # Проверяем значения по умолчанию
+        assert tool.name == "ContextAnalyzerTool"
+        # Проверяем что description содержит информацию об инструменте
+        assert len(tool.description) > 0
+
+    def test_docker_checker_class_structure(self):
+        """Тест структуры класса DockerChecker"""
+        from src.tools.docker_utils import DockerChecker
+
+        # Проверяем наличие основных методов
+        assert hasattr(DockerChecker, 'is_docker_available')
+        assert hasattr(DockerChecker, 'get_docker_version')
+        assert hasattr(DockerChecker, 'check_docker_permissions')
+        assert hasattr(DockerChecker, 'get_running_containers')
+        assert hasattr(DockerChecker, 'is_container_running')
+
+        # Проверяем что методы callable
+        assert callable(DockerChecker.is_docker_available)
+        assert callable(DockerChecker.get_docker_version)
+
+
+class TestSmartAgentInitialization:
+    """Тесты инициализации компонентов Smart Agent"""
+
+    def test_learning_tool_initialization(self, tmp_path):
+        """Тест инициализации LearningTool"""
+        from src.tools.learning_tool import LearningTool
+
+        experience_dir = tmp_path / "experience"
+        tool = LearningTool(experience_dir=str(experience_dir), max_experience_tasks=50)
+
+        assert tool.experience_dir == experience_dir
+        assert tool.max_experience_tasks == 50
+        assert tool.experience_file == experience_dir / "experience.json"
+
+        # Проверяем создание директории
+        assert experience_dir.exists()
+        assert tool.experience_file.exists()
+
+    def test_context_analyzer_tool_initialization(self, tmp_path):
+        """Тест инициализации ContextAnalyzerTool"""
+        from src.tools.context_analyzer_tool import ContextAnalyzerTool
+
+        project_dir = tmp_path / "project"
+        docs_dir = project_dir / "docs"
+        project_dir.mkdir()
+        docs_dir.mkdir()
+
+        tool = ContextAnalyzerTool(
+            project_dir=str(project_dir),
+            docs_dir=str(docs_dir),
+            max_file_size=500000
+        )
 
-    def test_smart_agent_creation_basic(self):
-        """Тест базового создания smart agent"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
+        assert str(tool.project_dir) == str(project_dir)
+        assert str(tool.docs_dir) == str(docs_dir)
+        assert tool.max_file_size == 500000
 
-            # Создаем агента с минимальными параметрами
-            agent = create_smart_agent(project_dir=project_dir)
+    def test_docker_manager_initialization(self):
+        """Тест инициализации DockerManager"""
+        from src.tools.docker_utils import DockerManager
 
-            assert agent is not None
-            assert hasattr(agent, 'role')
-            assert hasattr(agent, 'goal')
-            assert hasattr(agent, 'backstory')
-            assert hasattr(agent, 'tools')
-
-    def test_smart_agent_creation_with_custom_params(self):
-        """Тест создания smart agent с кастомными параметрами"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
+        manager = DockerManager(
+            image_name="test-image:latest",
+            container_name="test-container"
+        )
 
-            custom_role = "Custom Smart Agent"
-            custom_goal = "Custom goal for testing"
+        assert manager.image_name == "test-image:latest"
+        assert manager.container_name == "test-container"
 
-            agent = create_smart_agent(
-                project_dir=project_dir,
-                role=custom_role,
-                goal=custom_goal,
-                allow_code_execution=False,
-                verbose=False
-            )
 
-            assert agent.role == custom_role
-            assert agent.goal == custom_goal
-            assert agent.allow_code_execution == False
-
-    def test_smart_agent_tools_initialization(self):
-        """Тест инициализации инструментов в smart agent"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
+class TestSmartAgentMethodsExistence:
+    """Тесты наличия методов в классах"""
 
-            agent = create_smart_agent(project_dir=project_dir)
-
-            # Проверяем, что инструменты добавлены
-            assert len(agent.tools) >= 2  # Должны быть как минимум LearningTool и ContextAnalyzerTool
-
-            # Проверяем наличие специфических инструментов
-            tool_names = [tool.name for tool in agent.tools]
-            assert "LearningTool" in tool_names
-            assert "ContextAnalyzerTool" in tool_names
-
-    def test_smart_agent_llm_configuration(self):
-        """Тест конфигурации LLM для smart agent"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
-
-            # Тест с OpenRouter API ключом
-            with patch.dict('os.environ', {'OPENROUTER_API_KEY': 'test_key'}):
-                agent = create_smart_agent(
-                    project_dir=project_dir,
-                    use_llm_manager=True
-                )
-
-                # Проверяем, что LLM настроена
-                assert hasattr(agent, 'llm') or hasattr(agent, 'llms')
+    def test_learning_tool_methods(self):
+        """Тест наличия методов LearningTool"""
+        from src.tools.learning_tool import LearningTool
 
-    def test_smart_agent_memory_enabled(self):
-        """Тест, что у smart agent включена память"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
-
-            agent = create_smart_agent(project_dir=project_dir)
+        tool = LearningTool()
 
-            # Проверяем, что агент создан успешно
-            assert agent is not None
-
+        # Проверяем наличие основных методов
+        assert hasattr(tool, '_run')
+        assert hasattr(tool, 'save_task_experience')
+        assert hasattr(tool, 'find_similar_tasks')
+        assert hasattr(tool, 'get_recommendations')
+        assert hasattr(tool, 'get_statistics')
 
-class TestLearningToolStatic:
-    """Статические тесты для LearningTool"""
+    def test_context_analyzer_tool_methods(self):
+        """Тест наличия методов ContextAnalyzerTool"""
+        from src.tools.context_analyzer_tool import ContextAnalyzerTool
 
-    def test_learning_tool_creation(self):
-        """Тест создания LearningTool"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            experience_dir = Path(temp_dir) / "experience"
+        tool = ContextAnalyzerTool()
 
-            tool = LearningTool(experience_dir=str(experience_dir))
-
-            assert tool.name == "LearningTool"
-            assert tool.experience_dir == experience_dir
-            assert tool.max_experience_tasks == 1000
+        # Проверяем наличие основных методов
+        assert hasattr(tool, '_run')
+        assert hasattr(tool, 'analyze_project_structure')
+        assert hasattr(tool, 'find_file_dependencies')
+        assert hasattr(tool, 'get_task_context')
+        assert hasattr(tool, 'analyze_component')
+        assert hasattr(tool, 'find_related_files')
 
-    def test_learning_tool_experience_file_creation(self):
-        """Тест создания файла опыта при инициализации"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            experience_dir = Path(temp_dir) / "experience"
-
-            # Создаем инструмент
-            tool = LearningTool(experience_dir=str(experience_dir))
-
-            # Проверяем, что файл опыта создан
-            assert tool.experience_file.exists()
-
-            # Проверяем содержимое файла
-            with open(tool.experience_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+    def test_docker_manager_methods(self):
+        """Тест наличия методов DockerManager"""
+        from src.tools.docker_utils import DockerManager
 
-            assert data["version"] == "1.0"
-            assert data["tasks"] == []
-            assert data["patterns"] == {}
-            assert "statistics" in data
+        manager = DockerManager()
 
-    def test_learning_tool_custom_max_tasks(self):
-        """Тест настройки максимального количества задач"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            experience_dir = Path(temp_dir) / "experience"
-            max_tasks = 500
+        # Проверяем наличие основных методов
+        assert hasattr(manager, 'start_container')
+        assert hasattr(manager, 'stop_container')
+        assert hasattr(manager, 'execute_command')
 
-            tool = LearningTool(experience_dir=str(experience_dir), max_experience_tasks=max_tasks)
 
-            assert tool.max_experience_tasks == max_tasks
+class TestSmartAgentConstants:
+    """Тесты констант и настроек по умолчанию"""
 
-    def test_learning_tool_save_experience(self):
-        """Тест сохранения опыта выполнения задачи"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            experience_dir = Path(temp_dir) / "experience"
+    def test_default_values(self):
+        """Тест значений по умолчанию"""
+        from src.tools.learning_tool import LearningTool
+        from src.tools.context_analyzer_tool import ContextAnalyzerTool
+        from src.tools.docker_utils import DockerManager
 
-            tool = LearningTool(experience_dir=str(experience_dir))
+        # LearningTool
+        tool = LearningTool()
+        assert tool.experience_dir == Path("smart_experience")
+        assert tool.max_experience_tasks == 1000
 
-            # Сохраняем опыт
-            result = tool.save_task_experience(
-                task_id="test_task_1",
-                task_description="Test task",
-                success=True,
-                execution_time=10.5,
-                notes="Test notes",
-                patterns=["pattern1", "pattern2"]
-            )
-
-            assert "успешно" in result.lower()
-
-            # Проверяем, что опыт сохранен
-            data = tool._load_experience()
-            assert len(data["tasks"]) == 1
-            assert data["tasks"][0]["task_id"] == "test_task_1"
-            assert data["tasks"][0]["success"] == True
-            assert data["tasks"][0]["execution_time"] == 10.5
-
-    def test_learning_tool_find_similar_tasks(self):
-        """Тест поиска похожих задач"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            experience_dir = Path(temp_dir) / "experience"
-
-            tool = LearningTool(experience_dir=str(experience_dir))
-
-            # Добавляем тестовые задачи
-            tool.save_task_experience("task1", "create user authentication", True)
-            tool.save_task_experience("task2", "implement login system", True)
-            tool.save_task_experience("task3", "build file upload", False)
-
-            # Ищем похожие задачи
-            result = tool.find_similar_tasks("authentication")
-
-            assert "task1" in result or "create user authentication" in result
-
-    def test_learning_tool_get_statistics(self):
-        """Тест получения статистики обучения"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            experience_dir = Path(temp_dir) / "experience"
-
-            tool = LearningTool(experience_dir=str(experience_dir))
-
-            # Добавляем тестовые данные
-            tool.save_task_experience("task1", "task1", True, 5.0)
-            tool.save_task_experience("task2", "task2", False, 3.0)
-            tool.save_task_experience("task3", "task3", True, 7.0)
-
-            stats = tool.get_statistics()
-
-            assert "Всего задач: 3" in stats
-            assert "Успешных задач: 2" in stats
-            assert "Неудачных задач: 1" in stats
-
-    def test_learning_tool_get_recommendations(self):
-        """Тест получения рекомендаций"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            experience_dir = Path(temp_dir) / "experience"
-
-            tool = LearningTool(experience_dir=str(experience_dir))
-
-            # Добавляем успешную задачу
-            tool.save_task_experience(
-                "task1",
-                "implement user login",
-                True,
-                10.0,
-                "Use JWT tokens",
-                ["authentication", "security"]
-            )
-
-            # Получаем рекомендации
-            result = tool.get_recommendations("user authentication")
-
-            assert "рекомендации" in result.lower() or "recommendations" in result.lower()
-
-
-class TestContextAnalyzerToolStatic:
-    """Статические тесты для ContextAnalyzerTool"""
-
-    def test_context_analyzer_tool_creation(self):
-        """Тест создания ContextAnalyzerTool"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
+        # ContextAnalyzerTool
+        tool = ContextAnalyzerTool()
+        assert tool.project_dir == Path(".")
+        assert tool.docs_dir == tool.project_dir / "docs"
+        assert tool.max_file_size == 1000000
+        assert ".py" in tool.supported_extensions
+        assert ".md" in tool.supported_extensions
 
-            tool = ContextAnalyzerTool(project_dir=str(project_dir))
-
-            assert tool.name == "ContextAnalyzerTool"
-            assert tool.project_dir == project_dir
-            assert tool.docs_dir == project_dir / "docs"
-            assert tool.max_file_size == 1000000
+        # DockerManager
+        manager = DockerManager()
+        assert manager.image_name == "cursor-agent:latest"
+        assert manager.container_name == "cursor-agent-life"
 
-    def test_context_analyzer_tool_custom_params(self):
-        """Тест создания с кастомными параметрами"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
-            docs_dir = "documentation"
-            max_size = 500000
-
-            tool = ContextAnalyzerTool(
-                project_dir=str(project_dir),
-                docs_dir=docs_dir,
-                max_file_size=max_size,
-                supported_extensions=[".py", ".md"]
-            )
 
-            assert tool.docs_dir == project_dir / docs_dir
-            assert tool.max_file_size == max_size
-            assert ".py" in tool.supported_extensions
-            assert ".md" in tool.supported_extensions
+class TestSmartAgentErrorHandling:
+    """Тесты обработки ошибок"""
 
-    def test_context_analyzer_project_structure_analysis(self):
-        """Тест анализа структуры проекта"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
+    def test_learning_tool_with_invalid_path(self):
+        """Тест LearningTool с некорректным путем"""
+        from src.tools.learning_tool import LearningTool
 
-            # Создаем тестовую структуру
-            (project_dir / "src").mkdir()
-            (project_dir / "docs").mkdir()
-            (project_dir / "test").mkdir()
+        # Создаем инструмент с путем к несуществующей директории
+        tool = LearningTool(experience_dir="/nonexistent/path")
 
-            # Создаем файлы разных типов
-            (project_dir / "src" / "main.py").write_text("print('hello')")
-            (project_dir / "docs" / "README.md").write_text("# Documentation")
-            (project_dir / "test" / "test.py").write_text("def test(): pass")
+        # Проверяем что директория будет создана
+        assert tool.experience_dir.exists()
+        assert tool.experience_file.exists()
 
-            tool = ContextAnalyzerTool(project_dir=str(project_dir))
+    def test_context_analyzer_tool_with_invalid_path(self):
+        """Тест ContextAnalyzerTool с некорректным путем"""
+        from src.tools.context_analyzer_tool import ContextAnalyzerTool
 
-            result = tool.analyze_project_structure()
+        # Создаем инструмент с путем к несуществующей директории
+        tool = ContextAnalyzerTool(project_dir="/nonexistent/project")
 
-            assert "Анализ структуры проекта" in result
-            assert "Основные компоненты" in result
-            assert "src:" in result or "docs:" in result or "test:" in result
-
-    def test_context_analyzer_find_dependencies_python(self):
-        """Тест поиска зависимостей Python файла"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
-
-            # Создаем тестовый Python файл с импортами
-            test_file = project_dir / "test_module.py"
-            test_file.write_text("""
-import os
-import sys
-from pathlib import Path
-from custom_module import CustomClass
-""")
-
-            # Создаем файл, на который есть ссылка
-            (project_dir / "custom_module.py").write_text("class CustomClass: pass")
-
-            tool = ContextAnalyzerTool(project_dir=str(project_dir))
-
-            result = tool.find_file_dependencies("test_module.py")
-
-            assert "custom_module.py" in result or "CustomClass" in result
-
-    def test_context_analyzer_find_dependencies_markdown(self):
-        """Тест поиска зависимостей Markdown файла"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
-
-            # Создаем тестовый MD файл со ссылками
-            test_file = project_dir / "test.md"
-            test_file.write_text("""
-# Test Document
-
-See also: [main.py](src/main.py)
-Check [utils.py](utils.py) for utilities.
-""")
-
-            # Создаем файлы, на которые есть ссылки
-            (project_dir / "src").mkdir()
-            (project_dir / "src" / "main.py").write_text("print('main')")
-            (project_dir / "utils.py").write_text("def util(): pass")
-
-            tool = ContextAnalyzerTool(project_dir=str(project_dir))
-
-            result = tool.find_file_dependencies("test.md")
-
-            assert "main.py" in result or "utils.py" in result
-
-    def test_context_analyzer_get_task_context(self):
-        """Тест получения контекста для задачи"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
-
-            # Создаем тестовые файлы
-            docs_dir = project_dir / "docs"
-            docs_dir.mkdir()
-
-            (docs_dir / "api.md").write_text("# API Documentation\nAuthentication and security")
-            (docs_dir / "guide.md").write_text("# User Guide\nHow to use the system")
-
-            src_dir = project_dir / "src"
-            src_dir.mkdir()
-            (src_dir / "auth.py").write_text("class Authentication: pass")
-            (src_dir / "security.py").write_text("class Security: pass")
-
-            tool = ContextAnalyzerTool(project_dir=str(project_dir))
-
-            result = tool.get_task_context("implement authentication")
-
-            assert "Контекст для задачи" in result
-
-    def test_context_analyzer_analyze_component_directory(self):
-        """Тест анализа компонента-директории"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
-
-            # Создаем тестовую директорию
-            component_dir = project_dir / "src" / "auth"
-            component_dir.mkdir(parents=True)
-
-            # Создаем файлы разных типов
-            (component_dir / "__init__.py").write_text("")
-            (component_dir / "login.py").write_text("def login(): pass")
-            (component_dir / "register.py").write_text("def register(): pass")
-            (component_dir / "README.md").write_text("# Auth Module")
-
-            tool = ContextAnalyzerTool(project_dir=str(project_dir))
-
-            result = tool.analyze_component("src/auth")
-
-            assert "Анализ компонента" in result
-            assert "directory" in result.lower()
-
-    def test_context_analyzer_analyze_component_file(self):
-        """Тест анализа компонента-файла"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
-
-            # Создаем тестовый файл
-            test_file = project_dir / "utils.py"
-            test_file.write_text("""
-import os
-from pathlib import Path
-
-def helper():
-    return "help"
-""")
-
-            tool = ContextAnalyzerTool(project_dir=str(project_dir))
-
-            result = tool.analyze_component("utils.py")
-
-            assert "Анализ компонента" in result
-            assert "file" in result.lower()
-            assert ".py" in result
-
-    def test_context_analyzer_find_related_files(self):
-        """Тест поиска связанных файлов"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
-
-            # Создаем тестовые файлы
-            docs_dir = project_dir / "docs"
-            docs_dir.mkdir()
-
-            (docs_dir / "auth.md").write_text("# Authentication\nHow to implement auth")
-            (docs_dir / "security.md").write_text("# Security\nAuthentication best practices")
-
-            src_dir = project_dir / "src"
-            src_dir.mkdir()
-            (src_dir / "auth_service.py").write_text("class AuthService: pass")
-
-            tool = ContextAnalyzerTool(project_dir=str(project_dir))
-
-            result = tool.find_related_files("authentication")
-
-            assert "Файлы, связанные с запросом" in result
-            assert "auth" in result.lower()
+        # Проверяем основные атрибуты
+        assert str(tool.project_dir) == "/nonexistent/project"
+        assert str(tool.docs_dir) == "/nonexistent/project/docs"

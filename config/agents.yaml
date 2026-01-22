@@ -9,10 +9,9 @@ executor_agent:
     You read project documentation, understand requirements, and execute tasks
     from the todo list systematically. You update project status and ensure
     code quality and best practices are followed.
-  allow_code_execution: true
+  allow_code_execution: false
   verbose: true
-  tools:
-    - CodeInterpreterTool
+  tools: []
 
 # Примеры специализированных агентов (для будущего использования)
 

@@ -1,0 +1,27 @@
+{
+  "version": "1.0",
+  "tasks": [
+    {
+      "task_id": "debug_test",
+      "description": "Debug test task",
+      "success": true,
+      "execution_time": 1.0,
+      "timestamp": "2026-01-22T20:29:54.131451",
+      "notes": "Debug notes",
+      "patterns": [
+        "debug"
+      ]
+    }
+  ],
+  "patterns": {
+    "debug": [
+      "debug_test"
+    ]
+  },
+  "statistics": {
+    "total_tasks": 1,
+    "successful_tasks": 1,
+    "failed_tasks": 0,
+    "average_execution_time": 1.0
+  }
+}

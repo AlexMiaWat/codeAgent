@@ -1,7 +1,7 @@
 # Полное руководство по тестированию Code Agent
 
-**Дата обновления:** 2026-01-19  
-**Версия:** 2.0
+**Дата обновления:** 2026-01-22
+**Версия:** 2.1
 
 ---
 
@@ -49,7 +49,8 @@ make test-llm          # LLM тесты
 make test-validation   # Валидация
 make test-checkpoint   # Checkpoint тесты
 make test-full         # Полный цикл
-make test-smart        # Smart Agent тесты
+# Smart Agent тесты запускаются отдельно:
+pytest test/test_smart_agent*.py -v
 ```
 
 ---
@@ -252,7 +253,39 @@ make test-checkpoint
 
 ---
 
-### 7. Full Cycle тесты
+### 7. Smart Agent тесты
+
+**Описание:** Тестирование компонентов Smart Agent.
+
+**Запуск:**
+```bash
+# Все Smart Agent тесты
+pytest test/test_smart_agent*.py -v
+
+# Отдельные файлы
+pytest test/test_smart_agent_integration.py -v  # Проверка структуры и взаимодействия компонентов
+pytest test/test_smart_agent_smoke.py -v       # Дымовые тесты базовой функциональности
+pytest test/test_smart_agent_static.py -v      # Статические тесты импортов и классов
+pytest test/test_smart_agent.py -v             # Основные тесты Smart Agent
+pytest test/test_smart_agent_simple.py -v      # Простые тесты
+```
+
+**Включает:**
+- `test_smart_agent_integration.py` - Проверка структуры классов и методов (60s)
+- `test_smart_agent_smoke.py` - Дымовые тесты импортов и создания объектов (30s)
+- `test_smart_agent_static.py` - Статические тесты импортов и структуры (30s)
+- `test_smart_agent.py` - Основные тесты Smart Agent (120s)
+- `test_smart_agent_simple.py` - Простые функциональные тесты (60s)
+
+**Особенности:**
+- Тесты фокусируются на проверке структуры классов и методов
+- Docker поддержка тестируется опционально с fallback режимом
+- Создаются mock-объекты для изоляции компонентов
+- Проверяется корректность импортов и инициализации
+
+---
+
+### 8. Full Cycle тесты
 
 **Описание:** Полный цикл работы агента.
 
@@ -333,8 +366,8 @@ python test/run_tests.py --help
 | LLM Core | `--llm` | Тестирование базовой функциональности LLM | 2 |
 | Validation | `--validation` | Валидация конфигурации и безопасности | 1 |
 | Checkpoint | `--checkpoint` | Тестирование системы checkpoint | 2 |
+| Smart Agent | pytest | ✅ **ОТДЕЛЬНО** - Тестирование Smart Agent с Docker поддержкой | 5 |
 | Full Cycle | `--full` | Полный цикл работы агента | 2 |
-| Smart Agent | `--smart` | ✅ **НОВОЕ** - Тестирование Smart Agent с Docker поддержкой | 6 |
 
 ---
 
@@ -362,7 +395,8 @@ python test/run_tests.py --help
 - Настроенный `PROJECT_DIR` в `.env`
 
 **Smart Agent тесты:**
-- ✅ **НОВОЕ** - Доступ к Docker (опционально, fallback режим при недоступности)
+- ✅ **ОТДЕЛЬНО** - Запуск через pytest: `pytest test/test_smart_agent*.py -v`
+- Доступ к Docker (опционально, fallback режим при недоступности)
 - Настроенная директория опыта `smart_experience/` (создается автоматически)
 - Установленная библиотека `crewai[tools]` для CodeInterpreterTool
 
@@ -496,6 +530,19 @@ python test/run_tests.py --openrouter --llm
 python test/run_tests.py --validation
 ```
 
+### Проверка Smart Agent компонентов
+
+```bash
+# Все Smart Agent тесты
+pytest test/test_smart_agent*.py -v
+
+# Только интеграционные тесты
+pytest test/test_smart_agent_integration.py -v
+
+# Дымовые тесты (быстрая проверка)
+pytest test/test_smart_agent_smoke.py -v
+```
+
 ---
 
 ## Формат вывода
@@ -570,6 +617,13 @@ python test/compare_keys.py
 ---
 
 ## Обновления
+
+**2026-01-22:**
+- ✅ Переработаны Smart Agent тесты (теперь 5 файлов, фокус на структуре классов)
+- ✅ Добавлен отдельный раздел для Smart Agent тестов с подробным описанием
+- ✅ Обновлена таблица категорий тестов (8 категорий)
+- ✅ Исправлено количество Smart Agent тестов (5 вместо 6)
+- ✅ Добавлены команды запуска Smart Agent тестов через pytest
 
 **2026-01-19:**
 - ✅ Добавлена принудительная перезагрузка переменных окружения (`load_dotenv(override=True)`)
