@@ -39,6 +39,11 @@ def setup_asyncio_exception_handling():
                 logging.getLogger(__name__).debug(f"Подавлено необработанное исключение cleanup HTTP клиента: {exception}")
                 return
 
+            # Подавляем ServerReloadException - это нормальное событие перезапуска
+            if isinstance(exception, ServerReloadException):
+                logging.getLogger(__name__).info(f"ServerReloadException подавлено (нормальное событие перезапуска): {exception}")
+                return
+
         # Для остальных ошибок используем стандартную обработку
         logging.getLogger(__name__).error(f"Необработанное исключение в asyncio задаче: {context}")
 
@@ -316,6 +321,24 @@ def main():
                 print(f"\n{'='*80}")
                 print(f"Перезапуск сервера ({restart_count}/{max_restarts})...")
                 print(f"{'='*80}\n")
+
+                # Очищаем event loop перед перезапуском для предотвращения конфликтов
+                try:
+                    loop = asyncio.get_event_loop()
+                    if not loop.is_closed():
+                        # Отменяем все pending задачи
+                        pending_tasks = [task for task in asyncio.all_tasks(loop) if not task.done()]
+                        for task in pending_tasks:
+                            task.cancel()
+                        # Ждем завершения отмененных задач
+                        if pending_tasks:
+                            loop.run_until_complete(asyncio.gather(*pending_tasks, return_exceptions=True))
+                        # Закрываем loop
+                        loop.close()
+                except RuntimeError:
+                    # Event loop уже закрыт или не существует
+                    pass
+
                 time.sleep(2)
                 continue
             else:

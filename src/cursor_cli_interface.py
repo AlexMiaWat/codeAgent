@@ -1586,134 +1586,6 @@ This agent role is used for automated project tasks execution.
 
         return False
 
-    def execute_with_fallback(
-        self,
-        prompt: str,
-        working_dir: Optional[str] = None,
-        timeout: Optional[int] = None,
-        additional_args: Optional[list[str]] = None,
-        new_chat: bool = True,
-        chat_id: Optional[str] = None
-    ) -> CursorCLIResult:
-        """
-        Выполнить команду с автоматическим fallback на резервные модели
-
-        Сначала пытается выполнить с основной моделью (auto).
-        При ошибках (billing, timeout, и т.д.) автоматически пробует резервные модели.
-        После billing error следующие 25 обращений автоматически используют резервную модель.
-
-        Args:
-            prompt: Инструкция/промпт для выполнения
-            working_dir: Рабочая директория
-            timeout: Таймаут выполнения
-            additional_args: Дополнительные аргументы
-            new_chat: Создать новый чат
-            chat_id: ID чата для продолжения
-
-        Returns:
-            CursorCLIResult с результатом выполнения (последняя попытка)
-        """
-        # Получаем конфигурацию
-        model_config = self._get_model_config()
-        primary_model = model_config['model']
-        fallback_models = model_config.get('fallback_models', [])
-        resilience = model_config.get('resilience', {})
-
-        enable_fallback = resilience.get('enable_fallback', True)
-        max_attempts = resilience.get('max_fallback_attempts', 3)
-        retry_delay = resilience.get('fallback_retry_delay', 2)
-
-        # Проверяем, нужно ли автоматически использовать fallback
-        if self.fallback_state.should_use_fallback() and fallback_models:
-            # Используем резервную модель
-            models_to_try = [fallback_models[0]]  # Первая резервная модель
-            logger.info(Colors.colorize(
-                f"🔄 Автоматический fallback активен - используем резервную модель '{models_to_try[0]}'",
-                Colors.BRIGHT_CYAN
-            ))
-        else:
-            # Стандартная логика
-            models_to_try = [primary_model]
-            if enable_fallback and fallback_models:
-                models_to_try.extend(fallback_models[:max_attempts - 1])
-        
-        # Компактный лог fallback моделей
-        fallback_info = f"'{primary_model}'"
-        if fallback_models:
-            fallback_info += f" → {fallback_models}"
-        logger.info(Colors.colorize(
-            f"🔄 Fallback: {fallback_info}",
-            Colors.BRIGHT_MAGENTA
-        ))
-        
-        last_result = None
-        
-        # Пробуем каждую модель по очереди
-        for attempt, model in enumerate(models_to_try, 1):
-            logger.debug(f"Попытка {attempt}/{len(models_to_try)} с моделью '{model}'")
-            
-            # Выполняем команду с текущей моделью
-            result = self._execute_with_specific_model(
-                prompt=prompt,
-                model=model,
-                working_dir=working_dir,
-                timeout=timeout,
-                additional_args=additional_args,
-                new_chat=new_chat,
-                chat_id=chat_id
-            )
-            
-            last_result = result
-            
-            # Если успешно - возвращаем результат
-            if result.success:
-                if attempt > 1:
-                    # Fallback помог - но это все равно признак проблемы с основной моделью
-                    logger.info(f"✅ Успешно выполнено с резервной моделью '{model}' (попытка {attempt})")
-                    logger.warning(f"⚠️ Основная модель '{primary_model}' не смогла выполнить команду, использован fallback на '{model}'")
-                    # Устанавливаем флаги для отслеживания использования fallback
-                    result.fallback_used = True
-                    result.primary_model_failed = True
-                elif self.fallback_state.should_use_fallback():
-                    # Успешное выполнение в автоматическом fallback режиме
-                    logger.info(f"✅ Успешно выполнено в автоматическом fallback режиме с моделью '{model}'")
-                    result.fallback_used = True
-                    result.billing_fallback_used = True  # Устанавливаем флаг автоматического billing fallback
-                    # Записываем обращение в fallback режиме
-                    self.fallback_state.record_request()
-                else:
-                    logger.info(f"✅ Успешно выполнено с основной моделью '{model}'")
-                return result
-            
-            # Проверяем, нужно ли продолжать fallback
-            if not enable_fallback or attempt >= len(models_to_try):
-                break
-            
-            # Проверяем, нужно ли активировать fallback для этой ошибки
-            if not self._should_trigger_fallback(result, resilience):
-                logger.info(f"Ошибка не требует fallback, останавливаем попытки")
-                break
-            
-            # Задержка перед следующей попыткой
-            if attempt < len(models_to_try):
-                logger.info(f"Ожидание {retry_delay}с перед следующей попыткой...")
-                time.sleep(retry_delay)
-        
-        # Все попытки неудачны
-        if last_result:
-            logger.error(f"❌ Все попытки ({len(models_to_try)}) неудачны. Последняя ошибка: {last_result.error_message}")
-        else:
-            logger.error("❌ Не удалось выполнить команду")
-            last_result = CursorCLIResult(
-                success=False,
-                stdout="",
-                stderr="",
-                return_code=-1,
-                cli_available=True,
-                error_message="Не удалось выполнить команду с любой из моделей"
-            )
-        
-        return last_result
     
     def _execute_with_specific_model(
         self,
@@ -2157,10 +2029,10 @@ This agent role is used for automated project tasks execution.
     ) -> CursorCLIResult:
         """
         Выполнить команду с автоматическим fallback на резервные модели
-        
+
         Сначала пытается выполнить с основной моделью (auto).
         При ошибках (billing, timeout, и т.д.) автоматически пробует резервные модели.
-        
+
         Args:
             prompt: Инструкция/промпт для выполнения
             working_dir: Рабочая директория
@@ -2168,7 +2040,7 @@ This agent role is used for automated project tasks execution.
             additional_args: Дополнительные аргументы
             new_chat: Создать новый чат
             chat_id: ID чата для продолжения
-            
+
         Returns:
             CursorCLIResult с результатом выполнения (последняя попытка)
         """
@@ -2177,15 +2049,31 @@ This agent role is used for automated project tasks execution.
         primary_model = model_config['model']
         fallback_models = model_config.get('fallback_models', [])
         resilience = model_config.get('resilience', {})
-        
+
         enable_fallback = resilience.get('enable_fallback', True)
         max_attempts = resilience.get('max_fallback_attempts', 3)
         retry_delay = resilience.get('fallback_retry_delay', 2)
-        
-        # Формируем список моделей для попыток
-        models_to_try = [primary_model]
-        if enable_fallback and fallback_models:
-            models_to_try.extend(fallback_models[:max_attempts - 1])
+
+        # Проверяем, нужно ли автоматически использовать fallback
+        if self.fallback_state.should_use_fallback() and fallback_models:
+            # Используем резервную модель
+            models_to_try = [fallback_models[0]]  # Первая резервная модель
+            logger.info(Colors.colorize(
+                f"🔄 Автоматический fallback активен - используем резервную модель '{models_to_try[0]}'",
+                Colors.BRIGHT_CYAN
+            ))
+        elif self.fallback_state.is_testing_primary_model():
+            # Режим тестирования основной модели - используем только auto
+            models_to_try = [primary_model]
+            logger.info(Colors.colorize(
+                f"🔄 Тестируем основную модель '{primary_model}' после завершения fallback периода",
+                Colors.BRIGHT_YELLOW
+            ))
+        else:
+            # Стандартная логика
+            models_to_try = [primary_model]
+            if enable_fallback and fallback_models:
+                models_to_try.extend(fallback_models[:max_attempts - 1])
         
         # Компактный лог fallback моделей
         fallback_info = f"'{primary_model}'"
@@ -2224,6 +2112,12 @@ This agent role is used for automated project tasks execution.
                     # Устанавливаем флаги для отслеживания использования fallback
                     result.fallback_used = True
                     result.primary_model_failed = True
+
+                    # Активируем автоматический fallback режим после неудачи основной модели
+                    # Это обеспечит, что следующие запросы будут автоматически использовать резервную модель
+                    if not self.fallback_state.is_testing_primary_model():
+                        logger.warning("🚨 Активируем автоматический fallback режим после неудачи основной модели")
+                        self.fallback_state.activate_fallback()
                 elif self.fallback_state.should_use_fallback():
                     # Успешное выполнение в автоматическом fallback режиме
                     logger.info(f"✅ Успешно выполнено в автоматическом fallback режиме с моделью '{model}'")

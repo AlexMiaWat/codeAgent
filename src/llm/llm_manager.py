@@ -27,6 +27,18 @@ load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
 
+# Импортируем Colors для цветового выделения
+try:
+    from ..task_logger import Colors
+except ImportError:
+    # Fallback если модуль еще не создан
+    class Colors:
+        BRIGHT_MAGENTA = '\033[95m'
+        RESET = '\033[0m'
+        @staticmethod
+        def colorize(text: str, color: str) -> str:
+            return f"{color}{text}{Colors.RESET}"
+
 
 class ModelRole(Enum):
     """Роли моделей"""
@@ -94,35 +106,166 @@ class LLMManager:
         self._last_health_check: Optional[float] = None
         # Интервал проверки работоспособности (секунды)
         self._health_check_interval: float = 300.0  # 5 минут по умолчанию
+
+        # Кэш для быстрого доступа
+        self._fastest_model_cache: Optional[ModelConfig] = None
+        self._cache_timestamp: float = 0.0
+        self._cache_ttl: float = 60.0  # Кэш на 1 минуту
+        self._model_name_cache: Dict[str, ModelConfig] = {}  # Кэш моделей по имени
         
         self._load_config()
         self._init_models()
         self._init_clients()
+
+        # Очищаем кэши при инициализации
+        self._clear_caches()
     
+    def _validate_config_path(self, path: Path) -> None:
+        """
+        Валидация пути к конфигурационному файлу для защиты от path traversal.
+
+        Args:
+            path: Путь к файлу конфигурации
+
+        Raises:
+            ValueError: Если путь небезопасный
+            FileNotFoundError: Если файл не найден
+        """
+        # Проверка существования файла
+        if not path.exists():
+            raise FileNotFoundError(f"LLM config file not found: {path}")
+
+        if not path.is_file():
+            raise ValueError(f"Path is not a file: {path}")
+
+        # Защита от path traversal - проверяем на явные попытки выхода за пределы
+        try:
+            resolved_path = path.resolve()
+            path_str = str(resolved_path)
+
+            # Запрещаем явные паттерны path traversal
+            dangerous_patterns = ['..', '\\', '/']
+            path_parts = resolved_path.parts
+
+            # Проверяем что нет '..' в пути (path traversal)
+            if '..' in path_parts:
+                raise ValueError(f"Path traversal detected in config file path: {path}")
+
+            # Проверяем что путь не содержит опасных символов
+            if any(pattern in path_str for pattern in ['/../', '\\..\\', '..\\', '../']):
+                raise ValueError(f"Path traversal pattern detected in config file path: {path}")
+
+        except (OSError, RuntimeError) as e:
+            raise ValueError(f"Invalid config file path: {path}") from e
+
+        # Проверка расширения файла
+        if path.suffix not in ['.yaml', '.yml']:
+            raise ValueError(f"Config file must have .yaml or .yml extension: {path}")
+
+        # Проверка размера файла (защита от ZIP bombs)
+        max_size = 10 * 1024 * 1024  # 10MB
+        if path.stat().st_size > max_size:
+            raise ValueError(f"Config file too large (max {max_size} bytes): {path}")
+
     def _load_config(self):
-        """Загрузка конфигурации из YAML"""
-        if not self.config_path.exists():
-            raise FileNotFoundError(f"LLM config file not found: {self.config_path}")
-        
-        with open(self.config_path, 'r', encoding='utf-8') as f:
-            self.config = yaml.safe_load(f) or {}
-        
+        """Загрузка конфигурации из YAML с security checks"""
+        # Валидация пути перед загрузкой
+        self._validate_config_path(self.config_path)
+
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                self.config = yaml.safe_load(f) or {}
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML in config file {self.config_path}: {e}") from e
+        except (OSError, IOError) as e:
+            raise IOError(f"Cannot read config file {self.config_path}: {e}") from e
+
+        # Валидация загруженной конфигурации
+        self._validate_config_structure(self.config)
+
         # Подстановка переменных окружения
         self.config = self._substitute_env_vars(self.config)
-    
-    def _substitute_env_vars(self, obj: Any) -> Any:
-        """Рекурсивная подстановка переменных окружения"""
-        if isinstance(obj, dict):
-            return {k: self._substitute_env_vars(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [self._substitute_env_vars(item) for item in obj]
-        elif isinstance(obj, str) and obj.startswith('${') and obj.endswith('}'):
-            var_expr = obj[2:-1]
-            env_value = os.getenv(var_expr.strip())
-            if env_value is None:
-                raise ValueError(f"Environment variable not found: {var_expr}")
-            return env_value
-        return obj
+
+    def _validate_config_structure(self, config: Dict[str, Any]) -> None:
+        """
+        Валидация структуры конфигурации.
+
+        Args:
+            config: Загруженная конфигурация
+
+        Raises:
+            ValueError: При обнаружении проблем в структуре
+        """
+        if not isinstance(config, dict):
+            raise ValueError("Configuration must be a dictionary")
+
+        # Проверка обязательных секций
+        required_sections = ['llm', 'providers']
+        for section in required_sections:
+            if section not in config:
+                raise ValueError(f"Missing required configuration section: {section}")
+
+        # Валидация секции llm
+        llm_config = config.get('llm', {})
+        if not isinstance(llm_config, dict):
+            raise ValueError("LLM configuration must be a dictionary")
+
+        required_llm_keys = ['default_provider', 'model_roles']
+        for key in required_llm_keys:
+            if key not in llm_config:
+                raise ValueError(f"Missing required LLM config key: {key}")
+
+        # Валидация провайдеров
+        providers = config.get('providers', {})
+        if not isinstance(providers, dict):
+            raise ValueError("Providers configuration must be a dictionary")
+
+        default_provider = llm_config.get('default_provider')
+        if default_provider not in providers:
+            raise ValueError(f"Default provider '{default_provider}' not found in providers")
+
+    def _substitute_env_vars(self, obj: Any, visited: Optional[Set[int]] = None) -> Any:
+        """
+        Рекурсивная подстановка переменных окружения с защитой от бесконечной рекурсии.
+
+        Args:
+            obj: Объект для обработки
+            visited: Множество ID уже обработанных объектов (для защиты от циклов)
+
+        Returns:
+            Объект с подставленными переменными окружения
+
+        Raises:
+            ValueError: При обнаружении циклических ссылок
+        """
+        if visited is None:
+            visited = set()
+
+        # Защита от бесконечной рекурсии
+        obj_id = id(obj)
+        if obj_id in visited:
+            raise ValueError("Circular reference detected in configuration during environment variable substitution")
+
+        visited.add(obj_id)
+
+        try:
+            if isinstance(obj, dict):
+                return {k: self._substitute_env_vars(v, visited) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [self._substitute_env_vars(item, visited) for item in obj]
+            elif isinstance(obj, str) and obj.startswith('${') and obj.endswith('}'):
+                var_expr = obj[2:-1].strip()
+                if not var_expr:
+                    raise ValueError(f"Empty environment variable name in expression: {obj}")
+
+                env_value = os.getenv(var_expr)
+                if env_value is None:
+                    raise ValueError(f"Environment variable not found: {var_expr}")
+                return env_value
+            else:
+                return obj
+        finally:
+            visited.remove(obj_id)
     
     def _init_models(self):
         """Инициализация моделей из конфигурации"""
@@ -403,20 +546,151 @@ class LLMManager:
         return reserve_models + duplicate_models + fallback_models
     
     def get_fastest_model(self) -> Optional[ModelConfig]:
-        """Получить самую быструю модель (по last_response_time)"""
+        """Получить самую быструю модель (по last_response_time) с кэшированием"""
+        current_time = time.time()
+
+        # Проверяем кэш
+        if (self._fastest_model_cache is not None and
+            current_time - self._cache_timestamp < self._cache_ttl):
+            return self._fastest_model_cache
+
         primary_models = self.get_primary_models()
         if not primary_models:
             return None
-        
+
         # Сортируем по времени ответа (быстрее = меньше)
         # Если время не измерено (0), считаем модель быстрой
         sorted_models = sorted(
             primary_models,
             key=lambda m: m.last_response_time if m.last_response_time > 0 else 0.0
         )
-        
+
+        # Обновляем кэш
+        self._fastest_model_cache = sorted_models[0]
+        self._cache_timestamp = current_time
+
         return sorted_models[0]
-    
+
+    def _invalidate_fastest_cache(self):
+        """Инвалидировать кэш самой быстрой модели"""
+        self._fastest_model_cache = None
+        self._cache_timestamp = 0.0
+
+    def get_model_by_name(self, model_name: str) -> Optional[ModelConfig]:
+        """Получить модель по имени с кэшированием"""
+        # Проверяем кэш
+        if model_name in self._model_name_cache:
+            return self._model_name_cache[model_name]
+
+        # Ищем в моделях
+        if model_name in self.models:
+            model = self.models[model_name]
+            # Кэшируем результат
+            self._model_name_cache[model_name] = model
+            return model
+
+        return None
+
+    def _clear_caches(self):
+        """Очистить все кэши"""
+        self._fastest_model_cache = None
+        self._cache_timestamp = 0.0
+        self._model_name_cache.clear()
+
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Получить статистику производительности всех моделей"""
+        stats = {
+            "total_models": len(self.models),
+            "enabled_models": len([m for m in self.models.values() if m.enabled]),
+            "disabled_models": len([m for m in self.models.values() if not m.enabled]),
+            "models": {}
+        }
+
+        for name, model in self.models.items():
+            total_requests = model.success_count + model.error_count
+            success_rate = (model.success_count / total_requests * 100) if total_requests > 0 else 0.0
+
+            stats["models"][name] = {
+                "enabled": model.enabled,
+                "role": model.role.value,
+                "total_requests": total_requests,
+                "success_count": model.success_count,
+                "error_count": model.error_count,
+                "success_rate": round(success_rate, 1),
+                "avg_response_time": round(model.last_response_time, 3) if model.last_response_time > 0 else 0.0,
+                "max_tokens": model.max_tokens,
+                "context_window": model.context_window
+            }
+
+        return stats
+
+    def _validate_generate_request(
+        self,
+        prompt: str,
+        model_name: Optional[str],
+        use_fastest: bool,
+        use_parallel: bool,
+        response_format: Optional[Dict[str, Any]]
+    ) -> None:
+        """
+        Валидация параметров запроса к generate_response.
+
+        Args:
+            prompt: Текст запроса
+            model_name: Имя модели
+            use_fastest: Флаг использования быстрой модели
+            use_parallel: Флаг параллельного выполнения
+            response_format: Формат ответа
+
+        Raises:
+            TypeError: При неверных типах параметров
+            ValueError: При недопустимых значениях параметров
+        """
+        # Валидация prompt
+        if not isinstance(prompt, str):
+            raise TypeError("Prompt must be a string")
+
+        if not prompt.strip():
+            raise ValueError("Prompt cannot be empty or contain only whitespace")
+
+        # Ограничение размера промпта (защита от memory exhaustion)
+        max_prompt_length = 100 * 1024  # 100KB
+        if len(prompt) > max_prompt_length:
+            raise ValueError(f"Prompt too long: {len(prompt)} characters (max {max_prompt_length})")
+
+        # Проверка на dangerous content patterns
+        dangerous_patterns = [
+            '<script', 'javascript:', 'vbscript:', 'data:',
+            'onload=', 'onerror=', 'onclick=', '<iframe', '<object'
+        ]
+        prompt_lower = prompt.lower()
+        for pattern in dangerous_patterns:
+            if pattern in prompt_lower:
+                raise ValueError(f"Potentially dangerous content detected in prompt: {pattern}")
+
+        # Валидация model_name
+        if model_name is not None:
+            if not isinstance(model_name, str):
+                raise TypeError("model_name must be a string or None")
+            if model_name not in self.models:
+                raise ValueError(f"Unknown model: {model_name}")
+
+        # Валидация response_format
+        if response_format is not None:
+            if not isinstance(response_format, dict):
+                raise TypeError("response_format must be a dictionary or None")
+            if 'type' not in response_format:
+                raise ValueError("response_format must contain 'type' key")
+            valid_types = ['text', 'json_object', 'json_schema']
+            if response_format['type'] not in valid_types:
+                raise ValueError(f"Invalid response_format type: {response_format['type']}. Valid types: {valid_types}")
+
+        # Валидация флагов
+        if not isinstance(use_fastest, bool):
+            raise TypeError("use_fastest must be a boolean")
+        if not isinstance(use_parallel, bool):
+            raise TypeError("use_parallel must be a boolean")
+
     async def generate_response(
         self,
         prompt: str,
@@ -428,17 +702,33 @@ class LLMManager:
         """
         Генерация ответа через модель.
         ВАЖНО: Всегда возвращает ответ, никогда не падает с исключением.
-        
+
         Args:
             prompt: Текст запроса
             model_name: Имя модели (если None - выбирается автоматически)
             use_fastest: Использовать самую быструю модель
             use_parallel: Использовать параллельное выполнение (best_of_two)
             response_format: Формат ответа (например, {"type": "json_object"} для JSON mode)
-        
+
         Returns:
             ModelResponse с ответом модели (всегда успешный или с error, но не исключение)
         """
+        # Валидация входных данных
+        try:
+            self._validate_generate_request(prompt, model_name, use_fastest, use_parallel, response_format)
+        except (TypeError, ValueError) as e:
+            logger.warning(f"Invalid request parameters: {e}")
+            return ModelResponse(
+                model_name=model_name or "validation_error",
+                content="",
+                response_time=0.0,
+                success=False,
+                error=f"Validation error: {e}"
+            )
+
+        start_time = time.time()
+        logger.debug(f"Starting response generation for prompt (length: {len(prompt)})")
+
         # Периодическая проверка работоспособности моделей
         await self._periodic_health_check()
         
@@ -460,13 +750,22 @@ class LLMManager:
         # Определяем стратегию использования
         if use_parallel or strategy == 'best_of_two':
             try:
-                return await self._generate_parallel(prompt, response_format=response_format)
+                response = await self._generate_parallel(prompt, response_format=response_format)
             except Exception as e:
                 logger.error(f"Ошибка в parallel режиме, fallback на single: {e}")
                 # Fallback на single режим
-                return await self._generate_single(prompt, model_name, use_fastest, response_format=response_format)
+                response = await self._generate_single(prompt, model_name, use_fastest, response_format=response_format)
         else:
-            return await self._generate_single(prompt, model_name, use_fastest, response_format=response_format)
+            response = await self._generate_single(prompt, model_name, use_fastest, response_format=response_format)
+
+        # Логируем производительность
+        total_time = time.time() - start_time
+        logger.debug(
+            f"Response generated in {total_time:.3f}s using model {response.model_name} "
+            f"(success: {response.success}, content_length: {len(response.content)})"
+        )
+
+        return response
     
     async def _generate_single(
         self,
@@ -561,7 +860,7 @@ class LLMManager:
             logger.info(f"🔄 Попытка {attempt_number}/{total_attempts}: модель {model_config.name}")
             
             try:
-                response = await self._call_model(prompt, model_config, response_format=response_format)
+                response = await self._call_model_with_retry(prompt, model_config, response_format=response_format)
                 last_response = response  # Сохраняем для возможного использования
                 
                 if response.success:
@@ -618,7 +917,7 @@ class LLMManager:
                     else:
                         logger.warning(
                             f"❌ Попытка {attempt_number}/{total_attempts} НЕУДАЧНА: "
-                            f"модель {model_config.name} failed: {response.error}"
+                            f"модель {model_config.name} failed"
                         )
                     model_config.error_count += 1
             except Exception as e:
@@ -683,12 +982,11 @@ class LLMManager:
         # Все модели провалились - возвращаем последний ответ или создаем дефолтный
         if last_response:
             logger.warning(
-                f"⚠️ Все модели провалились для JSON mode, возвращаем последний ответ от {last_response.model_name}. "
-                f"Ошибка: {last_response.error or 'Invalid JSON'}"
+                f"⚠️ Все модели провалились для JSON mode, возвращаем последний ответ от {last_response.model_name}."
             )
             # Пытаемся извлечь хоть какой-то контент из последнего ответа (даже если он failed)
             if last_response.content:
-                logger.info(f"Используем контент из последнего ответа: {last_response.content[:200]}...")
+                logger.info(f"Используем контент из последнего ответа: {Colors.colorize(last_response.content[:200] + '...', Colors.BRIGHT_MAGENTA)}")
                 # Если это JSON mode, пытаемся извлечь JSON из текста
                 if response_format and response_format.get("type") == "json_object":
                     extracted_json = self._extract_json_from_text(last_response.content)
@@ -731,7 +1029,7 @@ class LLMManager:
             success=False,
             error="All models failed to generate response"
         )
-        logger.info(f"Возвращаем дефолтный fallback ответ: {fallback_response.content}")
+        logger.info(f"Возвращаем дефолтный fallback ответ: {Colors.colorize(fallback_response.content, Colors.BRIGHT_MAGENTA)}")
         return fallback_response
 
     async def analyze_report_and_decide(
@@ -1128,12 +1426,25 @@ ID ЗАДАЧИ: {task_id}
         # Используем первые две модели
         model1, model2 = parallel_models[0], parallel_models[1]
         
-        # Генерируем ответы параллельно
-        responses = await asyncio.gather(
-            self._call_model(prompt, model1, response_format=response_format),
-            self._call_model(prompt, model2, response_format=response_format),
-            return_exceptions=True
-        )
+        # Генерируем ответы параллельно с timeout
+        try:
+            responses = await asyncio.wait_for(
+                asyncio.gather(
+                    self._call_model_with_retry(prompt, model1, response_format=response_format, max_retries=1),
+                    self._call_model_with_retry(prompt, model2, response_format=response_format, max_retries=1),
+                    return_exceptions=True
+                ),
+                timeout=60.0  # 60 секунд таймаут для параллельной генерации
+            )
+        except asyncio.TimeoutError:
+            logger.error("Parallel generation timed out after 60 seconds")
+            return ModelResponse(
+                model_name="parallel_timeout",
+                content="",
+                response_time=60.0,
+                success=False,
+                error="Parallel generation timed out"
+            )
         
         # Обрабатываем результаты
         valid_responses = []
@@ -1218,7 +1529,7 @@ ID ЗАДАЧИ: {task_id}
 Ответь только числом от 0 до 10."""
         
         try:
-            eval_response = await self._call_model(evaluation_prompt, evaluator_model)
+            eval_response = await self._call_model_with_retry(evaluation_prompt, evaluator_model)
             if eval_response.success:
                 # Извлекаем число из ответа
                 import re
@@ -1352,19 +1663,108 @@ ID ЗАДАЧИ: {task_id}
                 model_config.enabled = True
                 model_config.error_count = 0  # Сбрасываем счетчик ошибок
     
+    async def _call_model_with_retry(
+        self,
+        prompt: str,
+        model_config: ModelConfig,
+        response_format: Optional[Dict[str, Any]] = None,
+        max_retries: int = 3,
+        base_delay: float = 1.0
+    ) -> ModelResponse:
+        """
+        Вызов модели с retry логикой и exponential backoff.
+
+        Args:
+            prompt: Текст запроса
+            model_config: Конфигурация модели
+            response_format: Формат ответа
+            max_retries: Максимальное количество попыток
+            base_delay: Базовая задержка между попытками (сек)
+
+        Returns:
+            ModelResponse с результатом вызова
+        """
+        last_error = None
+
+        for attempt in range(max_retries):
+            try:
+                return await self._call_model_internal(prompt, model_config, response_format)
+            except Exception as e:
+                last_error = e
+
+                # Не retry для определенных типов ошибок
+                if isinstance(e, ValueError) and "Validation error" in str(e):
+                    # Валидационные ошибки не retry
+                    break
+
+                if attempt < max_retries - 1:
+                    # Exponential backoff с jitter
+                    delay = base_delay * (2 ** attempt)
+                    # Добавляем jitter (±25%)
+                    jitter = delay * 0.25 * (2 * (hash(str(attempt)) % 1000) / 1000 - 1)
+                    delay += jitter
+
+                    logger.warning(
+                        f"Model call failed (attempt {attempt + 1}/{max_retries}), "
+                        f"retrying in {delay:.2f}s: {e}"
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(
+                        f"All {max_retries} attempts failed for model {model_config.name}: {last_error}"
+                    )
+
+        # Все попытки провалились
+        return ModelResponse(
+            model_name=model_config.name,
+            content="",
+            response_time=0.0,
+            success=False,
+            error=f"Request failed after {max_retries} attempts: {last_error}"
+        )
+
     async def _call_model(
-        self, 
-        prompt: str, 
+        self,
+        prompt: str,
         model_config: ModelConfig,
         response_format: Optional[Dict[str, Any]] = None
     ) -> ModelResponse:
-        """Вызов модели для генерации ответа"""
+        """
+        Вызов модели для генерации ответа.
+
+        Returns:
+            ModelResponse - всегда, даже при ошибках (для обратной совместимости)
+        """
+        try:
+            return await self._call_model_internal(prompt, model_config, response_format)
+        except Exception as e:
+            # Для обратной совместимости возвращаем ModelResponse с ошибкой
+            return ModelResponse(
+                model_name=model_config.name,
+                content="",
+                response_time=0.0,
+                success=False,
+                error=str(e)
+            )
+
+    async def _call_model_internal(
+        self,
+        prompt: str,
+        model_config: ModelConfig,
+        response_format: Optional[Dict[str, Any]] = None
+    ) -> ModelResponse:
+        """
+        Внутренний вызов модели - поднимает исключения при ошибках.
+
+        Raises:
+            Exception: При любых ошибках API или сети
+        """
         start_time = time.time()
-        
+
         try:
             # Получаем клиент (пока только openrouter)
             client = list(self.clients.values())[0]
-            
+
             # Формируем параметры запроса
             request_params = {
                 "model": model_config.name,
@@ -1373,47 +1773,47 @@ ID ЗАДАЧИ: {task_id}
                 "temperature": model_config.temperature,
                 "top_p": model_config.top_p
             }
-            
+
             # Добавляем response_format если указан (для JSON mode)
             if response_format:
                 request_params["response_format"] = response_format
-            
+
             response = await client.chat.completions.create(**request_params)
-            
+
             response_time = time.time() - start_time
-            
+
             # Проверяем что ответ содержит choices
             if not response.choices or len(response.choices) == 0:
                 raise ValueError("Empty choices in API response")
-            
+
             # Некоторые провайдеры/модели могут вернуть None в message.content
             message = response.choices[0].message
             if message is None:
                 raise ValueError("Message is None in API response")
-            
+
             content = (message.content or "").strip()
-            
+
             # Обновляем статистику модели
             model_config.last_response_time = response_time
             model_config.success_count += 1
-            
+
+            # Инвалидируем кэш самой быстрой модели при изменении статистики
+            self._invalidate_fastest_cache()
+
             return ModelResponse(
                 model_name=model_config.name,
                 content=content,
                 response_time=response_time,
                 success=True
             )
-            
+
         except Exception as e:
             response_time = time.time() - start_time
-            error_msg = str(e)
-            
+
             model_config.error_count += 1
-            
-            return ModelResponse(
-                model_name=model_config.name,
-                content="",
-                response_time=response_time,
-                success=False,
-                error=error_msg
-            )
+
+            # Инвалидируем кэш самой быстрой модели при ошибке
+            self._invalidate_fastest_cache()
+
+            # Поднимаем исключение для retry логики
+            raise

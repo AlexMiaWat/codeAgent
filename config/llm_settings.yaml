@@ -6,27 +6,31 @@ llm:
   strategy: best_of_two
   model_roles:
     primary:
-    - xiaomi/mimo-v2-flash:free
-    duplicate: []
-    reserve:
-    - kwaipilot/kat-coder-pro:free
-    fallback:
-    - liquid/lfm-2.5-1.2b-thinking:free
     - nvidia/nemotron-3-nano-30b-a3b:free
+    - mistralai/devstral-2512:free
+    - allenai/molmo-2-8b:free
+    duplicate:
+    - xiaomi/mimo-v2-flash:free
+    reserve:
+    - liquid/lfm-2.5-1.2b-thinking:free
+    - liquid/lfm-2.5-1.2b-instruct:free
+    fallback:
+    - arcee-ai/trinity-mini:free
+    - tngtech/tng-r1t-chimera:free
   parallel:
     enabled: true
     models:
-    - allenai/molmo-2-8b:free
-    - xiaomi/mimo-v2-flash:free
-    evaluator_model: liquid/lfm-2.5-1.2b-instruct:free
+    - nvidia/nemotron-3-nano-30b-a3b:free
+    - mistralai/devstral-2512:free
+    evaluator_model: allenai/molmo-2-8b:free
     selection_criteria:
     - relevance
     - completeness
     - quality
-  _last_updated: '2026-01-22T11:44:59.342452'
+  _last_updated: '2026-01-22T15:12:25.214949'
   _update_source: auto_test_results
   _stats:
-    total_tested: 5
+    total_tested: 3
     working_count: 1
     fastest_model: xiaomi/mimo-v2-flash:free
 providers:
@@ -59,6 +63,24 @@ providers:
       nvidia:
       - name: nvidia/nemotron-3-nano-30b-a3b:free
         max_tokens: 1024
-        context_window: 4096
+        context_window: 256000
+        temperature: 0.7
+        top_p: 1.0
+      mistralai:
+      - name: mistralai/devstral-2512:free
+        max_tokens: 1024
+        context_window: 262144
+        temperature: 0.7
+        top_p: 1.0
+      arcee-ai:
+      - name: arcee-ai/trinity-mini:free
+        max_tokens: 1024
+        context_window: 131072
+        temperature: 0.7
+        top_p: 1.0
+      tngtech:
+      - name: tngtech/tng-r1t-chimera:free
+        max_tokens: 1024
+        context_window: 163840
         temperature: 0.7
         top_p: 1.0

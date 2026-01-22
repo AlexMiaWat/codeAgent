@@ -78,13 +78,24 @@ class FallbackStateManager:
 
     def activate_fallback(self) -> None:
         """Активировать fallback режим после billing error"""
+        current_time = time.time()
+
+        # Если мы в режиме тестирования основной модели, активируем fallback
+        if not self.state.fallback_active and current_time < self.state.fallback_until:
+            logger.warning("🚨 BILLING ERROR | Основная модель все еще недоступна, возвращаемся к fallback режиму")
+        elif self.state.fallback_active:
+            logger.warning("🚨 BILLING ERROR | Fallback уже активен, продолжаем использовать резервную модель")
+            return
+        else:
+            logger.warning("🚨 BILLING ERROR | Активируем fallback режим после неудачи основной модели")
+
         self.state.fallback_active = True
         self.state.request_count = 0
-        self.state.last_billing_error = time.time()
+        self.state.last_billing_error = current_time
         # Устанавливаем время окончания fallback через 1 час (на случай если счетчик не сработает)
-        self.state.fallback_until = time.time() + 3600
+        self.state.fallback_until = current_time + 3600
         self._save_state()
-        logger.warning(f"🚨 BILLING ERROR | Активирован fallback режим на {self.state.max_requests} обращений. Следующие запросы будут использовать резервную модель для обхода ограничений. Fallback активен в течение 1 часа или до {self.state.max_requests} обращений.")
+        logger.warning(f"🔄 Следующие {self.state.max_requests} обращений будут использовать резервную модель. Fallback активен в течение 1 часа или до {self.state.max_requests} обращений.")
 
     def should_use_fallback(self) -> bool:
         """Проверить, нужно ли использовать fallback"""
@@ -99,26 +110,35 @@ class FallbackStateManager:
                 logger.debug(f"🔄 Fallback активен: {remaining} обращений осталось, {time_left} сек")
                 return True
             else:
-                # Счетчик превышен - деактивируем fallback
-                logger.info("⏰ Fallback деактивирован: превышен лимит обращений")
-                self.deactivate_fallback()
+                # Счетчик превышен - переводим в режим тестирования основной модели
+                logger.info("⏰ Fallback лимит достигнут - переходим к тестированию основной модели")
+                self._enter_test_primary_mode()
                 return False
 
-        # Если время истекло - деактивируем
+        # Если время истекло - переводим в режим тестирования основной модели
         if self.state.fallback_active and current_time >= self.state.fallback_until:
-            logger.info("⏰ Fallback деактивирован: истекло время")
-            self.deactivate_fallback()
+            logger.info("⏰ Fallback время истекло - переходим к тестированию основной модели")
+            self._enter_test_primary_mode()
             return False
 
         return False
+
+    def _enter_test_primary_mode(self) -> None:
+        """Перейти в режим тестирования основной модели"""
+        self.state.fallback_active = False
+        self.state.request_count = 0
+        self.state.fallback_until = time.time() + 300  # 5 минут на тестирование основной модели
+        self._save_state()
+        logger.info("🔄 Тестируем основную модель 'auto' в течение 5 минут (1 попытка)")
 
     def deactivate_fallback(self) -> None:
         """Деактивировать fallback режим"""
         if self.state.fallback_active:
             logger.info(f"✅ Fallback режим завершен после {self.state.request_count} обращений")
-            logger.info("🔄 Возвращаемся к основной модели")
+            logger.info("🔄 Переходим к тестированию основной модели")
         self.state.fallback_active = False
-        self.state.request_count = 0
+        # Не сбрасываем request_count, оставляем для статистики
+        # self.state.request_count = 0
         self.state.fallback_until = 0.0
         self._save_state()
 
@@ -136,12 +156,23 @@ class FallbackStateManager:
                 logger.warning("💰 Возможно, требуется пополнить баланс OpenRouter или проверить API ключ")
                 self.deactivate_fallback()
 
+    def is_testing_primary_model(self) -> bool:
+        """Проверить, находится ли система в режиме тестирования основной модели"""
+        current_time = time.time()
+        return (not self.state.fallback_active and
+                current_time < self.state.fallback_until and
+                self.state.fallback_until > time.time() + 300)  # Время тестирования = 5 минут
+
     def get_status(self) -> Dict[str, Any]:
         """Получить текущий статус fallback"""
+        current_time = time.time()
+        is_testing = self.is_testing_primary_model()
+
         return {
             'fallback_active': self.state.fallback_active,
+            'testing_primary_model': is_testing,
             'request_count': self.state.request_count,
             'max_requests': self.state.max_requests,
-            'time_remaining': max(0, int(self.state.fallback_until - time.time())),
+            'time_remaining': max(0, int(self.state.fallback_until - current_time)),
             'last_billing_error': self.state.last_billing_error
         }

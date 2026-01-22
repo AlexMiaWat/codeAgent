@@ -88,7 +88,7 @@ class TestAutomaticFallback:
         # Проверяем статус
         status = manager.get_status()
         assert status['fallback_active'] == False
-        assert status['request_count'] == 0  # Сбрасывается при деактивации
+        assert status['request_count'] == 25  # Не сбрасывается, сохраняется для статистики
 
     def test_fallback_state_persistence(self):
         """Тест сохранения и загрузки состояния"""
