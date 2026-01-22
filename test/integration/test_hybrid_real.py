@@ -15,6 +15,9 @@ from src.hybrid_cursor_interface import (
 )
 from src.config_loader import ConfigLoader
 
+# Импорт вспомогательных функций для загрузки настроек
+from test_utils import get_cli_path
+
 print()
 print("=" * 70)
 print("РЕАЛЬНЫЙ ТЕСТ ГИБРИДНОГО ИНТЕРФЕЙСА")
@@ -31,7 +34,7 @@ print()
 # Создаем гибридный интерфейс
 print("Инициализация гибридного интерфейса...")
 hybrid = create_hybrid_cursor_interface(
-    cli_path="docker-compose-agent",
+    cli_path=get_cli_path(),
     project_dir=str(project_dir),
     prefer_cli=False,  # Не предпочитать CLI для сложных задач
     verify_side_effects=True  # Проверять side-effects
@@ -96,7 +99,7 @@ if output_path.exists():
     print()
 
 print("ВАЖНО: Для выполнения этого теста требуется:")
-print("1. Открыть Cursor в проекте d:/Space/life")
+print(f"1. Открыть Cursor в проекте {project_dir}")
 print("2. Следить за появлением файла инструкции в cursor_commands/")
 print("3. Выполнить инструкцию вручную")
 print("4. Сохранить результат в cursor_results/")

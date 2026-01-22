@@ -82,7 +82,7 @@ cursor:
 
 ```bash
 # Docker (как настроено в проекте)
-docker exec -i cursor-agent-life bash -c \
+docker exec -i cursor-agent bash -c \
   'export LANG=C.utf8 LC_ALL=C.utf8 && cd /workspace && \
    script -q -c "printf \"%s\\n\" \"Создай файл test.py\" | agent -p --force --approve-mcps" /dev/null'
 
@@ -147,7 +147,7 @@ cat .cursor/mcp-approvals.json
 agent -p "Создай файл test_permissions.txt с текстом 'Hello World'" --force --approve-mcps
 
 # Docker (если настроен)
-docker exec -i cursor-agent-life bash -c \
+docker exec -i cursor-agent bash -c \
   'printf "%s\n" "Создай файл test_permissions.txt" | agent -p --force --approve-mcps'
 ```
 

@@ -95,7 +95,7 @@ docker/docker-compose.agent.yml
 ├── command: sleep infinity
 ├── restart: unless-stopped
 └── volumes:
-    ├── ../../life:/workspace (целевой проект)
+    ├── ../../your-project:/workspace (целевой проект)
     └── agent-home:/root (конфигурация)
 
 src/cursor_cli_interface.py

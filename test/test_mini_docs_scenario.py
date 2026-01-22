@@ -15,6 +15,9 @@ from src.cursor_cli_interface import create_cursor_cli_interface
 import logging
 import time
 
+# Импорт вспомогательных функций для загрузки настроек
+from test_utils import get_cli_path, get_project_dir, get_agent_role
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -30,9 +33,9 @@ def test_mini_docs_creation():
     print("="*80)
     
     cli = create_cursor_cli_interface(
-        cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
-        agent_role="Project Executor Agent",
+        cli_path=get_cli_path(),
+        project_dir=get_project_dir(),
+        agent_role=get_agent_role(),
         timeout=2000  # Увеличенный таймаут для сложной задачи
     )
     
@@ -92,7 +95,7 @@ def test_mini_docs_creation():
         print(f"  {'-'*76}")
     
     # Проверяем, создан ли файл
-    output_file = Path("d:/Space/life/docs/results/mini_docs_for_user.md")
+    output_file = Path(get_project_dir()) / "docs" / "results" / "mini_docs_for_user.md"
     
     print(f"\n[CHECK] Проверка файла: {output_file}")
     
@@ -153,8 +156,8 @@ if __name__ == "__main__":
     print("\n" + "="*80)
     print("ДЕТАЛЬНЫЙ ТЕСТ: Создание mini_docs_for_user.md")
     print("="*80)
-    print(f"Проект: d:/Space/life")
-    print(f"Интерфейс: Docker (cursor-agent-life)")
+    print(f"Проект: {get_project_dir()}")
+    print(f"Интерфейс: Docker (cursor-agent)")
     print("="*80)
     
     try:

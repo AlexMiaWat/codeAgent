@@ -2,7 +2,7 @@
 Реальное тестирование Cursor CLI на целевом проекте
 
 План:
-1. Придумать простую корректную задачу для D:\Space\life
+1. Придумать простую корректную задачу для D:\Space\your-project
 2. Сформировать инструкцию для Cursor
 3. Выполнить через cursor.CMD -p "инструкция"
 4. Проверить результат выполнения
@@ -23,6 +23,9 @@ sys.path.insert(0, str(project_root))
 from src.config_loader import ConfigLoader
 from src.cursor_cli_interface import CursorCLIInterface, create_cursor_cli_interface
 from src.cursor_file_interface import CursorFileInterface
+
+# Импорт вспомогательных функций для загрузки настроек
+from test_utils import get_container_name
 
 # Настройка логирования
 logging.basicConfig(
@@ -80,7 +83,7 @@ def test_real_cursor_cli():
                 
                 # Проверяем статус контейнера
                 inspect_result = subprocess.run(
-                    ["docker", "inspect", "--format", "{{json .State}}", "cursor-agent-life"],
+                    ["docker", "inspect", "--format", "{{json .State}}", get_container_name()],
                     capture_output=True,
                     text=True,
                     timeout=5
@@ -92,15 +95,15 @@ def test_real_cursor_cli():
                     running = status == "running"
                     
                     if running:
-                        print(f"  [OK] Контейнер cursor-agent-life запущен (статус: {status})")
+                        print(f"  [OK] Контейнер {get_container_name()} запущен (статус: {status})")
                         if state.get("StartedAt"):
                             print(f"  [INFO] Запущен: {state.get('StartedAt', '')[:19]}")
                     else:
-                        print(f"  [WARNING] Контейнер cursor-agent-life не запущен (статус: {status})")
+                        print(f"  [WARNING] Контейнер {get_container_name()} не запущен (статус: {status})")
                         if state.get("Error"):
                             print(f"  [ERROR] Ошибка: {state.get('Error')}")
                 else:
-                    print(f"  [INFO] Контейнер cursor-agent-life не найден (будет создан автоматически)")
+                    print(f"  [INFO] Контейнер {get_container_name()} не найден (будет создан автоматически)")
             except Exception as e:
                 print(f"  [WARNING] Не удалось проверить статус контейнера: {e}")
         
@@ -173,7 +176,7 @@ def test_real_cursor_cli():
                 import json
                 
                 inspect_result = subprocess.run(
-                    ["docker", "inspect", "--format", "{{json .State}}", "cursor-agent-life"],
+                    ["docker", "inspect", "--format", "{{json .State}}", get_container_name()],
                     capture_output=True,
                     text=True,
                     timeout=5
@@ -190,7 +193,7 @@ def test_real_cursor_cli():
                         print(f"  [WARNING] Контейнер не активен (статус: {status})")
                         # Показываем последние логи
                         logs_result = subprocess.run(
-                            ["docker", "logs", "--tail", "10", "cursor-agent-life"],
+                            ["docker", "logs", "--tail", "10", get_container_name()],
                             capture_output=True,
                             text=True,
                             timeout=5

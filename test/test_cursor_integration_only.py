@@ -408,7 +408,7 @@ def main():
     print("ТЕСТИРОВАНИЕ ИНТЕГРАЦИИ CODE AGENT С CURSOR")
     print("=" * 70)
     print(f"Время начала: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Целевой проект: D:\\Space\\life")
+    print(f"Целевой проект: D:\\Space\\your-project")
     print()
     
     results = {}

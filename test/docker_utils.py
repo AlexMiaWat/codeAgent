@@ -7,16 +7,24 @@ import json
 from typing import Dict, Any, Optional
 
 
-def check_docker_container_status(container_name: str = "cursor-agent-life") -> Dict[str, Any]:
+def check_docker_container_status(container_name) -> Dict[str, Any]:
     """
     Проверка статуса Docker контейнера
-    
+
     Args:
         container_name: Имя контейнера
-        
+
     Returns:
         Словарь с информацией о статусе контейнера
     """
+    if container_name is None:
+        raise ValueError("container_name не может быть None")
+    if not isinstance(container_name, str):
+        raise ValueError(f"container_name должен быть строкой, получен {type(container_name)}")
+    container_name = container_name.strip()
+    if not container_name:
+        raise ValueError("container_name не может быть пустой строкой")
+
     try:
         # Проверяем наличие Docker
         docker_check = subprocess.run(
@@ -90,17 +98,20 @@ def check_docker_container_status(container_name: str = "cursor-agent-life") -> 
         }
 
 
-def get_docker_container_logs(container_name: str = "cursor-agent-life", lines: int = 20) -> str:
+def get_docker_container_logs(container_name, lines: int = 20) -> str:
     """
     Получение логов Docker контейнера
-    
+
     Args:
         container_name: Имя контейнера
         lines: Количество последних строк логов
-        
+
     Returns:
         Строка с логами или сообщение об ошибке
     """
+    if not container_name or not isinstance(container_name, str) or container_name.strip() == '':
+        raise ValueError("container_name должен быть непустой строкой")
+
     try:
         logs_cmd = ["docker", "logs", "--tail", str(lines), container_name]
         logs_result = subprocess.run(
@@ -117,14 +128,17 @@ def get_docker_container_logs(container_name: str = "cursor-agent-life", lines: 
         return f"Ошибка получения логов: {str(e)}"
 
 
-def print_docker_container_info(container_name: str = "cursor-agent-life", prefix: str = "  "):
+def print_docker_container_info(container_name, prefix: str = "  "):
     """
     Вывод информации о Docker контейнере в консоль
-    
+
     Args:
         container_name: Имя контейнера
         prefix: Префикс для вывода (для отступов)
     """
+    if not container_name or not isinstance(container_name, str) or container_name.strip() == '':
+        raise ValueError("container_name должен быть непустой строкой")
+
     status = check_docker_container_status(container_name)
     
     if not status.get("available", False):

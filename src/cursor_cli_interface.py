@@ -78,21 +78,27 @@ class CursorCLIInterface:
         cli_path: Optional[str] = None,
         default_timeout: int = 300,
         headless: bool = True,
+        container_name: Optional[str] = None,
         project_dir: Optional[str] = None,
         agent_role: Optional[str] = None
     ):
         """
         Инициализация интерфейса Cursor CLI
-        
+
         Args:
             cli_path: Путь к исполняемому файлу Cursor CLI (если None - поиск в PATH)
             default_timeout: Таймаут по умолчанию для выполнения команд (секунды)
             headless: Использовать headless режим
+            container_name: Имя Docker контейнера для Cursor CLI
             project_dir: Директория целевого проекта (для установки рабочей директории)
             agent_role: Роль агента для настройки через .cursor/rules или AGENTS.md
         """
+        if not container_name:
+            raise ValueError("container_name должен быть указан в CursorCLIInterface.__init__")
+
         self.default_timeout = default_timeout
         self.headless = headless
+        self.container_name = container_name
         self.cli_command = None
         self.cli_available = False
         self.project_dir = Path(project_dir) if project_dir else None
@@ -345,7 +351,7 @@ class CursorCLIInterface:
                 }
             
             # Проверяем статус конкретного контейнера
-            container_name = "cursor-agent-life"
+            container_name = self.container_name
             inspect_cmd = [
                 "docker", "inspect",
                 "--format", "{{.State.Status}}",
@@ -472,7 +478,7 @@ class CursorCLIInterface:
             # Проверяем статус контейнера (без запуска, только проверка)
             try:
                 result = subprocess.run(
-                    ["docker", "inspect", "--format", "{{.State.Status}}", "cursor-agent-life"],
+                    ["docker", "inspect", "--format", "{{.State.Status}}", self.container_name],
                     capture_output=True,
                     text=True,
                     timeout=5
@@ -509,7 +515,7 @@ class CursorCLIInterface:
                 
                 # Проверяем версию agent в контейнере
                 result = subprocess.run(
-                    ["docker", "exec", "cursor-agent-life", "/root/.local/bin/agent", "--version"],
+                    ["docker", "exec", self.container_name, "/root/.local/bin/agent", "--version"],
                     capture_output=True,
                     text=True,
                     timeout=15  # Увеличено с 10 до 15 секунд
@@ -612,7 +618,7 @@ This agent role is used for automated project tasks execution.
             if use_docker:
                 cmd = [
                     "docker", "exec", "-i",
-                    "cursor-agent-life",
+                    self.container_name,
                     "bash", "-c",
                     "cd /workspace && /root/.local/bin/agent ls"
                 ]
@@ -694,7 +700,7 @@ This agent role is used for automated project tasks execution.
                 if use_docker:
                     cmd = [
                         "docker", "exec", "-i",
-                        "cursor-agent-life",
+                        self.container_name,
                         "bash", "-c",
                         "cd /workspace && /root/.local/bin/agent resume --dry-run 2>&1 || /root/.local/bin/agent ls | head -n 1"
                     ]
@@ -748,7 +754,7 @@ This agent role is used for automated project tasks execution.
                 # Находим и убиваем все процессы agent
                 # pkill возвращает 1 если процессов не найдено - это нормально
                 kill_cmd = [
-                    "docker", "exec", "cursor-agent-life",
+                    "docker", "exec", self.container_name,
                     "bash", "-c",
                     "pkill -f 'agent.*-p' || pkill -f '/root/.local/bin/agent' || true"
                 ]
@@ -767,7 +773,7 @@ This agent role is used for automated project tasks execution.
                     # Проверяем, действительно ли процессы были остановлены
                     # Пытаемся найти процессы еще раз - если их нет, значит остановка успешна
                     check_cmd = [
-                        "docker", "exec", "cursor-agent-life",
+                        "docker", "exec", self.container_name,
                         "bash", "-c",
                         "pgrep -f 'agent.*-p' || pgrep -f '/root/.local/bin/agent' || true"
                     ]
@@ -878,7 +884,7 @@ This agent role is used for automated project tasks execution.
                     if use_docker:
                         escaped_chat_id = shlex.quote(str(test_chat_id))
                         cmd = [
-                            "docker", "exec", "cursor-agent-life",
+                            "docker", "exec", self.container_name,
                             "bash", "-c",
                             f"cd /workspace && /root/.local/bin/agent delete {escaped_chat_id} 2>&1 || true"
                         ]
@@ -914,7 +920,7 @@ This agent role is used for automated project tasks execution.
                                 if use_docker:
                                     escaped_chat_id = shlex.quote(str(chat_id))
                                     cmd = [
-                                        "docker", "exec", "cursor-agent-life",
+                                        "docker", "exec", self.container_name,
                                         "bash", "-c",
                                         f"cd /workspace && /root/.local/bin/agent delete {escaped_chat_id} 2>&1 || true"
                                     ]
@@ -1104,7 +1110,7 @@ This agent role is used for automated project tasks execution.
             
             # Формируем Docker команду для exec (выполнение в запущенном контейнере)
             # Используем docker exec напрямую с именем контейнера
-            # Имя контейнера: cursor-agent-life (из docker-compose.agent.yml)
+            # Имя контейнера: cursor-agent-cli (из docker-compose.agent.yml)
             # Используем bash -c для избежания проблем с конвертацией путей на Windows
             # Устанавливаем UTF-8 локаль для поддержки кириллицы
             # Используем одинарные кавычки для bash -c и двойные для prompt внутри
@@ -1208,7 +1214,7 @@ This agent role is used for automated project tasks execution.
                 bash_env_export = f'export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && {agent_full_cmd}'
             
             cmd.extend([
-                "cursor-agent-life",
+                self.container_name,
                 "bash", "-c",
                 bash_env_export
             ])
@@ -1351,7 +1357,7 @@ This agent role is used for automated project tasks execution.
                         logger.info("Проверка активности Docker контейнера...")
                         
                         # Проверяем статус контейнера
-                        container_active = self._check_docker_container_activity("cursor-agent-life")
+                        container_active = self._check_docker_container_activity(self.container_name)
                         
                         if container_active:
                             # Контейнер активен - продлеваем таймаут
@@ -1361,7 +1367,7 @@ This agent role is used for automated project tasks execution.
                         else:
                             # Контейнер не активен - что-то пошло не так
                             logger.error("Контейнер не активен или завис. Перезапуск...")
-                            subprocess.run(["docker", "restart", "cursor-agent-life"], timeout=15, capture_output=True)
+                            subprocess.run(["docker", "restart", self.container_name], timeout=15, capture_output=True)
                             import time
                             time.sleep(5)
                             logger.info("Контейнер перезапущен, повторная попытка...")
@@ -1645,7 +1651,7 @@ This agent role is used for automated project tasks execution.
                 bash_env_export = f'export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && {agent_full_cmd}'
             
             cmd.extend([
-                "cursor-agent-life",
+                self.container_name,
                 "bash", "-c",
                 bash_env_export
             ])
@@ -1697,7 +1703,7 @@ This agent role is used for automated project tasks execution.
                     logger.info("Проверка активности Docker контейнера...")
                     
                     # Проверяем статус контейнера
-                    container_active = self._check_docker_container_activity("cursor-agent-life")
+                    container_active = self._check_docker_container_activity(self.container_name)
                     
                     if container_active:
                         # Контейнер активен - продлеваем таймаут
@@ -1707,7 +1713,7 @@ This agent role is used for automated project tasks execution.
                     else:
                         # Контейнер не активен - что-то пошло не так
                         logger.error("Контейнер не активен или завис. Перезапуск...")
-                        subprocess.run(["docker", "restart", "cursor-agent-life"], timeout=15, capture_output=True)
+                        subprocess.run(["docker", "restart", self.container_name], timeout=15, capture_output=True)
                         import time
                         time.sleep(5)
                         logger.info("Контейнер перезапущен, повторная попытка...")
@@ -1940,7 +1946,7 @@ This agent role is used for automated project tasks execution.
             bash_env_export = f'export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && {agent_full_cmd}'
         
         cmd.extend([
-            "cursor-agent-life",
+            self.container_name,
             "bash", "-c",
             bash_env_export
         ])
@@ -2211,26 +2217,33 @@ def create_cursor_cli_interface(
     cli_path: Optional[str] = None,
     timeout: int = 300,
     headless: bool = True,
+    container_name: Optional[str] = None,
     project_dir: Optional[str] = None,
     agent_role: Optional[str] = None
 ) -> CursorCLIInterface:
     """
     Фабричная функция для создания интерфейса Cursor CLI
-    
+
     Args:
         cli_path: Путь к CLI (если None - поиск в PATH)
         timeout: Таймаут по умолчанию
         headless: Использовать headless режим
+        container_name: Имя Docker контейнера для Cursor CLI
         project_dir: Директория целевого проекта (для установки рабочей директории)
         agent_role: Роль агента для настройки через .cursor/rules или AGENTS.md
-        
+
     Returns:
         Экземпляр CursorCLIInterface
     """
+    # container_name должен быть обязательно указан из конфигурации
+    if not container_name:
+        raise ValueError("container_name должен быть передан в create_cursor_cli_interface")
+
     interface = CursorCLIInterface(
         cli_path=cli_path,
         default_timeout=timeout,
         headless=headless,
+        container_name=container_name,
         project_dir=project_dir,
         agent_role=agent_role
     )

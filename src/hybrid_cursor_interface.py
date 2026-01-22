@@ -427,28 +427,37 @@ class HybridCursorInterface:
 
 def create_hybrid_cursor_interface(
     cli_path: Optional[str] = None,
-    project_dir: Optional[str] = None,
     prefer_cli: bool = False,
     verify_side_effects: bool = True
 ) -> HybridCursorInterface:
     """
     Фабрика для создания гибридного интерфейса
-    
+
     Args:
         cli_path: Путь к CLI (None для автопоиска)
-        project_dir: Директория проекта
         prefer_cli: Предпочитать CLI даже для сложных задач
         verify_side_effects: Проверять side-effects после выполнения
-    
+
     Returns:
         HybridCursorInterface
     """
+    # Читаем параметры строго из переменных окружения
+    import os
+    project_dir = os.getenv('PROJECT_DIR')
+    if not project_dir or project_dir.strip() == '':
+        raise ValueError("PROJECT_DIR должен быть установлен в переменных окружения")
+
+    container_name = os.getenv('CONTAINER_NAME')
+    if not container_name or container_name.strip() == '':
+        raise ValueError("CONTAINER_NAME должен быть установлен в переменных окружения")
+
     # Создаем CLI интерфейс
     cli = CursorCLIInterface(
         cli_path=cli_path,
-        project_dir=project_dir
+        project_dir=project_dir,
+        container_name=container_name
     )
-    
+
     # Создаем файловый интерфейс
     file_interface = CursorFileInterface(
         project_dir=project_dir
@@ -476,7 +485,6 @@ if __name__ == "__main__":
     # Создаем гибридный интерфейс
     hybrid = create_hybrid_cursor_interface(
         cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
         prefer_cli=False,  # Не предпочитать CLI для сложных задач
         verify_side_effects=True
     )

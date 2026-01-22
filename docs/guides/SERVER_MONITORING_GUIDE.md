@@ -51,7 +51,7 @@ nohup python main.py > server.log 2>&1 &
     "failed": 0,
     "iteration_count": 1
   },
-  "project_dir": "D:\\Space\\life",
+  "project_dir": "D:\\Space\\your-project",
   "cursor_cli_available": true,
   "auto_todo_enabled": true
 }
@@ -289,7 +289,7 @@ while ($true) {
 
 Checkpoint файл содержит текущее состояние сервера:
 ```
-D:\Space\life\.codeagent_checkpoint.json
+D:\Space\your-project\.codeagent_checkpoint.json
 ```
 
 ### Структура checkpoint:
@@ -321,10 +321,10 @@ D:\Space\life\.codeagent_checkpoint.json
 
 ```bash
 # Красивый вывод JSON
-cat D:\Space\life\.codeagent_checkpoint.json | python -m json.tool
+cat D:\Space\your-project\.codeagent_checkpoint.json | python -m json.tool
 
 # Или через Python
-python -c "import json; print(json.dumps(json.load(open('D:/Space/life/.codeagent_checkpoint.json')), indent=2))"
+python -c "import json; print(json.dumps(json.load(open('path/to/your/project/.codeagent_checkpoint.json')), indent=2))"
 ```
 
 ## 🎯 Что показывают логи
@@ -506,7 +506,7 @@ scripts\watch_logs.bat
 
 1. Проверьте checkpoint:
    ```bash
-   cat D:\Space\life\.codeagent_checkpoint.json | python -m json.tool
+   cat D:\Space\your-project\.codeagent_checkpoint.json | python -m json.tool
    ```
 
 2. Проверьте, не превышен ли таймаут:
@@ -514,7 +514,7 @@ scripts\watch_logs.bat
 
 3. Проверьте файлы инструкций:
    ```bash
-   ls -la D:\Space\life\cursor_commands\
+   ls -la D:\Space\your-project\cursor_commands\
    ```
 
 ### Много ошибок в логах

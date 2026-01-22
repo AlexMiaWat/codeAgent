@@ -59,9 +59,9 @@ uv pip install crewai crewai-tools
 
 2. **Отредактируйте `.env` файл** и заполните реальными значениями:
    ```env
-   # Директория проекта для работы агента
-   PROJECT_DIR=D:\Space\life
-   
+   # Директория целевого проекта для работы агента
+   PROJECT_DIR=D:\Space\your-project
+
    # API ключи для LLM (если требуется)
    OPENROUTER_API_KEY=your_openrouter_api_key_here
    CURSOR_API_KEY=your_cursor_api_key_here
@@ -137,7 +137,7 @@ python -m src.server
 Агент ожидает следующую структуру в директории проекта:
 
 ```
-D:\Space\life\
+D:\Space\your-project\
 ├── docs/                    # Документация проекта
 │   ├── README.md
 │   └── ...
@@ -274,7 +274,7 @@ python examples/logging_demo.py
 
 ## Формат `codeAgentProjectStatus.md`
 
-Файл `codeAgentProjectStatus.md` хранится **в корне директории проекта** (например, `D:\Space\life\codeAgentProjectStatus.md`). 
+Файл `codeAgentProjectStatus.md` хранится **в корне директории целевого проекта** (например, `D:\Space\your-project\codeAgentProjectStatus.md`).
 
 Это **последовательный протокол** всех действий Code Agent и ответов агентов Cursor, который содержит:
 

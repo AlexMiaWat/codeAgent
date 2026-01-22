@@ -130,6 +130,13 @@ class TestRunner:
         self.verbose = verbose
         self.show_output = show_output
         self.results: List[Tuple[str, str, bool, str, float]] = []  # (category, test, success, message, duration)
+
+    def get_container_name(self) -> str:
+        """Получение имени контейнера из переменных окружения"""
+        container_name = os.getenv('CONTAINER_NAME')
+        if not container_name or container_name.strip() == '':
+            raise ValueError("CONTAINER_NAME должен быть установлен в переменных окружения")
+        return container_name
     
     def print_header(self, text: str, char: str = "="):
         """Печать заголовка"""
@@ -176,7 +183,7 @@ class TestRunner:
         # Для cursor тестов проверяем статус Docker контейнера
         if category == 'cursor':
             self.print_info("Проверка Docker контейнера перед тестом...")
-            self.print_docker_container_info("cursor-agent-life")
+            self.print_docker_container_info(self.get_container_name())
             print()
         
         start_time = time.time()
@@ -234,7 +241,7 @@ class TestRunner:
             if category == 'cursor':
                 print()
                 self.print_info("Проверка Docker контейнера после теста...")
-                container_status = self.check_docker_container_status("cursor-agent-life")
+                container_status = self.check_docker_container_status(self.get_container_name())
                 if container_status.get("available") and container_status.get("exists"):
                     if container_status.get("running"):
                         self.print_success(f"Контейнер активен (статус: {container_status.get('status', 'unknown')})")
@@ -243,7 +250,7 @@ class TestRunner:
                         if container_status.get("error"):
                             self.print_warning(f"Ошибка: {container_status.get('error')}")
                         # Показываем логи при проблемах
-                        logs = self.get_docker_container_logs("cursor-agent-life", lines=10)
+                        logs = self.get_docker_container_logs(self.get_container_name(), lines=10)
                         if logs:
                             self.print_info("Последние логи контейнера:")
                             for line in logs.strip().split('\n')[-5:]:
@@ -260,9 +267,9 @@ class TestRunner:
                 
                 # Для cursor тестов показываем дополнительную информацию при ошибке
                 if category == 'cursor':
-                    container_status = self.check_docker_container_status("cursor-agent-life")
+                    container_status = self.check_docker_container_status(self.get_container_name())
                     if container_status.get("available") and container_status.get("exists"):
-                        logs = self.get_docker_container_logs("cursor-agent-life", lines=30)
+                        logs = self.get_docker_container_logs(self.get_container_name(), lines=30)
                         if logs:
                             self.print_info("Логи контейнера для диагностики:")
                             print("-" * 80)
@@ -293,13 +300,19 @@ class TestRunner:
         except:
             return False
     
-    def check_docker_container_status(self, container_name: str = "cursor-agent-life") -> Dict[str, Any]:
+    def check_docker_container_status(self, container_name: str) -> Dict[str, Any]:
         """
         Проверка статуса Docker контейнера
-        
+
+        Args:
+            container_name: Имя контейнера
+
         Returns:
             Словарь с информацией о статусе контейнера
         """
+        if not container_name or container_name.strip() == '':
+            raise ValueError("container_name должен быть указан")
+
         try:
             # Проверяем наличие Docker
             docker_check = subprocess.run(
@@ -372,7 +385,7 @@ class TestRunner:
                 "error": f"Ошибка при проверке Docker: {str(e)}"
             }
     
-    def print_docker_container_info(self, container_name: str = "cursor-agent-life"):
+    def print_docker_container_info(self, container_name: str):
         """Вывод информации о Docker контейнере"""
         status = self.check_docker_container_status(container_name)
         
@@ -416,7 +429,7 @@ class TestRunner:
             except:
                 pass
     
-    def get_docker_container_logs(self, container_name: str = "cursor-agent-life", lines: int = 20) -> str:
+    def get_docker_container_logs(self, container_name: str, lines: int = 20) -> str:
         """Получение логов Docker контейнера"""
         try:
             logs_cmd = ["docker", "logs", "--tail", str(lines), container_name]
@@ -453,10 +466,10 @@ class TestRunner:
         # Для cursor тестов проверяем Docker
         if category == 'cursor':
             self.print_info("Проверка Docker окружения для Cursor тестов...")
-            container_status = self.check_docker_container_status("cursor-agent-life")
+            container_status = self.check_docker_container_status(self.get_container_name())
             if container_status.get("available"):
                 if container_status.get("exists") and container_status.get("running"):
-                    self.print_success("Docker контейнер cursor-agent-life запущен и готов к работе")
+                    self.print_success(f"Docker контейнер {self.get_container_name()} запущен и готов к работе")
                 elif container_status.get("exists") and not container_status.get("running"):
                     self.print_warning("Docker контейнер существует, но не запущен")
                     self.print_info("Контейнер будет запущен автоматически при выполнении тестов")

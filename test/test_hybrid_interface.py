@@ -23,6 +23,9 @@ from src.hybrid_cursor_interface import (
 )
 from src.config_loader import ConfigLoader
 
+# Импорт вспомогательных функций для загрузки настроек
+from test_utils import get_cli_path
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
@@ -45,7 +48,7 @@ def test_complexity_determination():
     
     # Создаем гибридный интерфейс
     hybrid = create_hybrid_cursor_interface(
-        cli_path="docker-compose-agent",
+        cli_path=get_cli_path(),
         project_dir=str(project_dir),
         prefer_cli=False,
         verify_side_effects=False  # Отключаем для этого теста
@@ -110,7 +113,7 @@ def test_simple_task_execution():
     
     # Создаем гибридный интерфейс
     hybrid = create_hybrid_cursor_interface(
-        cli_path="docker-compose-agent",
+        cli_path=get_cli_path(),
         project_dir=str(project_dir),
         prefer_cli=True,  # Предпочитать CLI для простых задач
         verify_side_effects=False  # Не проверяем side-effects для вопросов
@@ -165,7 +168,7 @@ def test_complex_task_execution():
     
     # Создаем гибридный интерфейс
     hybrid = create_hybrid_cursor_interface(
-        cli_path="docker-compose-agent",
+        cli_path=get_cli_path(),
         project_dir=str(project_dir),
         prefer_cli=False,  # НЕ предпочитать CLI для сложных задач
         verify_side_effects=True  # Проверяем side-effects
@@ -233,7 +236,7 @@ def test_cli_with_fallback():
     
     # Создаем гибридный интерфейс
     hybrid = create_hybrid_cursor_interface(
-        cli_path="docker-compose-agent",
+        cli_path=get_cli_path(),
         project_dir=str(project_dir),
         prefer_cli=True,  # Предпочитать CLI (но с fallback)
         verify_side_effects=True  # Проверяем side-effects

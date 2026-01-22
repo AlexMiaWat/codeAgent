@@ -12,10 +12,10 @@ services:
       context: ..  # Контекст - корень проекта (D:\Space\codeAgent)
       dockerfile: docker/Dockerfile.agent
     image: cursor-agent:latest
-    container_name: cursor-agent-life  # Имя контейнера для целевого проекта
+    container_name: cursor-agent  # Имя контейнера для целевого проекта
     volumes:
-      # Монтируем целевую директорию проекта (D:\Space\life)
-      - ../../life:/workspace:rw
+      # Монтируем целевую директорию проекта (укажите путь к вашему проекту)
+      - ../../your-project:/workspace:rw
       # Монтируем домашнюю директорию для сохранения конфигурации agent
       - agent-home:/root
       # Монтируем SSH-ключи для доступа к GitHub (git push на этапе 8)

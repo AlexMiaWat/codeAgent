@@ -10,7 +10,7 @@
 
 При запуске cursor тестов автоматически проверяется:
 - Доступность Docker
-- Существование контейнера `cursor-agent-life`
+- Существование контейнера `cursor-agent`
 - Статус контейнера (running, stopped, restarting)
 - Время запуска контейнера
 - Ошибки контейнера (если есть)
@@ -38,7 +38,7 @@
 [INFO] Тестов в категории: 4
 
 [INFO] Проверка Docker окружения для Cursor тестов...
-[OK] Docker контейнер cursor-agent-life запущен и готов к работе
+[OK] Docker контейнер cursor-agent запущен и готов к работе
 
 ────────────────────────────────────────────────────────────────────────────────
 Тест: Реальное выполнение через Cursor CLI
@@ -46,7 +46,7 @@
 [INFO] Файл: test_real_cursor_cli.py
 [INFO] Таймаут: 600s
 [INFO] Проверка Docker контейнера перед тестом...
-[INFO] Статус контейнера cursor-agent-life:
+[INFO] Статус контейнера cursor-agent:
 [OK] Статус: running (запущен)
 [INFO] Запущен: 2026-01-18T10:30:15
 
@@ -61,7 +61,7 @@
 
 **Это нормальное поведение!** 
 
-Docker контейнер `cursor-agent-life` настроен на постоянную работу через команду:
+Docker контейнер `cursor-agent` настроен на постоянную работу через команду:
 ```yaml
 command: ["-c", "while true; do sleep 3600; done"]
 ```
@@ -85,7 +85,7 @@ command: ["-c", "while true; do sleep 3600; done"]
 
 2. Проверьте логи:
    ```bash
-   docker logs cursor-agent-life --tail 50
+   docker logs cursor-agent --tail 50
    ```
 
 3. Попробуйте запустить вручную:
@@ -99,13 +99,13 @@ command: ["-c", "while true; do sleep 3600; done"]
 
 1. Проверьте логи:
    ```bash
-   docker logs cursor-agent-life
+   docker logs cursor-agent
    ```
 
 2. Остановите и удалите проблемный контейнер:
    ```bash
-   docker stop cursor-agent-life
-   docker rm cursor-agent-life
+   docker stop cursor-agent
+   docker rm cursor-agent
    ```
 
 3. Пересоздайте контейнер:
@@ -119,17 +119,17 @@ command: ["-c", "while true; do sleep 3600; done"]
 
 1. Проверьте логи на ошибки:
    ```bash
-   docker logs cursor-agent-life --tail 100
+   docker logs cursor-agent --tail 100
    ```
 
 2. Проверьте статус:
    ```bash
-   docker inspect cursor-agent-life --format "{{json .State}}"
+   docker inspect cursor-agent --format "{{json .State}}"
    ```
 
 3. Перезапустите контейнер:
    ```bash
-   docker restart cursor-agent-life
+   docker restart cursor-agent
    ```
 
 ## Вспомогательные функции
@@ -144,14 +144,14 @@ from test.docker_utils import (
 )
 
 # Проверка статуса
-status = check_docker_container_status("cursor-agent-life")
+status = check_docker_container_status("cursor-agent")
 print(f"Контейнер запущен: {status['running']}")
 
 # Получение логов
-logs = get_docker_container_logs("cursor-agent-life", lines=50)
+logs = get_docker_container_logs("cursor-agent", lines=50)
 
 # Вывод информации
-print_docker_container_info("cursor-agent-life")
+print_docker_container_info("cursor-agent")
 ```
 
 ## Автоматизация

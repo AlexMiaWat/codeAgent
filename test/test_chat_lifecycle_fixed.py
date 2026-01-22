@@ -15,6 +15,9 @@ from src.cursor_cli_interface import create_cursor_cli_interface
 from src.prompt_formatter import PromptFormatter
 import logging
 
+# Импорт вспомогательных функций для загрузки настроек
+from test_utils import get_cli_path, get_project_dir, get_agent_role
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -30,9 +33,9 @@ def test_chat_lifecycle_fixed():
     print("="*80)
     
     cli = create_cursor_cli_interface(
-        cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
-        agent_role="Project Executor Agent",
+        cli_path=get_cli_path(),
+        project_dir=get_project_dir(),
+        agent_role=get_agent_role(),
         timeout=2000
     )
     
@@ -106,7 +109,7 @@ def test_chat_lifecycle_fixed():
     
     # Post-check
     print("\n[POST-CHECK] Проверка файла")
-    output_file = Path("d:/Space/life/test_chat_lifecycle.txt")
+    output_file = Path(get_project_dir()) / "test_chat_lifecycle.txt"
     
     if output_file.exists():
         content = output_file.read_text(encoding='utf-8', errors='ignore')

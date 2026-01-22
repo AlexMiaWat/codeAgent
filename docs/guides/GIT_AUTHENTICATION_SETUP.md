@@ -157,9 +157,9 @@ git remote set-url origin git@github.com:username/repository.git
 
 **Пример:**
 ```bash
-# Было: https://github.com/AlexMiaWat/life.git
-# Стало: git@github.com:AlexMiaWat/life.git
-git remote set-url origin git@github.com:AlexMiaWat/life.git
+# Было: https://github.com/username/your-repo.git
+# Стало: git@github.com:username/your-repo.git
+git remote set-url origin git@github.com:username/your-repo.git
 ```
 
 **Проверка после изменения:**
@@ -298,7 +298,7 @@ git push origin main
 3. **Отправьте коммит вручную:**
    ```bash
    # Перейдите в директорию проекта
-   cd D:\Space\life  # или ваш PROJECT_DIR
+   cd D:\Space\your-project  # или ваш PROJECT_DIR
    
    # Отправьте последний коммит
    git push origin main

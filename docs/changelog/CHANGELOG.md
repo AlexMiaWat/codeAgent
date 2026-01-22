@@ -300,6 +300,6 @@
 
 ### Решение по архитектуре
 
-- Файл `codeAgentProjectStatus.md` хранится в корне директории проекта (например, `D:\Space\life\codeAgentProjectStatus.md`)
+- Файл `codeAgentProjectStatus.md` хранится в корне директории проекта (например, `D:\Space\your-project\codeAgentProjectStatus.md`)
 - Каждая задача выполняется в отдельной сессии агента
 - Документация читается из папки `docs` в директории проекта

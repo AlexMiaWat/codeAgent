@@ -34,13 +34,13 @@
 **Команды:**
 ```bash
 # Проверка версии
-docker exec cursor-agent-life /root/.local/bin/agent --version
+docker exec cursor-agent /root/.local/bin/agent --version
 
 # Список доступных моделей
-docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent --list-models'
+docker exec cursor-agent bash -c 'cd /workspace && /root/.local/bin/agent --list-models'
 
 # Проверка ключа
-docker exec cursor-agent-life bash -c 'echo $CURSOR_API_KEY | head -c 20'
+docker exec cursor-agent bash -c 'echo $CURSOR_API_KEY | head -c 20'
 ```
 
 **Ожидаемый результат:**
@@ -101,7 +101,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 
 class CursorCLITester:
-    def __init__(self, container_name: str = "cursor-agent-life", workspace: str = "/workspace"):
+    def __init__(self, container_name: str = "cursor-agent", workspace: str = "/workspace"):
         self.container_name = container_name
         self.workspace = workspace
         self.results_dir = Path("results")
@@ -391,7 +391,7 @@ python -c "from test_runner import CursorCLITester; t = CursorCLITester(); t.tes
 
 **Формат команды для тестирования:**
 ```bash
-docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent --model "<model>" -p "Создай файл test.txt" --force --approve-mcps'
+docker exec cursor-agent bash -c 'cd /workspace && /root/.local/bin/agent --model "<model>" -p "Создай файл test.txt" --force --approve-mcps'
 ```
 
 **ВАЖНО:** Используется флаг `--model`, а не `-m`!
@@ -488,7 +488,7 @@ docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent -
 
 | Окружение | Описание | Приоритет | Команда |
 |-----------|----------|-----------|---------|
-| Docker | Текущее (cursor-agent-life) | Высокий | `docker exec cursor-agent-life ...` |
+| Docker | Текущее (cursor-agent) | Высокий | `docker exec cursor-agent ...` |
 | Локальный CLI | Если установлен | Средний | `agent ...` |
 | WSL | Если доступен | Низкий | `wsl agent ...` |
 
@@ -1119,8 +1119,8 @@ logger.debug(f"Флаг модели в команде: {model_flag or 'не д�
 ## Чеклист для быстрого старта
 
 ### Перед началом тестирования:
-- [ ] Проверить версию Cursor CLI: `docker exec cursor-agent-life /root/.local/bin/agent --version`
-- [ ] Проверить доступные модели: `docker exec cursor-agent-life /root/.local/bin/agent --list-models`
+- [ ] Проверить версию Cursor CLI: `docker exec cursor-agent /root/.local/bin/agent --version`
+- [ ] Проверить доступные модели: `docker exec cursor-agent /root/.local/bin/agent --list-models`
 - [ ] Проверить billing в dashboard: https://cursor.com/dashboard
 - [ ] Проверить CURSOR_API_KEY в .env
 - [ ] Создать тестовую директорию: `mkdir -p test_cursor_cli/results test_cursor_cli/logs`
@@ -1130,13 +1130,13 @@ logger.debug(f"Флаг модели в команде: {model_flag or 'не д�
 **Первый тест (простой):**
 ```bash
 # Тест с Auto (без флага -m)
-docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent -p "Создай файл test.txt" --force --approve-mcps'
+docker exec cursor-agent bash -c 'cd /workspace && /root/.local/bin/agent -p "Создай файл test.txt" --force --approve-mcps'
 
 # Тест с явной моделью auto (работает!)
-docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent --model auto -p "Создай файл test2.txt" --force --approve-mcps'
+docker exec cursor-agent bash -c 'cd /workspace && /root/.local/bin/agent --model auto -p "Создай файл test2.txt" --force --approve-mcps'
 
 # Тест с моделью grok (работает!)
-docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent --model grok -p "Создай файл test3.txt" --force --approve-mcps'
+docker exec cursor-agent bash -c 'cd /workspace && /root/.local/bin/agent --model grok -p "Создай файл test3.txt" --force --approve-mcps'
 ```
 
 **Проверка результатов:**
@@ -1208,9 +1208,9 @@ for model in "${MODELS[@]}"; do
     
     if [ -z "$model" ]; then
         # Auto (без флага -m)
-        cmd="docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent -p \"$PROMPT\" --force --approve-mcps'"
+        cmd="docker exec cursor-agent bash -c 'cd /workspace && /root/.local/bin/agent -p \"$PROMPT\" --force --approve-mcps'"
     else
-        cmd="docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent -m $model -p \"$PROMPT\" --force --approve-mcps'"
+        cmd="docker exec cursor-agent bash -c 'cd /workspace && /root/.local/bin/agent -m $model -p \"$PROMPT\" --force --approve-mcps'"
     fi
     
     start_time=$(date +%s)

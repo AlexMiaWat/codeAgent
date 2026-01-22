@@ -18,6 +18,9 @@ sys.path.insert(0, str(project_root))
 from src.cursor_cli_interface import CursorCLIInterface, create_cursor_cli_interface
 from src.config_loader import ConfigLoader
 
+# Импорт вспомогательных функций для загрузки настроек
+from test_utils import get_container_name
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
@@ -180,7 +183,7 @@ def test_cursor_cli_execution():
             timeout=10
         )
         if result.returncode == 0:
-            if "cursor-agent-life" in result.stdout and "Up" in result.stdout:
+            if get_container_name() in result.stdout and "Up" in result.stdout:
                 print(f"   [OK] Контейнер работает и готов к выполнению следующих задач")
             else:
                 print(f"   [WARN] Контейнер остановлен или не найден")

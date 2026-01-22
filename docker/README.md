@@ -41,7 +41,7 @@ docker-compose -f docker/docker-compose.agent.yml run --rm agent -p "Create a te
 ### С указанием рабочей директории
 
 ```bash
-docker-compose -f docker/docker-compose.agent.yml run --rm -w /workspace/D:\Space\life agent -p "instruction"
+docker-compose -f docker/docker-compose.agent.yml run --rm -w /workspace/D:\Space\your-project agent -p "instruction"
 ```
 
 ### Интерактивный режим

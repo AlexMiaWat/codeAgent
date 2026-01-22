@@ -17,7 +17,7 @@
 
 Настроена для:
 - Сборки образа `cursor-agent:latest`
-- Монтирования целевой директории проекта (`D:\Space\life`)
+- Монтирования целевой директории проекта (`D:\Space\your-project`)
 - Запуска `agent` в контейнере
 
 ### 3. Wrapper скрипт (опционально)
@@ -58,9 +58,9 @@ docker compose -f docker/docker-compose.agent.yml run --rm agent -p "echo 'Test 
 docker compose -f docker/docker-compose.agent.yml run --rm agent -p "Create file test.txt with content 'Hello'"
 ```
 
-### Для целевого проекта (D:\Space\life)
+### Для целевого проекта (D:\Space\your-project)
 
-Инструкции выполняются в контексте `/workspace` (который смонтирован из `D:\Space\life`):
+Инструкции выполняются в контексте `/workspace` (который смонтирован из `D:\Space\your-project`):
 
 ```bash
 docker compose -f docker/docker-compose.agent.yml run --rm agent -p "Create file docs/results/test.md with report"

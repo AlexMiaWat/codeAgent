@@ -15,6 +15,9 @@ from src.hybrid_cursor_interface import (
 )
 from src.config_loader import ConfigLoader
 
+# Импорт вспомогательных функций для загрузки настроек
+from test_utils import get_cli_path
+
 print()
 print("=" * 70)
 print("БЫСТРЫЙ ТЕСТ ГИБРИДНОГО ИНТЕРФЕЙСА")
@@ -29,7 +32,7 @@ config = ConfigLoader("config/config.yaml")
 project_dir = config.get_project_dir()
 
 hybrid = create_hybrid_cursor_interface(
-    cli_path="docker-compose-agent",
+    cli_path=get_cli_path(),
     project_dir=str(project_dir),
     prefer_cli=False,
     verify_side_effects=False

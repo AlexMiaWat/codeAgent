@@ -12,7 +12,7 @@ Code Agent должен взаимодействовать с Cursor IDE для 
 ### ⚠️ ВАЖНО: Различие между проектами
 
 - **Проект Code Agent** (`D:\Space\codeAgent\`) - сам инструмент автоматизации
-- **Целевой проект** (`<PROJECT_DIR>`, например `D:\Space\life\`) - проект, который дорабатывает Code Agent
+- **Целевой проект** (`<PROJECT_DIR>`, например `D:\Space\your-project\`) - проект, который дорабатывает Code Agent
 
 Настройки для этих проектов **разные** и должны быть четко разделены!
 
@@ -107,7 +107,7 @@ dependencies = [
 
 ### 3. Настройки Cursor для целевого проекта (опционально)
 
-#### Файл: `<PROJECT_DIR>\.cursor\settings.json` (например, `D:\Space\life\.cursor\settings.json`)
+#### Файл: `<PROJECT_DIR>\.cursor\settings.json` (например, `D:\Space\your-project\.cursor\settings.json`)
 
 **Назначение:** Настройки Cursor IDE для работы с целевым проектом, который дорабатывает Code Agent.
 
@@ -305,7 +305,7 @@ python -m src.server --production
 - [ ] Создан `.cursor/settings.json` в корне Code Agent проекта
 - [ ] Настроен `.env` с `PROJECT_DIR` и API ключами
 
-### Для целевого проекта (`<PROJECT_DIR>`, например `D:\Space\life\`):
+### Для целевого проекта (`<PROJECT_DIR>`, например `D:\Space\your-project\`):
 
 - [ ] Созданы директории `docs/results/` и `docs/reviews/`
 - [ ] (Опционально) Создан `.cursor/settings.json` в корне целевого проекта

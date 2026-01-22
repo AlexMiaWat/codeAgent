@@ -21,13 +21,13 @@ test_cursor_cli/
 
 ```bash
 # Проверка версии Cursor CLI
-docker exec cursor-agent-life /root/.local/bin/agent --version
+docker exec cursor-agent /root/.local/bin/agent --version
 
 # Список доступных моделей
-docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent --list-models'
+docker exec cursor-agent bash -c 'cd /workspace && /root/.local/bin/agent --list-models'
 
 # Проверка ключа (первые 20 символов)
-docker exec cursor-agent-life bash -c 'echo $CURSOR_API_KEY | head -c 20'
+docker exec cursor-agent bash -c 'echo $CURSOR_API_KEY | head -c 20'
 ```
 
 ### 2. Быстрое тестирование всех моделей
@@ -53,17 +53,17 @@ python test_runner.py
 
 ### Тест с Auto (без флага -m)
 ```bash
-docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent -p "Создай файл test.txt" --force --approve-mcps'
+docker exec cursor-agent bash -c 'cd /workspace && /root/.local/bin/agent -p "Создай файл test.txt" --force --approve-mcps'
 ```
 
 ### Тест с дешевой моделью
 ```bash
-docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent -m claude-haiku -p "Создай файл test2.txt" --force --approve-mcps'
+docker exec cursor-agent bash -c 'cd /workspace && /root/.local/bin/agent -m claude-haiku -p "Создай файл test2.txt" --force --approve-mcps'
 ```
 
 ### Тест с другой дешевой моделью
 ```bash
-docker exec cursor-agent-life bash -c 'cd /workspace && /root/.local/bin/agent -m gpt-4o-mini -p "Создай файл test3.txt" --force --approve-mcps'
+docker exec cursor-agent bash -c 'cd /workspace && /root/.local/bin/agent -m gpt-4o-mini -p "Создай файл test3.txt" --force --approve-mcps'
 ```
 
 ## Анализ результатов

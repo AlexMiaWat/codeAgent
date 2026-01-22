@@ -2,7 +2,7 @@
 
 ## Проблемы текущего формата
 
-### Анализ `D:\Space\life\todo\CURRENT.md`
+### Анализ `D:\Space\your-project\todo\CURRENT.md`
 
 **Проблемы:**
 1. ❌ Задачи записаны как **нумерованные списки** (`1. **Задача**`) - Code Agent их **не парсит** как задачи
@@ -20,7 +20,7 @@
 ### Вариант 1: Markdown с чекбоксами (рекомендуется)
 
 ```markdown
-# Текущие задачи проекта Life
+# Текущие задачи проекта your-project 
 
 > **Обновлено:** 2026-01-26
 > **Статус:** Актуальный краткий список приоритетов
@@ -65,7 +65,7 @@
 ### Вариант 2: Чистый список задач (для активной работы)
 
 ```markdown
-# Текущие задачи проекта Life
+# Текущие задачи проекта your-project 
 
 > **Обновлено:** 2026-01-26
 
@@ -152,7 +152,7 @@
 4. Раздел "Реализовано" оформить как список `- [x]` или как текст без маркеров
 5. Сохранить структуру документа (заголовки, метаинформация, ссылки)
 
-**Исходный файл:** `D:\Space\life\todo\CURRENT.md`  
+**Исходный файл:** `D:\Space\your-project\todo\CURRENT.md`  
 **Требуемый формат:** Markdown с чекбоксами  
 **Парсер:** Code Agent `TodoManager._load_from_markdown()`
 
@@ -175,7 +175,7 @@
 ### Структура файла после исправления
 
 ```markdown
-# Текущие задачи проекта Life
+# Текущие задачи проекта your-project 
 
 > **Обновлено:** 2026-01-26
 > **Статус:** Актуальный краткий список приоритетов
@@ -242,7 +242,7 @@
 from src.todo_manager import TodoManager
 from pathlib import Path
 
-mgr = TodoManager(Path('D:/Space/life'), todo_format='md')
+mgr = TodoManager(Path('D:/Space/your-project '), todo_format='md')
 print(f"Найдено задач: {len(mgr.items)}")
 print(f"Непройденных: {len(mgr.get_pending_tasks())}")
 

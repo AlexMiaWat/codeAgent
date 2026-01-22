@@ -93,7 +93,7 @@ version: '3.8'
 services:
   cursor-agent:
     image: cursor-agent:latest
-    container_name: cursor-agent-life
+    container_name: cursor-agent
     logging:
       driver: "json-file"
       options:
@@ -107,7 +107,7 @@ services:
 
 ```bash
 docker run -d \
-  --name cursor-agent-life \
+  --name cursor-agent \
   --log-opt max-size=10m \
   --log-opt max-file=3 \
   cursor-agent:latest
@@ -119,16 +119,16 @@ docker run -d \
 
 ```bash
 # Просмотр логов в реальном времени
-docker logs -f cursor-agent-life
+docker logs -f cursor-agent
 
 # Последние 100 строк
-docker logs --tail 100 cursor-agent-life
+docker logs --tail 100 cursor-agent
 
 # Логи с временными метками
-docker logs -t cursor-agent-life
+docker logs -t cursor-agent
 
 # Логи за последний час
-docker logs --since 1h cursor-agent-life
+docker logs --since 1h cursor-agent
 ```
 
 ## Дополнительные рекомендации
@@ -238,14 +238,14 @@ CMD ["/start.sh"]
 docker build -t cursor-agent:latest .
 
 # Остановить старый контейнер
-docker stop cursor-agent-life
-docker rm cursor-agent-life
+docker stop cursor-agent
+docker rm cursor-agent
 
 # Запустить новый
-docker run -d --name cursor-agent-life cursor-agent:latest
+docker run -d --name cursor-agent cursor-agent:latest
 
 # Проверить логи
-docker logs cursor-agent-life
+docker logs cursor-agent
 
 # Вывод должен быть примерно таким:
 # [2026-01-19 15:30:00] === Cursor Agent Container Started ===

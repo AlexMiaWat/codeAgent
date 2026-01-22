@@ -28,7 +28,7 @@ pytest test/test_full_access_permissions.py -v
 agent -p "Создай файл test.txt" --force --approve-mcps
 
 # Тестовая команда (Docker)
-docker exec -i cursor-agent-life bash -c \
+docker exec -i cursor-agent bash -c \
   'printf "%s\n" "Создай файл test.txt" | agent -p --force --approve-mcps'
 ```
 

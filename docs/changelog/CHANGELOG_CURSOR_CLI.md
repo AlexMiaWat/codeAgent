@@ -75,7 +75,7 @@ if self.cli_command.startswith("wsl "):
     agent_cmd = self.cli_command.split()
     cmd = agent_cmd + ["-p", prompt]
     
-    # Конвертируем D:\Space\life -> /mnt/d/Space/life
+    # Конвертируем D:\Space\your-project -> /mnt/d/Space/your-project
     if working_dir and os.name == 'nt':
         wsl_path = working_dir.replace('\\', '/').replace(':', '').lower()
         exec_cwd = f"/mnt/{wsl_path[0]}{wsl_path[1:]}"

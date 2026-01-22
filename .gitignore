@@ -267,3 +267,4 @@ package-lock.json
 nul
 .codeagent_fallback_state.json
 .codeagent_fallback_state.json
+scripts/setup_git_ssh_smartagent.bat

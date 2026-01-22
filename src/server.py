@@ -841,19 +841,24 @@ class CodeAgentServer:
         try:
             cursor_config = self.config.get('cursor', {})
             cli_config = cursor_config.get('cli', {})
-            
+
             cli_path = cli_config.get('cli_path')
             timeout = cli_config.get('timeout', self.DEFAULT_CURSOR_CLI_TIMEOUT)
             headless = cli_config.get('headless', True)
-            
+            container_name = cli_config.get('container_name')
+
+            if not container_name:
+                raise ValueError("container_name должен быть указан в конфигурации config/config.yaml в разделе cursor.cli.container_name")
+
             logger.debug(f"Инициализация Cursor CLI: timeout={timeout} секунд (из конфига: {cli_config.get('timeout', 'не указан')}, дефолт: {self.DEFAULT_CURSOR_CLI_TIMEOUT})")
-            
+
             # Передаем директорию проекта и роль агента для настройки контекста
             agent_config = self.config.get('agent', {})
             cli_interface = create_cursor_cli_interface(
                 cli_path=cli_path,
                 timeout=timeout,
                 headless=headless,
+                container_name=container_name,
                 project_dir=str(self.project_dir),
                 agent_role=agent_config.get('role')
             )
@@ -1230,7 +1235,7 @@ class CodeAgentServer:
                         task_logger.log_warning(f"Непредвиденная ошибка Cursor - перезапуск Docker: {error_message}")
                         
                         # Сначала проверяем, установлен ли агент в контейнере
-                        container_name = "cursor-agent-life"
+                        container_name = cli_config.get('container_name')
                         logger.info(f"Проверка установки Cursor Agent в контейнере {container_name}...")
                         import subprocess
                         agent_check = subprocess.run(
@@ -1352,7 +1357,7 @@ class CodeAgentServer:
                 if self.cursor_cli.cli_command == "docker-compose-agent":
                     # Перезапускаем Docker контейнер
                     compose_file = Path(__file__).parent.parent / "docker" / "docker-compose.agent.yml"
-                    container_name = "cursor-agent-life"  # Имя из docker-compose.agent.yml
+                    container_name = cli_config.get('container_name')  # Имя из docker-compose.agent.yml
                     
                     try:
                         import subprocess

@@ -61,7 +61,7 @@ curl http://127.0.0.1:3456/status
     "in_progress": 1,
     "pending": 2
   },
-  "project_dir": "D:\\Space\\life",
+  "project_dir": "D:\\Space\\your-project",
   "cursor_cli_available": true,
   "auto_todo_enabled": true
 }
@@ -92,7 +92,7 @@ curl http://127.0.0.1:3456/status
     "status": "running",
     "running": true,
     "port": 3456,
-    "project_dir": "D:\\Space\\life",
+    "project_dir": "D:\\Space\\your-project",
     "cursor_cli_available": true,
     "auto_todo_enabled": true
   },

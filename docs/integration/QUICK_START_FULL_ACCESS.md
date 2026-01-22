@@ -34,7 +34,7 @@ python -m src.server
 agent -p "Создай файл test.txt с текстом Hello" --force --approve-mcps
 
 # Docker (если настроен)
-docker exec -i cursor-agent-life bash -c \
+docker exec -i cursor-agent bash -c \
   'printf "%s\n" "Создай файл test.txt" | agent -p --force --approve-mcps'
 ```
 

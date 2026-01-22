@@ -7,6 +7,9 @@ import sys
 import os
 from pathlib import Path
 
+# Импорт вспомогательных функций для загрузки настроек
+from test_utils import get_container_name, get_project_dir
+
 def test_docker_agent():
     """Тестирование agent через Docker"""
     
@@ -36,17 +39,18 @@ def test_docker_agent():
     
     # 2. Проверка Docker образа
     print("2. Проверка Docker образа:")
+    container_name = get_container_name()
     try:
         result = subprocess.run(
-            ["docker", "images", "cursor-agent"],
+            ["docker", "images", container_name],
             capture_output=True,
             text=True,
             timeout=10
         )
-        if "cursor-agent" in result.stdout:
-            print("   [OK] Образ cursor-agent найден")
+        if container_name in result.stdout:
+            print(f"   [OK] Образ {container_name} найден")
         else:
-            print("   [FAIL] Образ cursor-agent не найден")
+            print(f"   [FAIL] Образ {container_name} не найден")
             return False
     except Exception as e:
         print(f"   [ERROR] Ошибка проверки образа: {e}")
@@ -57,9 +61,11 @@ def test_docker_agent():
     # 3. Проверка версии agent
     print("3. Проверка версии agent:")
     try:
+        # Используем настройки для определения пути к docker-compose
         compose_file = Path(__file__).parent / "docker" / "docker-compose.agent.yml"
+        container_name = get_container_name()
         result = subprocess.run(
-            ["docker", "compose", "-f", str(compose_file), "run", "--rm", "agent", "--version"],
+            ["docker", "compose", "-f", str(compose_file), "run", "--rm", container_name, "--version"],
             capture_output=True,
             text=True,
             timeout=30
@@ -81,8 +87,8 @@ def test_docker_agent():
     try:
         env = os.environ.copy()
         result = subprocess.run(
-            ["docker", "compose", "-f", str(compose_file), "run", "--rm", 
-             "-e", "CURSOR_API_KEY", "agent", "-p", "echo 'Test command'"],
+            ["docker", "compose", "-f", str(compose_file), "run", "--rm",
+             "-e", "CURSOR_API_KEY", container_name, "-p", "echo 'Test command'"],
             capture_output=True,
             text=True,
             timeout=60,
@@ -107,7 +113,7 @@ def test_docker_agent():
     try:
         result = subprocess.run(
             ["docker", "compose", "-f", str(compose_file), "run", "--rm",
-             "-e", "CURSOR_API_KEY", "agent", "-p", 
+             "-e", "CURSOR_API_KEY", container_name, "-p",
              "Create file docker_test4.txt with content 'Test from Python script'"],
             capture_output=True,
             text=True,
@@ -116,9 +122,10 @@ def test_docker_agent():
         )
         if result.returncode == 0:
             print("   [OK] Команда создания файла выполнена")
-            
+
             # Проверка файла
-            test_file = Path(__file__).parent.parent / "life" / "docker_test4.txt"
+            project_dir = get_project_dir()
+            test_file = Path(project_dir) / "docker_test4.txt"
             if test_file.exists():
                 content = test_file.read_text(encoding='utf-8')
                 print(f"   [OK] Файл создан: {test_file}")

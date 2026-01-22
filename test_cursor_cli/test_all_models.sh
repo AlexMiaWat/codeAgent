@@ -4,7 +4,7 @@
 
 MODELS=("" "auto" "claude-haiku" "gpt-4o-mini" "gemini-flash" "sonnet-3.5")
 PROMPT="Создай файл test.txt с текстом 'Hello'"
-CONTAINER="cursor-agent-life"
+CONTAINER="cursor-agent"
 WORKSPACE="/workspace"
 
 echo "=========================================="

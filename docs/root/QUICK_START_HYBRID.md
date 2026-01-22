@@ -23,7 +23,7 @@ from src.hybrid_cursor_interface import create_hybrid_cursor_interface
 # Создание интерфейса
 hybrid = create_hybrid_cursor_interface(
     cli_path="docker-compose-agent",  # или None для автопоиска
-    project_dir="d:/Space/life"
+    project_dir="d:/Space/your-project"
 )
 
 # Выполнение задачи

@@ -2,7 +2,7 @@
 
 **Дата тестирования:** 2026-01-19  
 **Версия CLI:** agent (проверено через --list-models)  
-**Окружение:** Docker (cursor-agent-life)
+**Окружение:** Docker (cursor-agent)
 
 ## Ключевые находки
 

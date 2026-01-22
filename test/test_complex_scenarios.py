@@ -19,6 +19,9 @@ from src.cursor_cli_interface import create_cursor_cli_interface
 from src.prompt_formatter import PromptFormatter
 import logging
 
+# Импорт вспомогательных функций для загрузки настроек
+from test_utils import get_cli_path, get_project_dir, get_agent_role
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -34,9 +37,9 @@ def test_scenario_1_create_file():
     print("="*80)
     
     cli = create_cursor_cli_interface(
-        cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
-        agent_role="Project Executor Agent",
+        cli_path=get_cli_path(),
+        project_dir=get_project_dir(),
+        agent_role=get_agent_role(),
         timeout=2000
     )
     
@@ -60,7 +63,7 @@ def test_scenario_1_create_file():
     print(f"  Success: {result.success}, Exit: {result.return_code}")
     
     # Post-check
-    output_file = Path("d:/Space/life/test_scenario_1_create.txt")
+    output_file = Path(get_project_dir()) / "test_scenario_1_create.txt"
     if output_file.exists():
         content = output_file.read_text(encoding='utf-8', errors='ignore')
         print(f"  [OK] Файл создан: {len(content)} байт")
@@ -78,9 +81,9 @@ def test_scenario_2_analyze_docs():
     print("="*80)
     
     cli = create_cursor_cli_interface(
-        cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
-        agent_role="Project Executor Agent",
+        cli_path=get_cli_path(),
+        project_dir=get_project_dir(),
+        agent_role=get_agent_role(),
         timeout=2000
     )
     
@@ -100,7 +103,7 @@ def test_scenario_2_analyze_docs():
     print(f"  Success: {result.success}, Exit: {result.return_code}")
     
     # Post-check
-    output_file = Path("d:/Space/life/test_scenario_2_analysis.txt")
+    output_file = Path(get_project_dir()) / "test_scenario_2_analysis.txt"
     if output_file.exists():
         content = output_file.read_text(encoding='utf-8', errors='ignore')
         print(f"  [OK] Файл создан: {len(content)} байт, {len(content.splitlines())} строк")
@@ -117,9 +120,9 @@ def test_scenario_3_multi_step():
     print("="*80)
     
     cli = create_cursor_cli_interface(
-        cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
-        agent_role="Project Executor Agent",
+        cli_path=get_cli_path(),
+        project_dir=get_project_dir(),
+        agent_role=get_agent_role(),
         timeout=2000
     )
     
@@ -144,7 +147,7 @@ def test_scenario_3_multi_step():
     print(f"  Success: {result.success}, Exit: {result.return_code}")
     
     # Post-check
-    base_dir = Path("d:/Space/life/test_scenario_3")
+    base_dir = Path(get_project_dir()) / "test_scenario_3"
     files_to_check = [
         base_dir / "step1.txt",
         base_dir / "step2.txt",
@@ -168,9 +171,9 @@ def test_scenario_4_russian_instruction():
     print("="*80)
     
     cli = create_cursor_cli_interface(
-        cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
-        agent_role="Project Executor Agent",
+        cli_path=get_cli_path(),
+        project_dir=get_project_dir(),
+        agent_role=get_agent_role(),
         timeout=2000
     )
     
@@ -192,7 +195,7 @@ def test_scenario_4_russian_instruction():
     print(f"  Success: {result.success}, Exit: {result.return_code}")
     
     # Post-check
-    output_file = Path("d:/Space/life/test_scenario_4_analysis.txt")
+    output_file = Path(get_project_dir()) / "test_scenario_4_analysis.txt"
     if output_file.exists():
         content = output_file.read_text(encoding='utf-8', errors='ignore')
         print(f"  [OK] Файл создан: {len(content)} байт")
@@ -209,9 +212,9 @@ def test_scenario_5_lifecycle_full():
     print("="*80)
     
     cli = create_cursor_cli_interface(
-        cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
-        agent_role="Project Executor Agent",
+        cli_path=get_cli_path(),
+        project_dir=get_project_dir(),
+        agent_role=get_agent_role(),
         timeout=2000
     )
     
@@ -249,7 +252,7 @@ def test_scenario_5_lifecycle_full():
     print(f"  Success: {result3.success}")
     
     # Post-check
-    output_file = Path("d:/Space/life/test_scenario_5_lifecycle.txt")
+    output_file = Path(get_project_dir()) / "test_scenario_5_lifecycle.txt"
     success = output_file.exists() and result1.success and result2.success and result3.success
     
     if output_file.exists():
@@ -265,8 +268,8 @@ def run_all_scenarios():
     print("\n" + "="*80)
     print("КОМПЛЕКСНОЕ ТЕСТИРОВАНИЕ СЛОЖНЫХ СЦЕНАРИЕВ")
     print("="*80)
-    print(f"Проект: d:/Space/life")
-    print(f"Интерфейс: Docker (cursor-agent-life)")
+    print(f"Проект: {get_project_dir()}")
+    print(f"Интерфейс: Docker (cursor-agent)")
     print("="*80)
     
     scenarios = [

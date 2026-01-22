@@ -302,7 +302,7 @@ agent:
 
 **Переменные окружения:**
 - `CURSOR_API_KEY` - из `.env` файла в `d:\Space\codeAgent\.env`
-- `PROJECT_DIR` - целевой проект (например, `D:\Space\life`)
+- `PROJECT_DIR` - целевой проект (например, `D:\Space\your-project`)
 
 ### Вариант 1: Docker (текущий режим)
 
@@ -315,7 +315,7 @@ cli_interface = create_cursor_cli_interface(
     cli_path="docker-compose-agent",
     timeout=1000,
     headless=True,
-    project_dir="D:\\Space\\life",
+    project_dir="path\\to\\your\\project",
     agent_role="Project Executor Agent"
 )
 ```
@@ -325,7 +325,7 @@ cli_interface = create_cursor_cli_interface(
 # src/cursor_cli_interface.py::execute()
 result = cli.execute(
     prompt="Создай файл test.txt с текстом 'Hello'",
-    working_dir="D:\\Space\\life",
+    working_dir="path\\to\\your\\project",
     timeout=1000,
     new_chat=True
 )
@@ -355,7 +355,7 @@ agent_full_cmd = f'{agent_base_cmd}{model_flag} -p {escaped_prompt} --force --ap
 ```bash
 docker exec \
   -e CURSOR_API_KEY=sk_cursor_xxx \
-  cursor-agent-life \
+  cursor-agent \
   bash -c 'export CURSOR_API_KEY=sk_cursor_xxx && export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && /root/.local/bin/agent -p "Создай файл test.txt с текстом '\''Hello'\''" --force --approve-mcps'
 ```
 
@@ -371,7 +371,7 @@ cursor:
 
 **Команда:**
 ```bash
-docker exec -e CURSOR_API_KEY=xxx cursor-agent-life bash -c 'export CURSOR_API_KEY=xxx && export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && /root/.local/bin/agent -p "instruction" --force --approve-mcps'
+docker exec -e CURSOR_API_KEY=xxx cursor-agent bash -c 'export CURSOR_API_KEY=xxx && export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && /root/.local/bin/agent -p "instruction" --force --approve-mcps'
 ```
 *Примечание: Флаг `-m` не добавляется, Cursor выбирает модель автоматически*
 
@@ -385,7 +385,7 @@ cursor:
 
 **Команда:**
 ```bash
-docker exec -e CURSOR_API_KEY=xxx cursor-agent-life bash -c 'export CURSOR_API_KEY=xxx && export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && /root/.local/bin/agent -m "claude-haiku" -p "instruction" --force --approve-mcps'
+docker exec -e CURSOR_API_KEY=xxx cursor-agent bash -c 'export CURSOR_API_KEY=xxx && export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && /root/.local/bin/agent -m "claude-haiku" -p "instruction" --force --approve-mcps'
 ```
 *Примечание: Добавлен флаг `-m "claude-haiku"`*
 
@@ -400,7 +400,7 @@ result = cli.execute(
 
 **Команда:**
 ```bash
-docker exec -e CURSOR_API_KEY=xxx cursor-agent-life bash -c 'export CURSOR_API_KEY=xxx && export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && /root/.local/bin/agent --resume chat-123 -p "Продолжи задачу" --force --approve-mcps'
+docker exec -e CURSOR_API_KEY=xxx cursor-agent bash -c 'export CURSOR_API_KEY=xxx && export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && /root/.local/bin/agent --resume chat-123 -p "Продолжи задачу" --force --approve-mcps'
 ```
 *Примечание: Добавлен флаг `--resume chat-123`*
 
@@ -420,7 +420,7 @@ docker exec -e CURSOR_API_KEY=xxx cursor-agent-life bash -c 'export CURSOR_API_K
 
 **Рабочая директория:**
 - Устанавливается в docker-compose.agent.yml: `working_dir: /workspace`
-- Монтируется из хост-системы: `../../life:/workspace:rw`
+- Монтируется из хост-системы: `../../your-project:/workspace:rw`
 - В команде: `cd /workspace` перед выполнением agent
 
 ### Вариант 2: Локальный CLI
@@ -451,7 +451,7 @@ wsl agent -p "instruction" --force --approve-mcps
 
 **Конвертация пути:**
 ```python
-# Windows: D:\Space\life -> WSL: /mnt/d/space/life
+# Windows: D:\Space\your-project -> WSL: /mnt/d/space/your-project
 wsl_path = effective_working_dir.replace('\\', '/').replace(':', '').lower()
 exec_cwd = f"/mnt/{wsl_path[0]}{wsl_path[1:]}"
 ```
@@ -506,7 +506,7 @@ agent:
 ```env
 # .env
 CURSOR_API_KEY=sk_cursor_xxx
-PROJECT_DIR=D:\Space\life
+PROJECT_DIR=D:\Space\your-project
 ```
 
 **Вызов в коде:**
@@ -516,7 +516,7 @@ cli = create_cursor_cli_interface(
     cli_path="docker-compose-agent",
     timeout=1000,
     headless=True,
-    project_dir="D:\\Space\\life",
+    project_dir="path\\to\\your\\project",
     agent_role="Project Executor Agent"
 )
 
@@ -524,7 +524,7 @@ cli = create_cursor_cli_interface(
 result = cli.execute_instruction(
     instruction="Создай файл test.txt с текстом 'Hello'",
     task_id="task_001",
-    working_dir="D:\\Space\\life",
+    working_dir="path\\to\\your\\project",
     timeout=1000
 )
 ```
@@ -534,7 +534,7 @@ result = cli.execute_instruction(
 # cli.execute_instruction() вызывает:
 cli.execute(
     prompt="Создай файл test.txt с текстом 'Hello'",
-    working_dir="D:\\Space\\life",
+    working_dir="path\\to\\your\\project",
     timeout=1000,
     new_chat=True  # Всегда True для execute_instruction()
 )
@@ -544,7 +544,7 @@ cli.execute(
 ```bash
 docker exec \
   -e CURSOR_API_KEY=sk_cursor_xxx \
-  cursor-agent-life \
+  cursor-agent \
   bash -c 'export CURSOR_API_KEY=sk_cursor_xxx && export LANG=C.UTF-8 LC_ALL=C.UTF-8 && cd /workspace && /root/.local/bin/agent -p "Создай файл test.txt с текстом '\''Hello'\''" --force --approve-mcps'
 ```
 
@@ -640,7 +640,7 @@ result = cli.execute(
 cli.stop_active_chats()
 
 # Docker команда:
-# docker exec cursor-agent-life bash -c "pkill -f 'agent.*-p' || pkill -f '/root/.local/bin/agent' || true"
+# docker exec cursor-agent bash -c "pkill -f 'agent.*-p' || pkill -f '/root/.local/bin/agent' || true"
 ```
 
 **Очистка перед новой задачей:**
@@ -667,7 +667,7 @@ for retry in range(max_timeout_retries):
     except subprocess.TimeoutExpired:
         if use_docker and retry < max_timeout_retries - 1:
             # Проверка активности контейнера
-            container_active = self._check_docker_container_activity("cursor-agent-life")
+            container_active = self._check_docker_container_activity("cursor-agent")
             if container_active:
                 # Продление таймаута в 2 раза
                 current_timeout = exec_timeout * 2
@@ -707,13 +707,13 @@ container_status = self._ensure_docker_container_running(compose_file)
 
 **Проверка статуса:**
 ```bash
-docker inspect --format "{{.State.Status}}" cursor-agent-life
+docker inspect --format "{{.State.Status}}" cursor-agent
 # Возвращает: running, exited, created, restarting
 ```
 
 **Обработка проблем:**
 - Если контейнер в состоянии `restarting` - удаляется и создается заново
-- Проверка здоровья контейнера через `docker exec cursor-agent-life echo ok`
+- Проверка здоровья контейнера через `docker exec cursor-agent echo ok`
 
 ### Ручное создание (файловый интерфейс)
 

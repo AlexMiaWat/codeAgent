@@ -229,7 +229,7 @@ from src.hybrid_cursor_interface import create_hybrid_cursor_interface
 
 hybrid = create_hybrid_cursor_interface(
     cli_path="docker-compose-agent",
-    project_dir="d:/Space/life"
+    project_dir="d:/Space/your-project"
 )
 
 result = hybrid.execute_task(

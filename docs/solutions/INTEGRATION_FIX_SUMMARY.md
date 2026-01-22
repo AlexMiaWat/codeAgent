@@ -37,7 +37,7 @@ from src.hybrid_cursor_interface import create_hybrid_cursor_interface
 # Создание интерфейса
 hybrid = create_hybrid_cursor_interface(
     cli_path="docker-compose-agent",
-    project_dir="d:/Space/life",
+    project_dir="path/to/your/project",
     prefer_cli=False,  # Не предпочитать CLI для сложных задач
     verify_side_effects=True  # Проверять side-effects
 )
@@ -120,7 +120,7 @@ from src.hybrid_cursor_interface import create_hybrid_cursor_interface
 # Инициализация
 hybrid = create_hybrid_cursor_interface(
     cli_path="docker-compose-agent",
-    project_dir="d:/Space/life",
+    project_dir="path/to/your/project",
     prefer_cli=False,
     verify_side_effects=True
 )
@@ -209,7 +209,7 @@ python test/test_hybrid_interface.py
 import pexpect
 
 def execute_with_interactive_mode(instruction: str):
-    child = pexpect.spawn('docker', ['exec', '-it', 'cursor-agent-life', 'bash'])
+    child = pexpect.spawn('docker', ['exec', '-it', 'cursor-agent', 'bash'])
     child.sendline('/root/.local/bin/agent')
     child.expect(r'[>:] ')
     child.sendline(instruction)

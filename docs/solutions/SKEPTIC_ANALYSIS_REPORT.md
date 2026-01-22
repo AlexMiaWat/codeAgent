@@ -37,7 +37,7 @@
 **Решение:**
 ```bash
 # Создать .env.example с шаблоном:
-PROJECT_DIR=D:\Space\life
+PROJECT_DIR=D:\Space\your-project
 OPENROUTER_API_KEY=your_api_key_here
 CURSOR_API_KEY=your_cursor_api_key_here
 ```

@@ -63,7 +63,7 @@ manager.update_task_status("Задача 1", "Выполнено", "Детали
 from src.todo_manager import TodoManager, TodoItem
 from pathlib import Path
 
-project_dir = Path("D:/Space/life")
+project_dir = Path("D:/Space/your-project")
 manager = TodoManager(project_dir, todo_format="txt")
 pending = manager.get_pending_tasks()
 manager.mark_task_done("Задача 1")
@@ -108,7 +108,7 @@ print(item.done)   # Выполнена ли задача
 from src.agents.executor_agent import create_executor_agent
 from pathlib import Path
 
-project_dir = Path("D:/Space/life")
+project_dir = Path("D:/Space/your-project")
 agent = create_executor_agent(
     project_dir=project_dir,
     docs_dir=project_dir / "docs",
@@ -216,7 +216,7 @@ manager.update_task_status(
 from src.todo_manager import TodoManager
 from pathlib import Path
 
-project_dir = Path("D:/Space/life")
+project_dir = Path("D:/Space/your-project")
 manager = TodoManager(project_dir, todo_format="txt")
 
 # Получение задач
@@ -237,7 +237,7 @@ from src.agents.executor_agent import create_executor_agent
 from pathlib import Path
 
 agent = create_executor_agent(
-    project_dir=Path("D:/Space/life"),
+    project_dir=Path("D:/Space/your-project"),
     role="Custom Agent",
     goal="Custom goal",
     backstory="Custom backstory",

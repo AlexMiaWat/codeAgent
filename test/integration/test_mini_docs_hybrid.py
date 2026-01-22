@@ -16,6 +16,9 @@ from src.hybrid_cursor_interface import (
 from src.prompt_formatter import PromptFormatter
 from src.config_loader import ConfigLoader
 
+# Импорт вспомогательных функций для загрузки настроек
+from test_utils import get_cli_path
+
 print()
 print("=" * 70)
 print("ТЕСТ: Создание mini_docs_for_user.md через гибридный интерфейс")
@@ -32,7 +35,7 @@ print()
 # Создаем гибридный интерфейс
 print("Инициализация гибридного интерфейса...")
 hybrid = create_hybrid_cursor_interface(
-    cli_path="docker-compose-agent",
+    cli_path=get_cli_path(),
     project_dir=str(project_dir),
     prefer_cli=False,  # Сложная задача - через файловый интерфейс
     verify_side_effects=True
@@ -97,7 +100,7 @@ print("Таймаут: 300 секунд (5 минут)")
 print()
 
 print("ВАЖНО: Для выполнения этой задачи:")
-print("1. Откройте Cursor в проекте d:/Space/life")
+print(f"1. Откройте Cursor в проекте {project_dir}")
 print("2. Следите за файлом инструкции в cursor_commands/")
 print("3. Выполните инструкцию в Cursor")
 print("4. Сохраните результат в cursor_results/")

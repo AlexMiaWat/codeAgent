@@ -98,11 +98,11 @@ make test-cursor
 
 **Требования:**
 - Docker Desktop (для тестов через Docker контейнер)
-- Cursor CLI доступен через Docker контейнер `cursor-agent-life`
+- Cursor CLI доступен через Docker контейнер `cursor-agent`
 - Docker Desktop (для тестов через Docker контейнер)
 
 **Важно о Docker контейнере:**
-- Тесты автоматически создают и запускают Docker контейнер `cursor-agent-life` при необходимости
+- Тесты автоматически создают и запускают Docker контейнер `cursor-agent` при необходимости
 - Контейнер остается активным после выполнения команд (это нормально)
 - Контейнер использует команду `while true; do sleep 3600; done` для постоянной работы
 - Статус контейнера проверяется до и после каждого теста
@@ -111,16 +111,16 @@ make test-cursor
 **Проверка статуса контейнера вручную:**
 ```bash
 # Проверка статуса
-docker ps -a | grep cursor-agent-life
+docker ps -a | grep cursor-agent
 
 # Просмотр логов
-docker logs cursor-agent-life --tail 50
+docker logs cursor-agent --tail 50
 
 # Остановка контейнера (если нужно)
-docker stop cursor-agent-life
+docker stop cursor-agent
 
 # Удаление контейнера (если нужно)
-docker rm cursor-agent-life
+docker rm cursor-agent
 ```
 
 ---

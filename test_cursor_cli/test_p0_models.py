@@ -11,7 +11,7 @@ from typing import Dict, List
 from datetime import datetime
 
 class P0ModelTester:
-    def __init__(self, container_name: str = "cursor-agent-life", workspace: str = "/workspace"):
+    def __init__(self, container_name: str = "cursor-agent", workspace: str = "/workspace"):
         self.container_name = container_name
         self.workspace = workspace
         self.results_dir = Path("results")

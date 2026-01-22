@@ -18,6 +18,9 @@ from src.cursor_cli_interface import create_cursor_cli_interface
 import logging
 import time
 
+# Импорт вспомогательных функций для загрузки настроек
+from test_utils import get_cli_path, get_project_dir, get_agent_role, get_cli_timeout
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
@@ -34,10 +37,10 @@ def test_scenario_1_new_chat():
     print("="*80)
     
     cli = create_cursor_cli_interface(
-        cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
-        agent_role="Project Executor Agent",
-        timeout=1000
+        cli_path=get_cli_path(),
+        project_dir=get_project_dir(),
+        agent_role=get_agent_role(),
+        timeout=get_cli_timeout()
     )
     
     if not cli.is_available():
@@ -76,10 +79,10 @@ def test_scenario_2_continue_dialog():
     print("="*80)
     
     cli = create_cursor_cli_interface(
-        cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
-        agent_role="Project Executor Agent",
-        timeout=1000
+        cli_path=get_cli_path(),
+        project_dir=get_project_dir(),
+        agent_role=get_agent_role(),
+        timeout=get_cli_timeout()
     )
     
     if not cli.is_available():
@@ -141,10 +144,10 @@ def test_scenario_3_complex_russian():
     print("="*80)
     
     cli = create_cursor_cli_interface(
-        cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
-        agent_role="Project Executor Agent",
-        timeout=1000
+        cli_path=get_cli_path(),
+        project_dir=get_project_dir(),
+        agent_role=get_agent_role(),
+        timeout=get_cli_timeout()
     )
     
     if not cli.is_available():
@@ -182,7 +185,7 @@ def test_scenario_3_complex_russian():
         print(f"  Ошибки:\n{result.stderr[:500]}")
     
     # Проверяем, создан ли файл
-    output_file = Path("d:/Space/life/docs/results/mini_docs_for_user.md")
+    output_file = Path(get_project_dir()) / "docs" / "results" / "mini_docs_for_user.md"
     if output_file.exists():
         print(f"\n[OK] Файл создан: {output_file}")
         print(f"   Размер: {output_file.stat().st_size} байт")
@@ -202,10 +205,10 @@ def test_scenario_4_list_chats():
     print("="*80)
     
     cli = create_cursor_cli_interface(
-        cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
-        agent_role="Project Executor Agent",
-        timeout=1000
+        cli_path=get_cli_path(),
+        project_dir=get_project_dir(),
+        agent_role=get_agent_role(),
+        timeout=get_cli_timeout()
     )
     
     if not cli.is_available():
@@ -234,10 +237,10 @@ def test_scenario_5_resume_chat():
     print("="*80)
     
     cli = create_cursor_cli_interface(
-        cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
-        agent_role="Project Executor Agent",
-        timeout=1000
+        cli_path=get_cli_path(),
+        project_dir=get_project_dir(),
+        agent_role=get_agent_role(),
+        timeout=get_cli_timeout()
     )
     
     if not cli.is_available():
@@ -282,8 +285,8 @@ def main():
     print("\n" + "="*80)
     print("ТЕСТИРОВАНИЕ ВСЕХ СЦЕНАРИЕВ CURSOR CLI")
     print("="*80)
-    print(f"Целевой проект: d:/Space/life")
-    print(f"Интерфейс: Docker (cursor-agent-life)")
+    print(f"Целевой проект: {get_project_dir()}")
+    print(f"Интерфейс: Docker (cursor-agent)")
     print("="*80)
     
     results = {}
