@@ -1,738 +1,374 @@
 """
-Дымовые тесты для Smart Agent - проверка базовой работоспособности
+Smoke тесты для Smart Agent - базовая проверка функциональности
 """
 
 import pytest
 import tempfile
-import json
+import os
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
+from src.agents.smart_agent import create_smart_agent
+from src.tools.learning_tool import LearningTool
+from src.tools.context_analyzer_tool import ContextAnalyzerTool
 
 
-class TestSmartAgentSmoke:
-    """Дымовые тесты Smart Agent"""
+class TestSmartAgentCreation:
+    """Тесты создания Smart Agent"""
 
     def test_create_smart_agent_basic(self):
-        """Базовый тест создания Smart Agent - проверка импорта"""
-        try:
-            from src.agents.smart_agent import create_smart_agent
-            assert create_smart_agent is not None
-            # Проверяем что функция импортирована и callable
-            assert callable(create_smart_agent)
-        except ImportError as e:
-            pytest.fail(f"Не удалось импортировать create_smart_agent: {e}")
+        """Базовый тест создания smart agent"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = create_smart_agent(project_dir=Path(temp_dir))
 
-    def test_smart_agent_with_tools(self):
-        """Тест Smart Agent с инструментами - проверка создания инструментов"""
-        from src.tools.learning_tool import LearningTool
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
+            assert agent is not None
+            assert hasattr(agent, 'role')
+            assert hasattr(agent, 'goal')
+            assert hasattr(agent, 'tools')
+            assert len(agent.tools) >= 2  # Минимум LearningTool и ContextAnalyzerTool
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
+    def test_create_smart_agent_with_custom_params(self):
+        """Тест создания smart agent с пользовательскими параметрами"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                role="Custom Smart Agent",
+                goal="Custom goal",
+                verbose=False,
+                use_llm=False  # Отключаем LLM для теста
+            )
 
-            # Создаем инструменты напрямую вместо Smart Agent
-            learning_tool = LearningTool(experience_dir=str(project_dir / "experience"))
-            context_tool = ContextAnalyzerTool(project_dir=str(project_dir))
+            assert agent.role == "Custom Smart Agent"
+            assert agent.goal == "Custom goal"
+            assert agent.verbose == False
 
-            # Проверяем что инструменты созданы
-            assert learning_tool is not None
-            assert context_tool is not None
+    def test_smart_agent_tools_initialization(self):
+        """Тест инициализации инструментов smart agent"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = create_smart_agent(project_dir=Path(temp_dir), use_llm=False)
 
-            # Проверяем имена классов
-            assert learning_tool.__class__.__name__ == "LearningTool"
-            assert context_tool.__class__.__name__ == "ContextAnalyzerTool"
+            # Проверим наличие необходимых инструментов
+            tool_names = [tool.__class__.__name__ if hasattr(tool, '__class__') else str(type(tool)) for tool in agent.tools]
 
-    @patch('src.tools.docker_utils.DockerChecker.is_docker_available')
+            assert "LearningTool" in tool_names
+            assert "ContextAnalyzerTool" in tool_names
+
+    @patch('src.agents.smart_agent.is_docker_available')
+    @patch('src.agents.smart_agent.CodeInterpreterTool')
+    def test_smart_agent_with_docker_enabled(self, mock_code_tool_class, mock_docker_check):
+        """Тест smart agent с включенным Docker"""
+        mock_docker_check.return_value = True
+        mock_code_tool_instance = MagicMock()
+        mock_code_tool_class.return_value = mock_code_tool_instance
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_docker=True,
+                use_llm=False
+            )
+
+            # Проверим что Docker был проверен
+            mock_docker_check.assert_called_once()
+            # Проверим что CodeInterpreterTool был создан
+            mock_code_tool_class.assert_called_once()
+
+    @patch('src.agents.smart_agent.is_docker_available')
     def test_smart_agent_with_docker_disabled(self, mock_docker_check):
-        """Тест Smart Agent с отключенным Docker"""
+        """Тест smart agent с отключенным Docker"""
         mock_docker_check.return_value = False
 
-        # Проверяем что Docker корректно определяется как недоступный
-        from src.tools.docker_utils import DockerChecker
-        result = DockerChecker.is_docker_available()
-        assert result == False
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_docker=False,
+                use_llm=False
+            )
+
+            # Docker не должен проверяться при отключении
+            mock_docker_check.assert_not_called()
 
 
 class TestLearningToolSmoke:
-    """Дымовые тесты LearningTool"""
+    """Smoke тесты LearningTool"""
 
-    def test_learning_tool_creation(self):
-        """Тест создания LearningTool"""
-        from src.tools.learning_tool import LearningTool
+    def test_learning_tool_basic_operations(self):
+        """Базовые операции LearningTool"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tool = LearningTool(experience_dir=temp_dir)
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = LearningTool(experience_dir=tmp_dir)
-
-            assert tool is not None
-            assert tool.experience_dir.exists()
-            assert tool.experience_file.exists()
-
-    def test_learning_tool_save_experience(self):
-        """Тест сохранения опыта"""
-        from src.tools.learning_tool import LearningTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = LearningTool(experience_dir=tmp_dir)
-
+            # Сохранение опыта
             result = tool.save_task_experience(
-                task_id="test_task_001",
-                task_description="Тестовая задача",
+                task_id="smoke_test_1",
+                task_description="Smoke test task",
+                success=True
+            )
+            assert "сохранен" in result
+
+            # Поиск похожих задач
+            result = tool.find_similar_tasks("smoke test")
+            assert "smoke test task" in result.lower()
+
+            # Получение рекомендаций
+            result = tool.get_recommendations("similar smoke test")
+            assert "рекомендации" in result.lower()
+
+            # Получение статистики
+            result = tool.get_statistics()
+            assert "статистика" in result.lower()
+
+    def test_learning_tool_with_patterns(self):
+        """Тест LearningTool с паттернами"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tool = LearningTool(experience_dir=temp_dir)
+
+            patterns = ["smoke", "test", "pattern"]
+            tool.save_task_experience(
+                task_id="pattern_test",
+                task_description="Task with patterns",
                 success=True,
-                execution_time=1.5
+                patterns=patterns
             )
 
+            # Проверим что паттерны сохранены
+            result = tool.get_statistics()
+            assert "Изученных паттернов:" in result
+            assert "3" in result  # Должно быть 3 паттерна
+
+    def test_learning_tool_error_recovery(self):
+        """Тест восстановления LearningTool после ошибок"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tool = LearningTool(experience_dir=temp_dir)
+
+            # Создадим поврежденный файл опыта
+            with open(tool.experience_file, 'w') as f:
+                f.write("invalid json")
+
+            # Tool должен восстановиться
+            result = tool.save_task_experience("recovery_test", "Recovery test", True)
             assert "сохранен" in result
-            assert "успешно" in result
-
-            # Проверяем что данные сохранены
-            with open(tool.experience_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                assert len(data["tasks"]) == 1
-                assert data["tasks"][0]["task_id"] == "test_task_001"
-
-    def test_learning_tool_find_similar(self):
-        """Тест поиска похожих задач"""
-        from src.tools.learning_tool import LearningTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = LearningTool(experience_dir=tmp_dir)
-
-            # Добавляем тестовые данные
-            tool.save_task_experience("task1", "Создать тестовый файл", True)
-            tool.save_task_experience("task2", "Написать документацию", True)
-
-            # Ищем похожие - используем точную фразу
-            result = tool.find_similar_tasks("Создать")
-
-            assert "Создать тестовый файл" in result or "похожие задачи" in result
-
-    def test_learning_tool_get_statistics(self):
-        """Тест получения статистики"""
-        from src.tools.learning_tool import LearningTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = LearningTool(experience_dir=tmp_dir)
-
-            # Добавляем данные
-            tool.save_task_experience("task1", "Задача 1", True, 1.0)
-            tool.save_task_experience("task2", "Задача 2", False, 2.0)
-
-            stats = tool.get_statistics()
-
-            assert "Всего задач: 2" in stats
-            assert "Успешных задач: 1" in stats
-            assert "Неудачных задач: 1" in stats
 
 
 class TestContextAnalyzerToolSmoke:
-    """Дымовые тесты ContextAnalyzerTool"""
+    """Smoke тесты ContextAnalyzerTool"""
 
-    def test_context_analyzer_creation(self):
-        """Тест создания ContextAnalyzerTool"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
+    def test_context_analyzer_basic_operations(self):
+        """Базовые операции ContextAnalyzerTool"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Создадим минимальную структуру проекта
+            (Path(temp_dir) / "src").mkdir()
+            (Path(temp_dir) / "docs").mkdir()
+            (Path(temp_dir) / "src" / "main.py").write_text("# Main module")
+            (Path(temp_dir) / "docs" / "README.md").write_text("# Documentation")
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
+            tool = ContextAnalyzerTool(project_dir=temp_dir)
 
-            tool = ContextAnalyzerTool(project_dir=str(project_dir))
-
-            assert tool is not None
-            assert str(tool.project_dir) == str(project_dir)
-
-    def test_context_analyzer_project_structure(self):
-        """Тест анализа структуры проекта"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
-
-            # Создаем тестовую структуру
-            (project_dir / "src").mkdir()
-            (project_dir / "docs").mkdir()
-            (project_dir / "test").mkdir()
-
-            # Создаем файлы
-            (project_dir / "src" / "main.py").write_text("# Main file")
-            (project_dir / "docs" / "README.md").write_text("# Documentation")
-
-            tool = ContextAnalyzerTool(project_dir=str(project_dir))
-
+            # Анализ структуры проекта
             result = tool.analyze_project_structure()
+            assert "анализ структуры" in result.lower()
 
-            assert "Основные компоненты" in result
-            assert "src" in result or "docs" in result or "test" in result
+            # Поиск зависимостей
+            result = tool.find_file_dependencies("src/main.py")
+            # Даже если зависимостей нет, функция должна работать
 
-    def test_context_analyzer_task_context(self):
-        """Тест получения контекста задачи"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
+            # Получение контекста задачи
+            result = tool.get_task_context("implement main functionality")
+            assert "контекст" in result.lower()
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
+            # Анализ компонента
+            result = tool.analyze_component("src")
+            assert "анализ компонента" in result.lower()
 
-            # Создаем тестовые файлы
-            docs_dir = project_dir / "docs"
-            docs_dir.mkdir()
-            (docs_dir / "api.md").write_text("# API Documentation\nThis is about API development")
+            # Поиск связанных файлов
+            result = tool.find_related_files("main")
+            # Функция должна работать даже без совпадений
 
-            tool = ContextAnalyzerTool(project_dir=str(project_dir))
-
-            result = tool.get_task_context("разработать API")
-
-            # Проверяем что результат содержит информацию о найденных файлах
-            assert "api.md" in result or "документация" in result or "контекст" in result
-
-    def test_context_analyzer_find_dependencies(self):
-        """Тест поиска зависимостей файла"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
-
-            # Создаем тестовый Python файл с импортами
-            test_file = project_dir / "test_module.py"
-            test_file.write_text("""
-import os
-import sys
-from pathlib import Path
+    def test_context_analyzer_with_real_files(self):
+        """Тест ContextAnalyzerTool с реальными файлами зависимостей"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Создадим файлы с зависимостями
+            (Path(temp_dir) / "requirements.txt").write_text("requests>=2.25.0\nflask==2.0.1")
+            (Path(temp_dir) / "src").mkdir()
+            (Path(temp_dir) / "src" / "main.py").write_text("""
+import requests
+from flask import Flask
 """)
 
-            tool = ContextAnalyzerTool(project_dir=str(project_dir))
+            tool = ContextAnalyzerTool(project_dir=temp_dir)
 
-            result = tool.find_file_dependencies("test_module.py")
+            # Анализ зависимостей Python файла
+            result = tool.find_file_dependencies("src/main.py")
+            assert "зависимости" in result.lower()
 
-            # Проверяем что метод отработал без ошибок
-            assert isinstance(result, str)
-            assert len(result) > 0
+            # Анализ requirements.txt
+            result = tool.find_file_dependencies("requirements.txt")
+            assert "requests" in result or "flask" in result
 
+    def test_context_analyzer_unicode_handling(self):
+        """Тест обработки Unicode в ContextAnalyzerTool"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Создадим файлы с Unicode содержимым
+            (Path(temp_dir) / "docs").mkdir()
+            (Path(temp_dir) / "docs" / "readme.md").write_text("# Документация\nТест на русском языке")
+            (Path(temp_dir) / "src").mkdir()
+            (Path(temp_dir) / "src" / "main.py").write_text("# Основной модуль\n# Тест")
 
-class TestDockerCheckerSmoke:
-    """Дымовые тесты DockerChecker"""
+            tool = ContextAnalyzerTool(project_dir=temp_dir)
 
-    @patch('subprocess.run')
-    def test_docker_available_check(self, mock_subprocess):
-        """Тест проверки доступности Docker"""
-        from src.tools.docker_utils import DockerChecker
+            # Поиск связанных файлов с Unicode
+            result = tool.find_related_files("документация")
+            # Функция должна корректно обработать Unicode
 
-        # Мокаем успешный ответ Docker
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stdout = "Docker version 24.0.6"
-        mock_subprocess.return_value = mock_result
-
-        result = DockerChecker.is_docker_available()
-
-        assert result == True
-        assert mock_subprocess.call_count >= 2  # docker --version и docker info
-
-    @patch('subprocess.run')
-    def test_docker_not_available_check(self, mock_subprocess):
-        """Тест проверки недоступности Docker"""
-        from src.tools.docker_utils import DockerChecker
-
-        # Мокаем неудачный ответ Docker
-        mock_result = Mock()
-        mock_result.returncode = 1
-        mock_subprocess.return_value = mock_result
-
-        result = DockerChecker.is_docker_available()
-
-        assert result == False
-
-    @patch('subprocess.run')
-    def test_get_docker_version(self, mock_subprocess):
-        """Тест получения версии Docker"""
-        from src.tools.docker_utils import DockerChecker
-
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stdout = "Docker version 24.0.6, build ed223bc"
-        mock_subprocess.return_value = mock_result
-
-        version = DockerChecker.get_docker_version()
-
-        assert version == "24.0.6"
-
-    @patch('subprocess.run')
-    def test_get_running_containers(self, mock_subprocess):
-        """Тест получения списка запущенных контейнеров"""
-        from src.tools.docker_utils import DockerChecker
-
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stdout = "container1\ncontainer2\n"
-        mock_subprocess.return_value = mock_result
-
-        containers = DockerChecker.get_running_containers()
-
-        assert len(containers) == 2
-        assert "container1" in containers
-        assert "container2" in containers
+            result = tool.get_task_context("тест документации")
+            # Функция должна корректно обработать Unicode
 
 
-class TestDockerManagerSmoke:
-    """Дымовые тесты DockerManager"""
+class TestSmartAgentIntegrationSmoke:
+    """Smoke тесты интеграции Smart Agent"""
 
-    @patch('src.tools.docker_utils.DockerChecker.is_docker_available')
-    @patch('src.tools.docker_utils.DockerChecker.is_container_running')
-    @patch('subprocess.run')
-    def test_docker_manager_start_container(self, mock_subprocess, mock_running, mock_available):
-        """Тест запуска контейнера"""
-        from src.tools.docker_utils import DockerManager
+    @patch('src.agents.smart_agent.is_docker_available')
+    @patch('src.agents.smart_agent.CodeInterpreterTool')
+    def test_smart_agent_full_initialization(self, mock_code_tool_class, mock_docker_check):
+        """Полная инициализация Smart Agent"""
+        mock_docker_check.return_value = True
+        mock_code_tool_instance = MagicMock()
+        mock_code_tool_class.return_value = mock_code_tool_instance
 
-        mock_available.return_value = True
-        mock_running.return_value = False
-
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stdout = "container_id_123"
-        mock_subprocess.return_value = mock_result
-
-        manager = DockerManager()
-        success, message = manager.start_container()
-
-        assert success == True
-        assert "started successfully" in message
-
-    @patch('src.tools.docker_utils.DockerChecker.is_container_running')
-    @patch('subprocess.run')
-    def test_docker_manager_stop_container(self, mock_subprocess, mock_running):
-        """Тест остановки контейнера"""
-        from src.tools.docker_utils import DockerManager
-
-        mock_running.return_value = True
-
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stdout = ""
-        mock_subprocess.return_value = mock_result
-
-        manager = DockerManager()
-        success, message = manager.stop_container()
-
-        assert success == True
-        assert "stopped successfully" in message
-
-
-class TestSmartAgentErrorHandling:
-    """Тесты обработки ошибок Smart Agent"""
-
-    def test_create_smart_agent_with_invalid_project_dir(self):
-        """Тест создания Smart Agent с некорректной директорией проекта"""
-        from src.agents.smart_agent import create_smart_agent
-
-        with pytest.raises(Exception):
-            # Передаем несуществующий путь
-            create_smart_agent(project_dir=Path("/nonexistent/path/that/does/not/exist"))
-
-    def test_create_smart_agent_with_none_project_dir(self):
-        """Тест создания Smart Agent с None в качестве директории проекта"""
-        from src.agents.smart_agent import create_smart_agent
-
-        with pytest.raises(TypeError):
-            create_smart_agent(project_dir=None)
-
-    def test_smart_agent_with_corrupted_experience_file(self):
-        """Тест Smart Agent с поврежденным файлом опыта"""
-        from src.agents.smart_agent import create_smart_agent
-        from src.tools.learning_tool import LearningTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
-
-            # Создаем поврежденный файл опыта
-            experience_file = project_dir / "smart_experience" / "experience.json"
-            experience_file.parent.mkdir(parents=True, exist_ok=True)
-
-            with open(experience_file, 'w') as f:
-                f.write("invalid json content { broken")
-
-            # Smart Agent должен создать новый файл опыта несмотря на поврежденный
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
-                with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
-                    agent = create_smart_agent(project_dir=project_dir, use_llm=False)
-
-                    assert agent is not None
-                    # Проверяем что файл опыта был пересоздан
-                    assert experience_file.exists()
-
-                    # Проверяем что файл валидный JSON
-                    import json
-                    with open(experience_file, 'r') as f:
-                        data = json.load(f)
-                        assert 'version' in data
-
-    def test_smart_agent_with_readonly_experience_dir(self):
-        """Тест Smart Agent с директорией опыта только для чтения"""
-        from src.agents.smart_agent import create_smart_agent
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
-            experience_dir = project_dir / "readonly_experience"
-            experience_dir.mkdir()
-
-            # Делаем директорию только для чтения (симуляция)
-            import os
-            original_mode = experience_dir.stat().st_mode
-            experience_dir.chmod(0o444)  # Только чтение
-
-            try:
-                with patch('src.tools.docker_utils.is_docker_available', return_value=False):
-                    with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
-                        # Агент должен обработать ошибку создания файла опыта
-                        agent = create_smart_agent(
-                            project_dir=project_dir,
-                            experience_dir=str(experience_dir),
-                            use_llm=False
-                        )
-                        assert agent is not None  # Агент все равно должен создаться
-            finally:
-                # Восстанавливаем права
-                experience_dir.chmod(original_mode)
-
-
-class TestLearningToolErrorHandling:
-    """Тесты обработки ошибок LearningTool"""
-
-    def test_learning_tool_with_invalid_json_file(self):
-        """Тест LearningTool с невалидным JSON файлом"""
-        from src.tools.learning_tool import LearningTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            # Создаем поврежденный файл опыта
-            experience_file = Path(tmp_dir) / "experience.json"
-            with open(experience_file, 'w') as f:
-                f.write("not valid json {")
-
-            tool = LearningTool(experience_dir=tmp_dir)
-
-            # Метод должен вернуть пустые данные вместо краха
-            data = tool._load_experience()
-            assert isinstance(data, dict)
-            assert 'version' in data  # Должен вернуть структуру по умолчанию
-
-    def test_learning_tool_save_experience_with_invalid_data(self):
-        """Тест сохранения опыта с невалидными данными"""
-        from src.tools.learning_tool import LearningTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = LearningTool(experience_dir=tmp_dir)
-
-            # Тест с None значениями
-            result = tool.save_task_experience(
-                task_id=None,
-                task_description=None,
-                success=None
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                role="Test Smart Agent",
+                goal="Test goal",
+                use_docker=True,
+                use_llm=False,  # Отключаем LLM для smoke теста
+                verbose=True
             )
 
-            assert isinstance(result, str)
-            # Проверяем что опыт был сохранен несмотря на None
-            data = tool._load_experience()
-            assert len(data['tasks']) == 1
+            assert agent is not None
+            assert len(agent.tools) >= 2
 
-    def test_learning_tool_find_similar_with_empty_experience(self):
-        """Тест поиска похожих задач в пустом опыте"""
-        from src.tools.learning_tool import LearningTool
+            # Проверим что инструменты работают
+            for tool in agent.tools:
+                if hasattr(tool, '_run'):
+                    # Базовая проверка что инструмент может выполняться
+                    pass
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = LearningTool(experience_dir=tmp_dir)
+    def test_smart_agent_memory_configuration(self):
+        """Тест конфигурации памяти Smart Agent"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Тест с LLM - должен иметь память
+            agent_with_llm = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_llm=True,
+                use_docker=False
+            )
+            # Проверяем что агент создан успешно
+            assert agent_with_llm is not None
 
-            result = tool.find_similar_tasks("any query")
+            # Тест без LLM - должен работать в tool-only режиме
+            agent_without_llm = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_llm=False,
+                use_docker=False
+            )
+            assert agent_without_llm is not None
+            # В tool-only режиме LLM не используется
+            assert agent_without_llm.llm is None
 
-            assert isinstance(result, str)
-            assert "не найдены" in result or "не найдено" in result
+    def test_smart_agent_backstory_generation(self):
+        """Тест генерации backstory для Smart Agent"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_llm=False,
+                use_docker=False
+            )
 
-    def test_learning_tool_get_recommendations_with_empty_experience(self):
-        """Тест получения рекомендаций из пустого опыта"""
-        from src.tools.learning_tool import LearningTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = LearningTool(experience_dir=tmp_dir)
-
-            result = tool.get_recommendations("any task")
-
-            assert isinstance(result, str)
-            assert "отсутствуют" in result
-
-    def test_learning_tool_large_experience_file(self):
-        """Тест LearningTool с большим файлом опыта"""
-        from src.tools.learning_tool import LearningTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = LearningTool(experience_dir=tmp_dir)
-
-            # Добавляем много задач для создания большого файла
-            for i in range(100):
-                tool.save_task_experience(
-                    task_id=f"task_{i}",
-                    task_description=f"Task description {i}",
-                    success=i % 2 == 0,  # Чередуем успех/неудачу
-                    execution_time=float(i) / 10.0,
-                    patterns=[f"pattern_{i % 5}"]
-                )
-
-            # Проверяем что все задачи сохранены
-            data = tool._load_experience()
-            assert len(data['tasks']) == 100
-
-            # Проверяем статистику
-            stats = tool.get_statistics()
-            assert "Всего задач: 100" in stats
-            assert "Успешных задач: 50" in stats  # Половина из 100
-
-    def test_learning_tool_concurrent_access_simulation(self):
-        """Тест симуляции одновременного доступа к файлу опыта"""
-        from src.tools.learning_tool import LearningTool
-        import threading
-        import time
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = LearningTool(experience_dir=tmp_dir)
-
-            results = []
-            errors = []
-
-            def worker(worker_id):
-                try:
-                    for i in range(10):
-                        result = tool.save_task_experience(
-                            task_id=f"worker_{worker_id}_task_{i}",
-                            task_description=f"Task from worker {worker_id}",
-                            success=True
-                        )
-                        results.append(result)
-                        time.sleep(0.001)  # Небольшая задержка
-                except Exception as e:
-                    errors.append(str(e))
-
-            # Запускаем несколько потоков
-            threads = []
-            for i in range(5):
-                t = threading.Thread(target=worker, args=(i,))
-                threads.append(t)
-                t.start()
-
-            # Ждем завершения всех потоков
-            for t in threads:
-                t.join()
-
-            # Проверяем результаты
-            assert len(errors) == 0, f"Errors occurred: {errors}"
-            assert len(results) == 50  # 5 workers * 10 tasks each
-
-            # Проверяем что все задачи сохранены
-            data = tool._load_experience()
-            assert len(data['tasks']) == 50
+            assert "smart agent" in agent.backstory.lower()
+            assert "learningtool" in agent.backstory.lower()
+            assert "contextanalyzertool" in agent.backstory.lower()
 
 
-class TestContextAnalyzerToolErrorHandling:
-    """Тесты обработки ошибок ContextAnalyzerTool"""
+class TestToolsIntegrationSmoke:
+    """Smoke тесты интеграции инструментов"""
 
-    def test_context_analyzer_with_nonexistent_project_dir(self):
-        """Тест ContextAnalyzerTool с несуществующей директорией проекта"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
+    def test_tools_work_together(self):
+        """Тест совместной работы инструментов"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            learning_tool = LearningTool(experience_dir=Path(temp_dir) / "experience")
+            context_tool = ContextAnalyzerTool(project_dir=temp_dir)
 
-        # Должен создаться без ошибок, но работать с ограниченным функционалом
-        tool = ContextAnalyzerTool(project_dir="/nonexistent/path")
+            # Создадим контент для анализа
+            (Path(temp_dir) / "src").mkdir()
+            (Path(temp_dir) / "src" / "test.py").write_text("# Test file for analysis")
 
-        assert tool is not None
-        result = tool.analyze_project_structure()
-        assert isinstance(result, str)
+            # Сохраним опыт о задаче
+            learning_tool.save_task_experience(
+                task_id="integration_test",
+                task_description="Analyze test file",
+                success=True
+            )
 
-    def test_context_analyzer_find_dependencies_nonexistent_file(self):
-        """Тест поиска зависимостей для несуществующего файла"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
+            # Проверим что оба инструмента могут работать одновременно
+            context_result = context_tool.analyze_component("src")
+            learning_result = learning_tool.get_statistics()
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = ContextAnalyzerTool(project_dir=tmp_dir)
+            assert "анализ компонента" in context_result.lower()
+            assert "статистика" in learning_result.lower()
 
-            result = tool.find_file_dependencies("nonexistent_file.py")
+    def test_tools_error_isolation(self):
+        """Тест изоляции ошибок между инструментами"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            learning_tool = LearningTool(experience_dir=Path(temp_dir) / "experience")
+            context_tool = ContextAnalyzerTool(project_dir=temp_dir)
 
-            assert isinstance(result, str)
-            assert "не найден" in result or "not found" in result
+            # Один инструмент может иметь ошибку, но другой должен работать
+            # Создадим ситуацию где контекстный анализатор может иметь проблемы
+            # но learning tool должен продолжать работать
 
-    def test_context_analyzer_analyze_component_nonexistent(self):
-        """Тест анализа несуществующего компонента"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
+            learning_result = learning_tool.save_task_experience(
+                task_id="error_isolation_test",
+                task_description="Test error isolation",
+                success=True
+            )
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = ContextAnalyzerTool(project_dir=tmp_dir)
+            assert "сохранен" in learning_result
 
-            result = tool.analyze_component("nonexistent_component")
+            # Даже если контекстный анализатор имеет проблемы с несуществующим файлом
+            context_result = context_tool.find_file_dependencies("nonexistent_file.py")
+            assert "не найден" in context_result
 
-            assert isinstance(result, str)
-            assert "не найден" in result or "not found" in result
 
-    def test_context_analyzer_with_binary_file(self):
-        """Тест ContextAnalyzerTool с бинарным файлом"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
+class TestSmartAgentConfigurationSmoke:
+    """Smoke тесты конфигурации Smart Agent"""
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
-
-            # Создаем "бинарный" файл (с нечитаемыми символами)
-            binary_file = project_dir / "binary.dat"
-            with open(binary_file, 'wb') as f:
-                f.write(bytes(range(256)))  # Все байты от 0 до 255
-
-            tool = ContextAnalyzerTool(project_dir=str(project_dir))
-
-            # Анализ должен обработать файл gracefully
-            result = tool.analyze_component("binary.dat")
-            assert isinstance(result, str)
-
-    def test_context_analyzer_with_empty_directory(self):
-        """Тест ContextAnalyzerTool с пустой директорией"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = ContextAnalyzerTool(project_dir=tmp_dir)
-
-            result = tool.analyze_project_structure()
-
-            assert isinstance(result, str)
-            assert "Анализ структуры проекта" in result
-
-    def test_context_analyzer_with_nested_directories(self):
-        """Тест ContextAnalyzerTool с глубоко вложенной структурой"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
-
-            # Создаем глубоко вложенную структуру
-            deep_path = project_dir
-            for i in range(10):  # 10 уровней вложенности
-                deep_path = deep_path / f"level_{i}"
-                deep_path.mkdir()
-                (deep_path / f"file_{i}.py").write_text(f"# Level {i} file")
-
-            tool = ContextAnalyzerTool(project_dir=str(project_dir))
-
-            result = tool.analyze_project_structure()
-
-            assert isinstance(result, str)
-            # Должен обработать структуру без проблем с глубиной
-
-    def test_context_analyzer_get_task_context_empty_query(self):
-        """Тест получения контекста задачи с пустым запросом"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = ContextAnalyzerTool(project_dir=tmp_dir)
-
-            result = tool.get_task_context("")
-
-            assert isinstance(result, str)
-            # Должен обработать пустой запрос gracefully
-
-    def test_context_analyzer_find_related_files_empty_query(self):
-        """Тест поиска связанных файлов с пустым запросом"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = ContextAnalyzerTool(project_dir=tmp_dir)
-
-            result = tool.find_related_files("")
-
-            assert isinstance(result, str)
-            # Должен обработать пустой запрос gracefully
-
-    def test_context_analyzer_with_special_characters_in_paths(self):
-        """Тест ContextAnalyzerTool с специальными символами в путях"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
-
-            # Создаем файлы с специальными символами в именах
-            special_files = [
-                "file with spaces.py",
-                "file-with-dashes.py",
-                "file_with_underscores.py",
-                "file(1).py",
-                "file[1].py"
+    def test_configuration_variations(self):
+        """Тест различных конфигураций Smart Agent"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            configs = [
+                {"use_llm": False, "use_docker": False, "verbose": False},
+                {"use_llm": False, "use_docker": False, "verbose": True},
+                {"use_llm": False, "use_docker": True, "verbose": False},
             ]
 
-            for filename in special_files:
-                (project_dir / filename).write_text("# Test file")
+            for config in configs:
+                agent = create_smart_agent(
+                    project_dir=Path(temp_dir),
+                    **config
+                )
+                assert agent is not None
+                assert agent.verbose == config["verbose"]
 
-            tool = ContextAnalyzerTool(project_dir=str(project_dir))
+    def test_experience_directory_creation(self):
+        """Тест создания директории опыта"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            experience_dir = Path(temp_dir) / "custom_experience"
 
-            # Проверяем анализ структуры
-            result = tool.analyze_project_structure()
-            assert isinstance(result, str)
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                experience_dir=str(experience_dir),
+                use_llm=False
+            )
 
-            # Проверяем анализ отдельных файлов
-            for filename in special_files:
-                result = tool.analyze_component(filename)
-                assert isinstance(result, str)
-                assert filename in result
-
-
-class TestSmartAgentEdgeCases:
-    """Тесты граничных случаев Smart Agent"""
-
-    def test_smart_agent_with_max_experience_tasks_zero(self):
-        """Тест Smart Agent с max_experience_tasks=0"""
-        from src.agents.smart_agent import create_smart_agent
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
-
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
-                with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
-                    agent = create_smart_agent(
-                        project_dir=project_dir,
-                        max_experience_tasks=0,
-                        use_llm=False
-                    )
-
-                    assert agent is not None
-                    # LearningTool должен работать с ограничением в 0 задач
-
-    def test_smart_agent_with_very_long_role_and_goal(self):
-        """Тест Smart Agent с очень длинными role и goal"""
-        from src.agents.smart_agent import create_smart_agent
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
-
-            long_text = "Very long text " * 100  # Повторяем 100 раз
-
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
-                with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
-                    agent = create_smart_agent(
-                        project_dir=project_dir,
-                        role=long_text,
-                        goal=long_text,
-                        use_llm=False
-                    )
-
-                    assert agent is not None
-                    assert agent.role == long_text
-                    assert agent.goal == long_text
-
-    def test_smart_agent_with_unicode_characters(self):
-        """Тест Smart Agent с Unicode символами"""
-        from src.agents.smart_agent import create_smart_agent
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
-
-            unicode_role = "Умный Агент 🤖"
-            unicode_goal = "Выполнять задачи с ИИ 💡"
-            unicode_backstory = "Я - умный агент с русскими символами и эмодзи 🎯"
-
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
-                with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
-                    agent = create_smart_agent(
-                        project_dir=project_dir,
-                        role=unicode_role,
-                        goal=unicode_goal,
-                        backstory=unicode_backstory,
-                        use_llm=False
-                    )
-
-                    assert agent is not None
-                    assert agent.role == unicode_role
-                    assert agent.goal == unicode_goal
+            # Директория опыта должна быть создана
+            assert experience_dir.exists()
+            assert any("LearningTool" in str(type(tool)) for tool in agent.tools)

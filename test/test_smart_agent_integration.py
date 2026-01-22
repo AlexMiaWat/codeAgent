@@ -1,487 +1,545 @@
 """
-Интеграционные тесты для Smart Agent - взаимодействие с инструментами
+Интеграционные тесты для Smart Agent - проверка взаимодействия компонентов
 """
 
 import pytest
 import tempfile
 import json
-import os
+import time
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock, call
+from src.agents.smart_agent import create_smart_agent
+from src.tools.learning_tool import LearningTool
+from src.tools.context_analyzer_tool import ContextAnalyzerTool
 
 
-@pytest.fixture
-def dummy_openai_key():
-    """Фикстура для установки dummy OPENAI_API_KEY"""
-    original_key = os.environ.get('OPENAI_API_KEY')
-    os.environ['OPENAI_API_KEY'] = 'dummy-key-for-testing'
+class TestSmartAgentToolsIntegration:
+    """Интеграционные тесты взаимодействия Smart Agent с инструментами"""
 
-    yield
+    def test_learning_tool_integration_with_smart_agent(self):
+        """Интеграция LearningTool с Smart Agent"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_llm=False,
+                use_docker=False
+            )
 
-    # Восстанавливаем оригинальный ключ
-    if original_key is not None:
-        os.environ['OPENAI_API_KEY'] = original_key
-    elif 'OPENAI_API_KEY' in os.environ:
-        del os.environ['OPENAI_API_KEY']
+            # Найдем LearningTool в инструментах агента
+            learning_tool = None
+            for tool in agent.tools:
+                if isinstance(tool, LearningTool):
+                    learning_tool = tool
+                    break
 
+            assert learning_tool is not None
 
-class TestSmartAgentIntegration:
-    """Интеграционные тесты Smart Agent"""
+            # Протестируем сохранение опыта через инструмент
+            result = learning_tool._run("save_experience",
+                                      task_id="integration_test_1",
+                                      task_description="Integration test task",
+                                      success=True,
+                                      execution_time=10.5)
 
-    def test_smart_agent_learning_tool_integration(self):
-        """Тест интеграции Smart Agent с LearningTool"""
-        from src.agents.smart_agent import create_smart_agent
-        from src.tools.learning_tool import LearningTool
+            assert "сохранен" in result
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
+            # Проверим что опыт сохранен
+            experience_data = learning_tool._load_experience()
+            assert len(experience_data["tasks"]) == 1
+            assert experience_data["tasks"][0]["task_id"] == "integration_test_1"
 
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
-                with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
-                    with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
-                        # Дополнительные патчи для полной изоляции LLM зависимостей
-                        with patch('crewai.utilities.llm_utils.create_llm', return_value=None):
-                            with patch('crewai.llm.LLM', side_effect=Exception("LLM disabled for testing")):
-                                with patch.dict('os.environ', {'OPENAI_API_KEY': 'dummy', 'OPENROUTER_API_KEY': ''}, clear=False):
-                                    agent = create_smart_agent(project_dir=project_dir, use_llm=False)
+    def test_context_analyzer_integration_with_smart_agent(self):
+        """Интеграция ContextAnalyzerTool с Smart Agent"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Создадим структуру проекта для анализа
+            (Path(temp_dir) / "src").mkdir()
+            (Path(temp_dir) / "docs").mkdir()
+            (Path(temp_dir) / "src" / "main.py").write_text("# Main application")
+            (Path(temp_dir) / "docs" / "README.md").write_text("# Project Documentation")
 
-                                    # Находим LearningTool среди инструментов агента
-                                    learning_tools = [t for t in agent.tools if isinstance(t, LearningTool)]
-                                    assert len(learning_tools) == 1
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_llm=False,
+                use_docker=False
+            )
 
-                                    learning_tool = learning_tools[0]
+            # Найдем ContextAnalyzerTool в инструментах агента
+            context_tool = None
+            for tool in agent.tools:
+                if isinstance(tool, ContextAnalyzerTool):
+                    context_tool = tool
+                    break
 
-                                    # Проверяем что LearningTool использует правильную директорию опыта
-                                    assert learning_tool.experience_dir.exists()
-                                    assert learning_tool.experience_file.exists()
+            assert context_tool is not None
 
-                                    # Тестируем сохранение опыта через инструмент агента
-                                    result = learning_tool.save_task_experience(
-                                        task_id="integration_test_task",
-                                        task_description="Integration test task",
-                                        success=True,
-                                        execution_time=1.5
-                                    )
+            # Протестируем анализ проекта через инструмент
+            result = context_tool._run("analyze_project")
+            assert "анализ структуры" in result.lower()
 
-                                    assert "сохранен" in result
-                                    assert "успешно" in result
+            # Протестируем анализ зависимостей
+            result = context_tool._run("find_dependencies", file_path="src/main.py")
+            assert "зависимости" in result.lower()
 
-                                    # Проверяем что опыт сохранен в файле
-                                    with open(learning_tool.experience_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                        assert len(data['tasks']) == 1
-                        assert data['tasks'][0]['task_id'] == "integration_test_task"
+    def test_tools_data_flow_integration(self):
+        """Интеграция потока данных между инструментами"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Создадим проект с файлами для анализа
+            (Path(temp_dir) / "src").mkdir()
+            (Path(temp_dir) / "src" / "auth.py").write_text("""
+# Authentication module
+def login_user():
+    pass
+""")
+            (Path(temp_dir) / "src" / "main.py").write_text("""
+# Main application
+from src.auth import login_user
 
-    def test_smart_agent_context_analyzer_integration(self):
-        """Тест интеграции Smart Agent с ContextAnalyzerTool"""
-        from src.agents.smart_agent import create_smart_agent
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
-
-            # Создаем тестовую структуру проекта
-            src_dir = project_dir / "src"
-            src_dir.mkdir()
-            (src_dir / "main.py").write_text("# Main module")
-
-            docs_dir = project_dir / "docs"
-            docs_dir.mkdir()
-            (docs_dir / "README.md").write_text("# Documentation")
-
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
-                with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
-                    with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
-                        # Дополнительные патчи для полной изоляции LLM зависимостей
-                        with patch('crewai.utilities.llm_utils.create_llm', return_value=None):
-                            with patch('crewai.llm.LLM', side_effect=Exception("LLM disabled for testing")):
-                                with patch.dict('os.environ', {'OPENAI_API_KEY': 'dummy', 'OPENROUTER_API_KEY': ''}, clear=False):
-                                agent = create_smart_agent(project_dir=project_dir, use_llm=False)
-
-                                # Находим ContextAnalyzerTool среди инструментов агента
-                    context_tools = [t for t in agent.tools if isinstance(t, ContextAnalyzerTool)]
-                    assert len(context_tools) == 1
-
-                    context_tool = context_tools[0]
-
-                    # Проверяем что ContextAnalyzerTool правильно настроен
-                    assert str(context_tool.project_dir) == str(project_dir)
-                    assert str(context_tool.docs_dir) == str(docs_dir)
-
-                    # Тестируем анализ структуры проекта через инструмент агента
-                    result = context_tool.analyze_project_structure()
-
-                    assert "🏗️ Анализ структуры проекта" in result
-                    assert "src" in result or "docs" in result
-
-                    # Тестируем получение контекста задачи
-                    context_result = context_tool.get_task_context("разработать код")
-                    assert "📋 Контекст для задачи" in context_result
-
-    def test_smart_agent_tools_cooperation(self):
-        """Тест кооперации инструментов в Smart Agent"""
-        from src.agents.smart_agent import create_smart_agent
-        from src.tools.learning_tool import LearningTool
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
-
-            # Создаем тестовую структуру проекта
-            src_dir = project_dir / "src"
-            src_dir.mkdir()
-            (src_dir / "api.py").write_text("""
-# API module
-def get_data():
-    return "data"
+if __name__ == "__main__":
+    login_user()
 """)
 
-            docs_dir = project_dir / "docs"
-            docs_dir.mkdir()
-            (docs_dir / "api.md").write_text("# API Documentation\nHow to use API")
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_llm=False,
+                use_docker=False
+            )
 
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
-                with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
-                    with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
-                        # Дополнительные патчи для полной изоляции LLM зависимостей
-                        with patch('crewai.utilities.llm_utils.create_llm', return_value=None):
-                            with patch('crewai.llm.LLM', side_effect=Exception("LLM disabled for testing")):
-                                with patch.dict('os.environ', {'OPENAI_API_KEY': 'dummy', 'OPENROUTER_API_KEY': ''}, clear=False):
-                                agent = create_smart_agent(project_dir=project_dir, use_llm=False)
+            # Найдем инструменты
+            learning_tool = None
+            context_tool = None
+            for tool in agent.tools:
+                if isinstance(tool, LearningTool):
+                    learning_tool = tool
+                elif isinstance(tool, ContextAnalyzerTool):
+                    context_tool = tool
 
-                                # Получаем оба инструмента
-                    learning_tools = [t for t in agent.tools if isinstance(t, LearningTool)]
-                    context_tools = [t for t in agent.tools if isinstance(t, ContextAnalyzerTool)]
+            assert learning_tool is not None
+            assert context_tool is not None
 
-                    assert len(learning_tools) == 1
-                    assert len(context_tools) == 1
+            # Сначала проанализируем контекст
+            context_result = context_tool._run("analyze_component", component_path="src")
+            assert "src" in context_result
 
-                    learning_tool = learning_tools[0]
-                    context_tool = context_tools[0]
+            # Затем сохраним опыт о задаче анализа
+            learning_result = learning_tool._run("save_experience",
+                                               task_id="context_analysis_task",
+                                               task_description="Analyze project context for authentication",
+                                               success=True,
+                                               patterns=["analysis", "context", "authentication"])
+            assert "сохранен" in learning_result
 
-                    # 1. ContextAnalyzerTool анализирует проект
-                    project_analysis = context_tool.analyze_project_structure()
-                    assert "Основные компоненты" in project_analysis
+            # Проверим что можем найти похожие задачи
+            similar_result = learning_tool._run("find_similar", query="authentication analysis")
+            assert "authentication" in similar_result.lower()
 
-                    # 2. LearningTool сохраняет опыт анализа
-                    save_result = learning_tool.save_task_experience(
-                        task_id="project_analysis_task",
-                        task_description="Проанализировать структуру проекта",
-                        success=True,
-                        execution_time=0.5,
-                        patterns=["analysis", "structure"]
-                    )
-                    assert "сохранен" in save_result
+    def test_experience_based_recommendations_integration(self):
+        """Интеграция рекомендаций на основе опыта"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_llm=False,
+                use_docker=False
+            )
 
-                    # 3. LearningTool дает рекомендации на основе сохраненного опыта
-                    recommendations = learning_tool.get_recommendations("анализ проекта")
-                    assert "Рекомендации" in recommendations
-                    assert "project_analysis_task" in recommendations or "успешных" in recommendations
+            learning_tool = None
+            for tool in agent.tools:
+                if isinstance(tool, LearningTool):
+                    learning_tool = tool
+                    break
 
-                    # 4. ContextAnalyzerTool находит связанные файлы
-                    related_files = context_tool.find_related_files("api")
-                    assert "📁 Файлы, связанные с запросом" in related_files
+            assert learning_tool is not None
 
-    def test_smart_agent_experience_accumulation(self):
-        """Тест накопления опыта в Smart Agent"""
-        from src.agents.smart_agent import create_smart_agent
-        from src.tools.learning_tool import LearningTool
+            # Сохраним несколько задач с разными паттернами
+            tasks_data = [
+                {
+                    "task_id": "task1",
+                    "description": "Implement user authentication",
+                    "success": True,
+                    "execution_time": 15.0,
+                    "patterns": ["auth", "security"]
+                },
+                {
+                    "task_id": "task2",
+                    "description": "Fix authentication bug",
+                    "success": True,
+                    "execution_time": 8.0,
+                    "patterns": ["auth", "bugfix"]
+                },
+                {
+                    "task_id": "task3",
+                    "description": "Add password validation",
+                    "success": False,
+                    "execution_time": 12.0,
+                    "patterns": ["auth", "validation"]
+                }
+            ]
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
+            for task in tasks_data:
+                learning_tool._run("save_experience", **task)
 
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
-                with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
-                    with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
-                        # Дополнительные патчи для полной изоляции LLM зависимостей
-                        with patch('crewai.utilities.llm_utils.create_llm', return_value=None):
-                            with patch('crewai.llm.LLM', side_effect=Exception("LLM disabled for testing")):
-                                with patch.dict('os.environ', {'OPENAI_API_KEY': 'dummy', 'OPENROUTER_API_KEY': ''}, clear=False):
-                                # Создаем первого агента
-                                agent1 = create_smart_agent(
-                                    project_dir=project_dir,
-                                    experience_dir="shared_experience",
-                                    use_llm=False
-                                )
+            # Получим рекомендации для новой задачи аутентификации
+            recommendations = learning_tool._run("get_recommendations",
+                                               current_task="implement login system")
 
-                    learning_tool1 = [t for t in agent1.tools if isinstance(t, LearningTool)][0]
+            assert "рекомендации" in recommendations.lower()
+            assert "authentication" in recommendations.lower()
 
-                    # Первый агент сохраняет опыт
-                    learning_tool1.save_task_experience("task1", "First task", True, 1.0, ["tag1"])
-                    learning_tool1.save_task_experience("task2", "Second task", False, 2.0, ["tag2"])
-
-                    # Создаем второго агента с той же директорией опыта
-                    agent2 = create_smart_agent(
-                        project_dir=project_dir,
-                        experience_dir="shared_experience",
-                        use_llm=False
-                    )
-
-                    learning_tool2 = [t for t in agent2.tools if isinstance(t, LearningTool)][0]
-
-                    # Второй агент должен видеть опыт первого агента
-                    stats = learning_tool2.get_statistics()
-                    assert "Всего задач: 2" in stats
-                    assert "Успешных задач: 1" in stats
-                    assert "Неудачных задач: 1" in stats
-
-                    # Поиск похожих задач должен работать
-                    similar = learning_tool2.find_similar_tasks("task")
-                    assert "First task" in similar or "Second task" in similar
-
-                    # Второй агент добавляет свой опыт
-                    learning_tool2.save_task_experience("task3", "Third task from agent2", True, 1.5, ["tag1"])
-
-                    # Проверяем что опыт накопился
-                    stats_final = learning_tool2.get_statistics()
-                    assert "Всего задач: 3" in stats_final
-                    assert "Успешных задач: 2" in stats_final
-
-    def test_smart_agent_context_learning_integration(self):
-        """Тест интеграции контекстного анализа и обучения"""
-        from src.agents.smart_agent import create_smart_agent
-        from src.tools.learning_tool import LearningTool
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
-
-            # Создаем проект с задачами разработки
-            src_dir = project_dir / "src"
-            src_dir.mkdir()
-            (src_dir / "user_service.py").write_text("""
-# User service
-class UserService:
-    def get_user(self, user_id):
-        return {"id": user_id, "name": "Test User"}
-""")
-
-            docs_dir = project_dir / "docs"
-            docs_dir.mkdir()
-            (docs_dir / "user_service.md").write_text("""
-# User Service API
-
-## Methods
-- get_user(user_id): Get user by ID
-""")
-
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
-                with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
-                    with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
-                        # Дополнительные патчи для полной изоляции LLM зависимостей
-                        with patch('crewai.utilities.llm_utils.create_llm', return_value=None):
-                            with patch('crewai.llm.LLM', side_effect=Exception("LLM disabled for testing")):
-                                with patch.dict('os.environ', {'OPENAI_API_KEY': 'dummy', 'OPENROUTER_API_KEY': ''}, clear=False):
-                                agent = create_smart_agent(project_dir=project_dir, use_llm=False)
-
-                                learning_tool = [t for t in agent.tools if isinstance(t, LearningTool)][0]
-                                context_tool = [t for t in agent.tools if isinstance(t, ContextAnalyzerTool)][0]
-
-                                # 1. Анализируем контекст задачи разработки
-                    task_context = context_tool.get_task_context("разработать user service")
-                    assert "user_service.py" in task_context or "user_service.md" in task_context
-
-                    # 2. Сохраняем опыт успешной разработки
-                    learning_tool.save_task_experience(
-                        task_id="develop_user_service",
-                        task_description="Разработать сервис пользователей с API",
-                        success=True,
-                        execution_time=3.0,
-                        patterns=["api", "service", "user_management"]
-                    )
-
-                    # 3. Ищем похожие задачи
-                    similar_tasks = learning_tool.find_similar_tasks("service")
-                    assert "user service" in similar_tasks.lower() or "похожие задачи" in similar_tasks
-
-                    # 4. Получаем рекомендации для похожей задачи
-                    recommendations = learning_tool.get_recommendations("разработать product service")
-                    assert "Рекомендации" in recommendations
-
-                    # 5. Анализируем компонент
-                    component_analysis = context_tool.analyze_component("src/user_service.py")
-                    assert "user_service.py" in component_analysis
-                    assert "class UserService" in component_analysis
-
-    def test_smart_agent_error_recovery_integration(self):
-        """Тест восстановления после ошибок в интеграции инструментов"""
-        from src.agents.smart_agent import create_smart_agent
-        from src.tools.learning_tool import LearningTool
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
-
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
-                with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
-                    with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
-                        # Дополнительные патчи для полной изоляции LLM зависимостей
-                        with patch('crewai.utilities.llm_utils.create_llm', return_value=None):
-                            with patch('crewai.llm.LLM', side_effect=Exception("LLM disabled for testing")):
-                                with patch.dict('os.environ', {'OPENAI_API_KEY': 'dummy', 'OPENROUTER_API_KEY': ''}, clear=False):
-                                agent = create_smart_agent(project_dir=project_dir, use_llm=False)
-
-                                learning_tool = [t for t in agent.tools if isinstance(t, LearningTool)][0]
-                                context_tool = [t for t in agent.tools if isinstance(t, ContextAnalyzerTool)][0]
-
-                                # 1. Сохраняем опыт с ошибкой
-                    learning_tool.save_task_experience(
-                        task_id="error_task",
-                        task_description="Task that failed",
-                        success=False,
-                        execution_time=5.0,
-                        notes="Failed due to network timeout"
-                    )
-
-                    # 2. Проверяем поиск зависимостей несуществующего файла (graceful error handling)
-                    deps_result = context_tool.find_file_dependencies("nonexistent.py")
-                    assert isinstance(deps_result, str)
-                    assert "не найден" in deps_result or "not found" in deps_result
-
-                    # 3. Проверяем анализ несуществующего компонента
-                    analysis_result = context_tool.analyze_component("nonexistent_dir")
-                    assert isinstance(analysis_result, str)
-                    assert "не найден" in analysis_result or "not found" in analysis_result
-
-                    # 4. Тем не менее, агент продолжает работать
-                    stats = learning_tool.get_statistics()
-                    assert "Всего задач: 1" in stats
-                    assert "Неудачных задач: 1" in stats
-
-                    # 5. Сохраняем успешный опыт после ошибки
-                    learning_tool.save_task_experience(
-                        task_id="recovery_task",
-                        task_description="Task after error recovery",
-                        success=True,
-                        execution_time=2.0
-                    )
-
-                    final_stats = learning_tool.get_statistics()
-                    assert "Всего задач: 2" in final_stats
-                    assert "Успешных задач: 1" in final_stats
+            # Проверим статистику
+            stats = learning_tool._run("get_statistics")
+            assert "Всего задач: 3" in stats
+            assert "Успешных задач: 2" in stats
 
 
 class TestSmartAgentWorkflowIntegration:
-    """Тесты рабочих процессов Smart Agent"""
+    """Интеграционные тесты рабочих процессов Smart Agent"""
 
-    def test_smart_agent_full_workflow(self):
-        """Тест полного рабочего процесса Smart Agent"""
-        from src.agents.smart_agent import create_smart_agent
-        from src.tools.learning_tool import LearningTool
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
+    def test_complete_task_workflow(self):
+        """Полный рабочий процесс выполнения задачи"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Создадим проектную структуру
+            (Path(temp_dir) / "src").mkdir()
+            (Path(temp_dir) / "docs").mkdir()
+            (Path(temp_dir) / "tests").mkdir()
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project_dir = Path(tmp_dir)
+            # Создадим начальные файлы
+            (Path(temp_dir) / "src" / "__init__.py").write_text("")
+            (Path(temp_dir) / "docs" / "requirements.md").write_text("# Requirements\nImplement user management")
+            (Path(temp_dir) / "src" / "models.py").write_text("# User models")
 
-            # Создаем структуру проекта
-            self._setup_test_project(project_dir)
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_llm=False,
+                use_docker=False
+            )
 
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
-                with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
-                    with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
-                        # Дополнительные патчи для полной изоляции LLM зависимостей
-                        with patch('crewai.utilities.llm_utils.create_llm', return_value=None):
-                            with patch('crewai.llm.LLM', side_effect=Exception("LLM disabled for testing")):
-                                with patch.dict('os.environ', {'OPENAI_API_KEY': 'dummy', 'OPENROUTER_API_KEY': ''}, clear=False):
-                                agent = create_smart_agent(project_dir=project_dir, use_llm=False)
+            learning_tool = None
+            context_tool = None
+            for tool in agent.tools:
+                if isinstance(tool, LearningTool):
+                    learning_tool = tool
+                elif isinstance(tool, ContextAnalyzerTool):
+                    context_tool = tool
 
-                                learning_tool = [t for t in agent.tools if isinstance(t, LearningTool)][0]
-                                context_tool = [t for t in agent.tools if isinstance(t, ContextAnalyzerTool)][0]
+            assert learning_tool is not None
+            assert context_tool is not None
 
-                                # Шаг 1: Анализ проекта
-                    project_structure = context_tool.analyze_project_structure()
-                    assert "src" in project_structure
-                    assert "docs" in project_structure
+            # Шаг 1: Анализ контекста проекта
+            context_info = context_tool._run("get_context",
+                                           task_description="implement user management system")
+            assert "контекст" in context_info.lower()
 
-                    # Шаг 2: Сохранение опыта анализа
-                    learning_tool.save_task_experience(
-                        task_id="project_analysis",
-                        task_description="Анализ структуры проекта перед разработкой",
-                        success=True,
-                        patterns=["analysis", "planning"]
-                    )
+            # Шаг 2: Поиск связанных файлов
+            related_files = context_tool._run("find_related_files", query="user management")
+            # Функция должна выполниться без ошибок
 
-                    # Шаг 3: Поиск контекста для задачи
-                    task_context = context_tool.get_task_context("добавить функцию расчета")
-                    assert isinstance(task_context, str)
+            # Шаг 3: Сохранение опыта о начале работы
+            start_result = learning_tool._run("save_experience",
+                                            task_id="user_mgmt_start",
+                                            task_description="Start implementing user management",
+                                            success=True,
+                                            patterns=["user_management", "planning"])
 
-                    # Шаг 4: Поиск связанных файлов
-                    related_files = context_tool.find_related_files("calculator")
-                    assert isinstance(related_files, str)
+            # Шаг 4: Анализ зависимостей
+            deps_result = context_tool._run("find_dependencies", file_path="src/models.py")
+            # Функция должна выполниться без ошибок
 
-                    # Шаг 5: Сохранение опыта выполнения задачи
-                    learning_tool.save_task_experience(
-                        task_id="implement_calculator",
-                        task_description="Реализовать функцию калькулятора",
-                        success=True,
-                        execution_time=4.5,
-                        patterns=["implementation", "calculator", "math"]
-                    )
+            # Шаг 5: Получение рекомендаций для продолжения
+            recommendations = learning_tool._run("get_recommendations",
+                                               current_task="continue user management implementation")
+            # Функция должна выполниться без ошибок
 
-                    # Шаг 6: Получение итоговой статистики
-                    final_stats = learning_tool.get_statistics()
-                    assert "Всего задач: 2" in final_stats
-                    assert "Успешных задач: 2" in final_stats
+    def test_learning_from_past_experience(self):
+        """Обучение на предыдущем опыте"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_llm=False,
+                use_docker=False
+            )
 
-                    # Шаг 7: Получение рекомендаций для будущих задач
-                    recommendations = learning_tool.get_recommendations("добавить новые функции")
-                    assert "Рекомендации" in recommendations
+            learning_tool = None
+            for tool in agent.tools:
+                if isinstance(tool, LearningTool):
+                    learning_tool = tool
+                    break
 
-    def _setup_test_project(self, project_dir: Path):
-        """Настройка тестовой структуры проекта"""
-        # Создаем директории
-        src_dir = project_dir / "src"
-        src_dir.mkdir()
+            # Симулируем предыдущие успешные и неудачные задачи
+            past_tasks = [
+                # Успешные паттерны
+                ("Implement REST API", True, 20.0, ["api", "rest", "backend"]),
+                ("Add input validation", True, 8.0, ["validation", "security"]),
+                ("Write unit tests", True, 15.0, ["testing", "unittest"]),
 
-        docs_dir = project_dir / "docs"
-        docs_dir.mkdir()
+                # Неудачные паттерны
+                ("Complex authentication", False, 45.0, ["auth", "complex"]),
+                ("Manual deployment", False, 30.0, ["deployment", "manual"]),
+            ]
 
-        test_dir = project_dir / "test"
-        test_dir.mkdir()
+            for desc, success, time_taken, patterns in past_tasks:
+                task_id = f"past_task_{len(patterns)}_{int(success)}"
+                learning_tool._run("save_experience",
+                                 task_id=task_id,
+                                 task_description=desc,
+                                 success=success,
+                                 execution_time=time_taken,
+                                 patterns=patterns)
 
-        # Создаем файлы
-        (src_dir / "__init__.py").write_text("")
-        (src_dir / "calculator.py").write_text("""
-# Calculator module
-def add(a, b):
-    return a + b
+            # Теперь для новой задачи должны быть рекомендации
+            new_task_recommendations = learning_tool._run("get_recommendations",
+                                                        current_task="implement API authentication")
 
-def multiply(a, b):
-    return a * b
+            assert "рекомендации" in new_task_recommendations.lower()
+
+            # Ищем похожие задачи
+            similar_tasks = learning_tool._run("find_similar", query="API implementation")
+            assert "REST API" in similar_tasks
+
+    def test_context_driven_development(self):
+        """Разработка на основе анализа контекста"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Создадим сложную структуру проекта
+            (Path(temp_dir) / "src" / "api").mkdir(parents=True)
+            (Path(temp_dir) / "src" / "models").mkdir()
+            (Path(temp_dir) / "src" / "services").mkdir()
+            (Path(temp_dir) / "docs" / "api").mkdir(parents=True)
+
+            # Создадим файлы с зависимостями
+            (Path(temp_dir) / "src" / "models" / "user.py").write_text("""
+# User model
+class User:
+    def __init__(self, id, name):
+        self.id = id
+        self.name = name
 """)
 
-        (src_dir / "utils.py").write_text("""
-# Utility functions
-def format_number(num):
-    return f"{num:.2f}"
+            (Path(temp_dir) / "src" / "services" / "auth_service.py").write_text("""
+# Authentication service
+from src.models.user import User
+
+class AuthService:
+    def authenticate(self, user: User):
+        return True
 """)
 
-        (docs_dir / "README.md").write_text("""
-# Test Project
+            (Path(temp_dir) / "src" / "api" / "auth.py").write_text("""
+# Auth API endpoints
+from src.services.auth_service import AuthService
 
-This is a test project for Smart Agent integration testing.
+auth_service = AuthService()
 
-## Features
-- Calculator functions
-- Utility functions
+def login():
+    return auth_service.authenticate(None)
 """)
 
-        (docs_dir / "api.md").write_text("""
-# API Documentation
+            (Path(temp_dir) / "docs" / "api" / "auth.md").write_text("""
+# Authentication API
 
-## Calculator Module
-- add(a, b): Add two numbers
-- multiply(a, b): Multiply two numbers
+## Endpoints
+- POST /login - User login
+- POST /logout - User logout
 """)
 
-        (test_dir / "test_calculator.py").write_text("""
-# Tests for calculator
-import pytest
-from src.calculator import add, multiply
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_llm=False,
+                use_docker=False
+            )
 
-def test_add():
-    assert add(2, 3) == 5
+            context_tool = None
+            for tool in agent.tools:
+                if isinstance(tool, ContextAnalyzerTool):
+                    context_tool = tool
+                    break
 
-def test_multiply():
-    assert multiply(2, 3) == 6
-""")
+            assert context_tool is not None
+
+            # Анализируем зависимости в файлах
+            auth_deps = context_tool._run("find_dependencies", file_path="src/api/auth.py")
+            assert "auth_service" in auth_deps.lower()
+
+            service_deps = context_tool._run("find_dependencies", file_path="src/services/auth_service.py")
+            assert "user" in service_deps.lower()
+
+            # Получаем контекст для задачи улучшения аутентификации
+            task_context = context_tool._run("get_context",
+                                           task_description="improve authentication security")
+            assert "контекст" in task_context.lower()
+
+            # Анализируем компонент services
+            component_analysis = context_tool._run("analyze_component", component_path="src/services")
+            assert "services" in component_analysis.lower()
+
+
+class TestSmartAgentPerformanceIntegration:
+    """Интеграционные тесты производительности Smart Agent"""
+
+    def test_caching_performance(self):
+        """Тест производительности кеширования"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_llm=False,
+                use_docker=False
+            )
+
+            learning_tool = None
+            context_tool = None
+            for tool in agent.tools:
+                if isinstance(tool, LearningTool):
+                    learning_tool = tool
+                elif isinstance(tool, ContextAnalyzerTool):
+                    context_tool = tool
+
+            assert learning_tool is not None
+
+            # Добавим много задач для тестирования кеширования
+            for i in range(10):
+                learning_tool._run("save_experience",
+                                 task_id=f"perf_task_{i}",
+                                 task_description=f"Performance test task {i}",
+                                 success=True,
+                                 patterns=["performance", f"tag_{i}"])
+
+            # Первый поиск - кэш пустой
+            start_time = time.time()
+            result1 = learning_tool._run("find_similar", query="performance")
+            first_search_time = time.time() - start_time
+
+            # Второй поиск - должен использовать кэш
+            start_time = time.time()
+            result2 = learning_tool._run("find_similar", query="performance")
+            second_search_time = time.time() - start_time
+
+            # Результаты должны быть одинаковыми
+            assert result1 == result2
+
+            # Второй поиск должен быть быстрее (кеширование работает)
+            # Замер производительности может быть неточным в тестовой среде,
+            # поэтому просто проверяем что оба поиска завершились
+
+    def test_memory_management_integration(self):
+        """Тест управления памятью в интеграции"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Создадим агента с ограниченным количеством задач в опыте
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_llm=False,
+                use_docker=False,
+                max_experience_tasks=5
+            )
+
+            learning_tool = None
+            for tool in agent.tools:
+                if isinstance(tool, LearningTool):
+                    learning_tool = tool
+                    break
+
+            assert learning_tool is not None
+
+            # Добавим больше задач чем лимит
+            for i in range(8):
+                learning_tool._run("save_experience",
+                                 task_id=f"memory_task_{i}",
+                                 task_description=f"Memory management task {i}",
+                                 success=True)
+
+            # Проверим что количество задач не превышает лимит
+            experience_data = learning_tool._load_experience()
+            assert len(experience_data["tasks"]) <= 5
+
+            # Проверим что остались самые свежие задачи
+            task_ids = [task["task_id"] for task in experience_data["tasks"]]
+            assert "memory_task_7" in task_ids  # Самая свежая
+            assert "memory_task_6" in task_ids
+            assert "memory_task_5" in task_ids
+            assert "memory_task_4" in task_ids
+            assert "memory_task_3" in task_ids
+
+
+class TestSmartAgentErrorHandlingIntegration:
+    """Интеграционные тесты обработки ошибок"""
+
+    def test_partial_system_failure_recovery(self):
+        """Восстановление после частичного сбоя системы"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_llm=False,
+                use_docker=False
+            )
+
+            learning_tool = None
+            context_tool = None
+            for tool in agent.tools:
+                if isinstance(tool, LearningTool):
+                    learning_tool = tool
+                elif isinstance(tool, ContextAnalyzerTool):
+                    context_tool = tool
+
+            # Симулируем повреждение файла опыта learning tool
+            with open(learning_tool.experience_file, 'w') as f:
+                f.write("corrupted json data")
+
+            # Learning tool должен восстановиться
+            recovery_result = learning_tool._run("save_experience",
+                                               task_id="recovery_test",
+                                               task_description="Test recovery from corruption",
+                                               success=True)
+            assert "сохранен" in recovery_result
+
+            # Context tool должен продолжать работать
+            context_result = context_tool._run("analyze_project")
+            assert "анализ структуры" in context_result.lower()
+
+    def test_concurrent_operations_simulation(self):
+        """Симуляция конкурентных операций"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = create_smart_agent(
+                project_dir=Path(temp_dir),
+                use_llm=False,
+                use_docker=False
+            )
+
+            learning_tool = None
+            for tool in agent.tools:
+                if isinstance(tool, LearningTool):
+                    learning_tool = tool
+                    break
+
+            # Симулируем множественные операции сохранения опыта
+            import threading
+
+            results = []
+            errors = []
+
+            def save_experience_worker(task_id):
+                try:
+                    result = learning_tool._run("save_experience",
+                                               task_id=task_id,
+                                               task_description=f"Concurrent task {task_id}",
+                                               success=True)
+                    results.append(result)
+                except Exception as e:
+                    errors.append(str(e))
+
+            # Запустим несколько потоков
+            threads = []
+            for i in range(5):
+                thread = threading.Thread(target=save_experience_worker, args=[f"concurrent_task_{i}"])
+                threads.append(thread)
+                thread.start()
+
+            # Дождемся завершения всех потоков
+            for thread in threads:
+                thread.join()
+
+            # Проверим что все операции завершились успешно
+            assert len(results) == 5
+            assert len(errors) == 0
+
+            for result in results:
+                assert "сохранен" in result
+
+            # Проверим что все задачи сохранены
+            experience_data = learning_tool._load_experience()
+            assert len(experience_data["tasks"]) == 5

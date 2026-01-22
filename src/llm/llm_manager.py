@@ -125,33 +125,139 @@ class LLMManager:
         return obj
     
     def _init_models(self):
-        """Инициализация моделей из конфигурации"""
+        """Инициализация моделей из конфигурации с автоматическим выбором"""
         llm_config = self.config.get('llm', {})
         providers_config = self.config.get('providers', {})
         model_roles = llm_config.get('model_roles', {})
-        
+
         # Получаем конфигурацию провайдера
         default_provider = llm_config.get('default_provider', 'openrouter')
         provider_config = providers_config.get(default_provider, {})
         provider_models = provider_config.get('models', {})
-        
+
+        # Собираем все доступные модели из конфигурации провайдера
+        all_available_models = self._collect_all_models(provider_models)
+
         # Создаем модели с ролями
+        assigned_models = set()  # Отслеживаем назначенные модели
+
         for role_name, model_names in model_roles.items():
             role = ModelRole(role_name)
-            for model_name in model_names:
-                # Находим конфигурацию модели
-                model_config_dict = self._find_model_config(model_name, provider_models)
-                if model_config_dict:
-                    # Убираем 'name' из словаря, т.к. передаем его отдельно
-                    config_dict = {k: v for k, v in model_config_dict.items() if k != 'name'}
-                    model_config = ModelConfig(
-                        name=model_name,
-                        role=role,
-                        **config_dict
-                    )
-                    self.models[model_name] = model_config
-        
-        logger.info(f"Initialized {len(self.models)} models")
+
+            if model_names:  # Явно указанные модели
+                for model_name in model_names:
+                    if model_name in assigned_models:
+                        logger.warning(f"Model {model_name} already assigned to another role, skipping for {role_name}")
+                        continue
+
+                    model_config_dict = self._find_model_config(model_name, provider_models)
+                    if model_config_dict:
+                        config_dict = {k: v for k, v in model_config_dict.items() if k != 'name'}
+                        model_config = ModelConfig(
+                            name=model_name,
+                            role=role,
+                            **config_dict
+                        )
+                        self.models[model_name] = model_config
+                        assigned_models.add(model_name)
+                    else:
+                        logger.warning(f"Model {model_name} not found in provider config")
+            else:
+                # Автоматический выбор моделей для роли
+                auto_selected = self._auto_select_models_for_role(role_name, all_available_models, assigned_models)
+                for model_name in auto_selected:
+                    model_config_dict = self._find_model_config(model_name, provider_models)
+                    if model_config_dict:
+                        config_dict = {k: v for k, v in model_config_dict.items() if k != 'name'}
+                        model_config = ModelConfig(
+                            name=model_name,
+                            role=role,
+                            **config_dict
+                        )
+                        self.models[model_name] = model_config
+                        assigned_models.add(model_name)
+
+        logger.info(f"Initialized {len(self.models)} models with automatic selection")
+        self._log_model_assignment()
+
+    def _collect_all_models(self, provider_models: Dict) -> List[str]:
+        """Собрать все доступные модели из конфигурации провайдера"""
+        all_models = []
+        for provider_name, models_list in provider_models.items():
+            if isinstance(models_list, list):
+                for model in models_list:
+                    if isinstance(model, dict) and 'name' in model:
+                        all_models.append(model['name'])
+        return all_models
+
+    def _auto_select_models_for_role(self, role_name: str, all_models: List[str], assigned: Set[str]) -> List[str]:
+        """Автоматический выбор моделей для роли"""
+        available_models = [m for m in all_models if m not in assigned]
+
+        if not available_models:
+            logger.warning(f"No available models for automatic selection in role {role_name}")
+            return []
+
+        if role_name == 'primary':
+            # Для primary выбираем 2-3 самые производительные модели
+            # Предпочитаем модели с "wizard", "gpt", "claude" в имени
+            priority_patterns = ['wizard', 'gpt', 'claude', 'llama-3']
+            priority_models = []
+            other_models = []
+
+            for model in available_models:
+                if any(pattern in model.lower() for pattern in priority_patterns):
+                    priority_models.append(model)
+                else:
+                    other_models.append(model)
+
+            selected = priority_models[:3] + other_models[:2]  # 3 приоритетных + 2 других
+            logger.info(f"Auto-selected PRIMARY models: {selected}")
+            return selected[:5]  # Максимум 5 моделей
+
+        elif role_name == 'duplicate':
+            # Для duplicate выбираем модели среднего класса
+            # Избегаем слишком маленьких моделей (1b, mini) и слишком больших
+            suitable = [m for m in available_models
+                       if not any(x in m.lower() for x in ['1b', 'mini', 'small'])
+                       and not any(x in m.lower() for x in ['70b', '72b', '405b'])]
+            selected = suitable[:3]
+            logger.info(f"Auto-selected DUPLICATE models: {selected}")
+            return selected
+
+        elif role_name == 'reserve':
+            # Для reserve выбираем надежные модели с "free" в имени или известные стабильные
+            reserve_patterns = ['free', 'stable', 'reliable', 'phi-3', 'llama-3.2-3b']
+            reserve_models = [m for m in available_models
+                            if any(pattern in m.lower() for pattern in reserve_patterns)]
+            if not reserve_models:
+                # Fallback: любые доступные модели
+                reserve_models = available_models[:2]
+            logger.info(f"Auto-selected RESERVE models: {reserve_models}")
+            return reserve_models[:3]
+
+        elif role_name == 'fallback':
+            # Для fallback выбираем все оставшиеся модели
+            selected = available_models[:5]
+            logger.info(f"Auto-selected FALLBACK models: {selected}")
+            return selected
+
+        return []
+
+    def _log_model_assignment(self):
+        """Логирование распределения моделей по ролям"""
+        role_counts = {}
+        for model in self.models.values():
+            role_name = model.role.value
+            role_counts[role_name] = role_counts.get(role_name, 0) + 1
+
+        logger.info("Model role distribution: " + ", ".join(f"{role}: {count}" for role, count in role_counts.items()))
+
+        # Детальное логирование по ролям
+        for role_name in ['primary', 'duplicate', 'reserve', 'fallback']:
+            role_models = [m.name for m in self.models.values() if m.role.value == role_name]
+            if role_models:
+                logger.info(f"{role_name.upper()} models: {', '.join(role_models)}")
     
     def _find_model_config(self, model_name: str, provider_models: Dict) -> Optional[Dict]:
         """Поиск конфигурации модели в структуре провайдера"""
@@ -613,12 +719,23 @@ class LLMManager:
         # Используем первые две модели
         model1, model2 = parallel_models[0], parallel_models[1]
         
-        # Генерируем ответы параллельно
-        responses = await asyncio.gather(
-            self._call_model(prompt, model1, response_format=response_format),
-            self._call_model(prompt, model2, response_format=response_format),
-            return_exceptions=True
-        )
+        # Таймаут для параллельной обработки
+        parallel_timeout = parallel_config.get('parallel_timeout', 90)  # 90 секунд по умолчанию
+
+        try:
+            # Генерируем ответы параллельно с таймаутом
+            responses = await asyncio.wait_for(
+                asyncio.gather(
+                    self._call_model(prompt, model1, response_format=response_format),
+                    self._call_model(prompt, model2, response_format=response_format),
+                    return_exceptions=True
+                ),
+                timeout=parallel_timeout
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"Parallel generation timeout after {parallel_timeout}s")
+            # Fallback на single режим
+            return await self._generate_single(prompt, response_format=response_format)
         
         # Обрабатываем результаты
         valid_responses = []
@@ -663,21 +780,60 @@ class LLMManager:
         """Выбор лучшего ответа из нескольких через оценку моделью"""
         evaluator_model_name = parallel_config.get('evaluator_model')
         if not evaluator_model_name or evaluator_model_name not in self.models:
-            # Нет модели-оценщика - возвращаем первый успешный ответ
-            return responses[0]
-        
+            logger.warning(f"Evaluator model '{evaluator_model_name}' not found, using fallback selection")
+            # Fallback: возвращаем ответ с минимальным временем ответа
+            return min(responses, key=lambda r: r.response_time)
+
         evaluator_config = self.models[evaluator_model_name]
-        
-        # Оцениваем каждый ответ
-        for response in responses:
-            score = await self._evaluate_response(
-                prompt, response.content, evaluator_config
-            )
-            response.score = score
-        
-        # Выбираем ответ с максимальным score
+
+        # Оцениваем каждый ответ с таймаутом и обработкой ошибок
+        evaluation_timeout = parallel_config.get('evaluation_timeout', 30)  # 30 секунд по умолчанию
+        scores = []
+
+        for i, response in enumerate(responses):
+            try:
+                # Добавляем таймаут для оценки
+                import asyncio
+                score = await asyncio.wait_for(
+                    self._evaluate_response(prompt, response.content, evaluator_config),
+                    timeout=evaluation_timeout
+                )
+                response.score = score
+                scores.append(score)
+                logger.debug(f"Response {i+1} from {response.model_name} scored: {score}")
+            except asyncio.TimeoutError:
+                logger.warning(f"Evaluation timeout for response {i+1} from {response.model_name}")
+                response.score = 3.0  # Низкая оценка при таймауте
+                scores.append(3.0)
+            except Exception as e:
+                logger.error(f"Evaluation error for response {i+1} from {response.model_name}: {e}")
+                response.score = 3.0  # Низкая оценка при ошибке
+                scores.append(3.0)
+
+        # Проверяем на противоречивые оценки
+        if len(scores) >= 2:
+            score_range = max(scores) - min(scores)
+            selection_criteria = parallel_config.get('selection_criteria', ['quality'])
+
+            if score_range < 1.0 and 'quality' in selection_criteria:
+                # Оценки близкие - используем дополнительные критерии
+                logger.info(f"Scores are close (range: {score_range}), using additional criteria")
+
+                # Критерий 1: Время ответа (быстрее = лучше, если качество сопоставимое)
+                if 'efficiency' in selection_criteria:
+                    best_response = min(responses, key=lambda r: r.response_time)
+                    logger.info(f"Selected by efficiency: {best_response.model_name} ({best_response.response_time:.2f}s)")
+                    return best_response
+
+                # Критерий 2: Длина ответа (более полный ответ, если качество сопоставимое)
+                if 'completeness' in selection_criteria:
+                    best_response = max(responses, key=lambda r: len(r.content))
+                    logger.info(f"Selected by completeness: {best_response.model_name} ({len(best_response.content)} chars)")
+                    return best_response
+
+        # Стандартный выбор: максимальный score
         best_response = max(responses, key=lambda r: r.score or 0.0)
-        
+
         logger.info(f"Selected best response from {best_response.model_name} (score: {best_response.score})")
         return best_response
     
@@ -687,7 +843,16 @@ class LLMManager:
         response: str,
         evaluator_model: ModelConfig
     ) -> float:
-        """Оценка ответа моделью-оценщиком"""
+        """Оценка ответа моделью-оценщиком с улучшенной обработкой ошибок"""
+        # Валидация входных данных
+        if not prompt or not response:
+            logger.warning("Empty prompt or response for evaluation")
+            return 3.0  # Низкая оценка для пустых ответов
+
+        if len(response) < 10:
+            logger.warning(f"Response too short for evaluation: {len(response)} chars")
+            return 2.0  # Низкая оценка для слишком коротких ответов
+
         evaluation_prompt = f"""Оцени качество ответа на запрос.
 
 Запрос: {prompt}
@@ -695,26 +860,75 @@ class LLMManager:
 Ответ: {response}
 
 Оцени ответ по шкале от 0 до 10, где:
-- 0-3: Плохой ответ (не релевантный, неполный)
+- 0-3: Плохой ответ (не релевантный, неполный, содержит ошибки)
 - 4-6: Средний ответ (частично релевантный, неполный)
-- 7-9: Хороший ответ (релевантный, полный)
-- 10: Отличный ответ (полностью релевантный, полный, качественный)
+- 7-9: Хороший ответ (релевантный, полный, без грубых ошибок)
+- 10: Отличный ответ (полностью релевантный, полный, качественный, полезный)
+
+Требования к оценке:
+- Фокус на релевантности, полноте и качестве
+- Штраф за неточности, нерелевантную информацию
+- Бонус за полезность и практичность
 
 Ответь только числом от 0 до 10."""
-        
+
         try:
             eval_response = await self._call_model(evaluation_prompt, evaluator_model)
-            if eval_response.success:
-                # Извлекаем число из ответа
-                import re
-                numbers = re.findall(r'\d+\.?\d*', eval_response.content)
-                if numbers:
-                    score = float(numbers[0])
-                    return min(max(score, 0.0), 10.0)  # Ограничиваем 0-10
+
+            if not eval_response.success:
+                logger.warning(f"Evaluation model call failed: {eval_response.error}")
+                return 4.0  # Средняя оценка при неудаче вызова
+
+            if not eval_response.content or len(eval_response.content.strip()) < 1:
+                logger.warning("Empty evaluation response")
+                return 4.0  # Средняя оценка при пустом ответе оценщика
+
+            # Извлекаем число из ответа с улучшенной логикой
+            import re
+            # Ищем числа в начале строки или после двоеточия
+            content = eval_response.content.strip()
+
+            # Паттерн 1: число в начале строки
+            start_number = re.match(r'^(\d+\.?\d*)', content)
+            if start_number:
+                try:
+                    score = float(start_number.group(1))
+                    return min(max(score, 0.0), 10.0)
+                except ValueError:
+                    pass
+
+            # Паттерн 2: число после "оценка:", "score:" и т.п.
+            colon_pattern = re.search(r'(?:оценка|score|rating)[\s:]*(\d+\.?\d*)', content, re.IGNORECASE)
+            if colon_pattern:
+                try:
+                    score = float(colon_pattern.group(1))
+                    return min(max(score, 0.0), 10.0)
+                except ValueError:
+                    pass
+
+            # Паттерн 3: любое число от 0 до 10
+            all_numbers = re.findall(r'\b(\d+\.?\d*)\b', content)
+            valid_scores = [float(n) for n in all_numbers if 0 <= float(n) <= 10]
+            if valid_scores:
+                return max(valid_scores)  # Берем максимальную валидную оценку
+
+            # Если не нашли число, анализируем текстовый ответ
+            content_lower = content.lower()
+            if any(word in content_lower for word in ['отлично', 'excellent', 'perfect', '10']):
+                return 10.0
+            elif any(word in content_lower for word in ['хорошо', 'good', 'great', '8', '9']):
+                return 8.0
+            elif any(word in content_lower for word in ['удовлетворительно', 'satisfactory', 'ok', '5', '6', '7']):
+                return 6.0
+            elif any(word in content_lower for word in ['плохо', 'bad', 'poor', '1', '2', '3']):
+                return 2.0
+
+            logger.warning(f"Could not parse evaluation response: '{content[:100]}...'")
+            return 5.0  # Средняя оценка при неудаче парсинга
+
         except Exception as e:
-            logger.error(f"Error evaluating response: {e}")
-        
-        return 5.0  # Средняя оценка по умолчанию
+            logger.error(f"Error evaluating response: {e}", exc_info=True)
+            return 5.0  # Средняя оценка по умолчанию при ошибке
     
     def _extract_json_from_text(self, text: str) -> Optional[str]:
         """

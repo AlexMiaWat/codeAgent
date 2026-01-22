@@ -294,6 +294,50 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "docker: mark test as requiring Docker")
 
 
+@pytest.fixture(scope="session", autouse=False)
+def auto_start_server(request):
+    """
+    Фикстура для автоматического запуска HTTP сервера перед интеграционными тестами.
+
+    Запускает сервер автоматически для тестов, помеченных маркером 'requires_server'.
+    """
+    from test.test_real_server_integration import ServerTester
+
+    # Проверяем, требует ли тест сервера
+    requires_server = request.node.get_closest_marker("requires_server") is not None
+
+    if not requires_server:
+        yield
+        return
+
+    print(f"\n[INFO] Тест '{request.node.name}' требует сервера, запускаем автоматически...")
+
+    # Создаем тестер сервера
+    tester = ServerTester()
+
+    # Проверяем, не запущен ли сервер уже
+    try:
+        import requests
+        response = requests.get("http://127.0.0.1:3456/health", timeout=2)
+        if response.status_code == 200:
+            print("[INFO] Сервер уже запущен, используем существующий")
+            server_started = False
+        else:
+            server_started = tester.start_server(timeout=30)
+    except:
+        server_started = tester.start_server(timeout=30)
+
+    if not server_started and requires_server:
+        pytest.skip("Не удалось запустить HTTP сервер для интеграционного теста")
+
+    yield
+
+    # Останавливаем сервер только если мы его запускали
+    if server_started:
+        print(f"\n[INFO] Останавливаем сервер после теста '{request.node.name}'...")
+        tester.stop_server()
+
+
 # Skip tests based on availability
 def pytest_collection_modifyitems(config, items):
     """Modify test collection to skip tests based on markers."""
@@ -301,23 +345,23 @@ def pytest_collection_modifyitems(config, items):
     skip_cursor = pytest.mark.skip(reason="Cursor not available")
     skip_llm = pytest.mark.skip(reason="LLM API not configured")
     skip_docker = pytest.mark.skip(reason="Docker not available")
-    
+
     for item in items:
         # Skip slow tests by default unless explicitly requested
         if "slow" in item.keywords and not config.getoption("-m") == "slow":
             item.add_marker(skip_slow)
-        
+
         # Skip Cursor tests if not available
         if "cursor" in item.keywords:
             # Check if Cursor is available
             # This is a placeholder - implement actual check
             pass
-        
+
         # Skip LLM tests if API keys not configured
         if "llm" in item.keywords:
-            if not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"):
+            if not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY") and not os.getenv("OPENROUTER_API_KEY"):
                 item.add_marker(skip_llm)
-        
+
         # Skip Docker tests if Docker not available
         if "docker" in item.keywords:
             # Check if Docker is available

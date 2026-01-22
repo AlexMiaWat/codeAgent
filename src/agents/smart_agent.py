@@ -9,6 +9,9 @@ from crewai import Agent
 # Импортируем инструменты
 from ..tools import LearningTool, ContextAnalyzerTool, is_docker_available
 
+# Экспортируем функцию для тестирования
+__all__ = ['create_smart_agent', 'is_docker_available']
+
 # Импортируем LLM обертку для использования LLMManager
 try:
     from ..llm.crewai_llm_wrapper import create_llm_for_crewai

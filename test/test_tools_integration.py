@@ -445,8 +445,11 @@ class TestToolsPatternRecognition:
             )
 
             # Проверяем что можем найти похожие задачи
-            similar = learning_tool.find_similar_tasks("поиск пользователей")
-            assert "пользователей" in similar.lower() or "search" in similar.lower()
+            similar = learning_tool.find_similar_tasks("пользователей")
+            # Проверяем что поиск вернул результаты (не "Похожие задачи не найдены")
+            assert "найдено" in similar.lower() or "похожих задач" in similar.lower()
+            # Проверяем что в результате есть информация о задаче
+            assert "добавить функцию поиска пользователей" in similar.lower()
 
             # Получаем рекомендации для похожей задачи
             recommendations = learning_tool.get_recommendations("добавить функцию поиска по имени")

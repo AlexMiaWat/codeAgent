@@ -61,14 +61,17 @@ class LearningTool(BaseTool):
     experience_dir: str = "smart_experience"
     max_experience_tasks: int = 1000
     experience_file: str = "experience.json"  # Будет переопределен в __init__
+    cache_file: str = "cache.json"  # Файл для персистентного кэша
 
     # Настройки индексации и кеширования
     enable_indexing: bool = True
     cache_size: int = 1000
     cache_ttl_seconds: int = 3600  # 1 час
+    enable_cache_persistence: bool = False  # Сохранять кэш на диск
 
     def __init__(self, experience_dir: str = "smart_experience", max_experience_tasks: int = 1000,
-                 enable_indexing: bool = True, cache_size: int = 1000, cache_ttl_seconds: int = 3600, **kwargs):
+                 enable_indexing: bool = True, cache_size: int = 1000, cache_ttl_seconds: int = 3600,
+                 enable_cache_persistence: bool = False, **kwargs):
         """
         Инициализация LearningTool
 
@@ -78,6 +81,7 @@ class LearningTool(BaseTool):
             enable_indexing: Включить индексацию для быстрого поиска
             cache_size: Максимальный размер кэша
             cache_ttl_seconds: Время жизни кэша в секундах
+            enable_cache_persistence: Сохранять кэш на диск для persistence между запусками
         """
         super().__init__(**kwargs)
         self.experience_dir = Path(experience_dir)
@@ -85,6 +89,7 @@ class LearningTool(BaseTool):
         self.enable_indexing = enable_indexing
         self.cache_size = cache_size
         self.cache_ttl_seconds = cache_ttl_seconds
+        self.enable_cache_persistence = enable_cache_persistence
         self.experience_file = self.experience_dir / "experience.json"
 
         # Создаем директорию опыта если не существует
@@ -92,8 +97,14 @@ class LearningTool(BaseTool):
 
         # Инициализируем структуры индексации и кеширования
         self._search_index: Dict[str, Set[str]] = {}
-        self._cache_timestamps: Dict[str, datetime] = {}
         self._pattern_index: Dict[str, List[str]] = {}
+        self._query_cache: Dict[str, Dict[str, Any]] = {}  # {query_hash: {result, timestamp}}
+        self._cache_stats = {
+            'hits': 0,
+            'misses': 0,
+            'evictions': 0,
+            'size': 0
+        }
 
         # Инициализируем файл опыта если не существует
         if not self.experience_file.exists():
@@ -101,6 +112,10 @@ class LearningTool(BaseTool):
         else:
             # Загружаем существующий опыт и строим индексы
             self._load_and_index_experience()
+
+        # Загружаем персистентный кэш если включено
+        if self.enable_cache_persistence:
+            self._load_persistent_cache()
 
     def _init_experience_file(self) -> None:
         """Инициализация файла опыта"""
@@ -275,8 +290,7 @@ class LearningTool(BaseTool):
             self._update_indexes(task_record)
 
         # Очищаем кэш, так как данные изменились
-        self._find_similar_tasks_cached.cache_clear()
-        self._invalidate_expired_cache()
+        self._clear_query_cache()
 
         return f"Опыт задачи '{task_description}' сохранен. Статус: {'успешно' if success else 'неудачно'}"
 
@@ -303,32 +317,109 @@ class LearningTool(BaseTool):
             if task_id not in self._pattern_index[pattern]:
                 self._pattern_index[pattern].append(task_id)
 
-    def _get_cache_key(self, method: str, *args, **kwargs) -> str:
-        """Генерация ключа кэша для метода"""
-        key_data = f"{method}:{args}:{sorted(kwargs.items())}"
-        return hashlib.md5(key_data.encode()).hexdigest()
+    def _get_query_hash(self, query: str, limit: int = 5) -> str:
+        """Генерация хэша для ключа кэша запросов"""
+        key_data = f"find_similar:{query}:{limit}"
+        return hashlib.md5(key_data.encode('utf-8')).hexdigest()
 
-    def _is_cache_valid(self, cache_key: str) -> bool:
-        """Проверка валидности кэша"""
-        if cache_key not in self._cache_timestamps:
-            return False
-        cache_time = self._cache_timestamps[cache_key]
-        return datetime.now() - cache_time < timedelta(seconds=self.cache_ttl_seconds)
+    def _get_cache_entry(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """Получение записи из кэша с проверкой TTL"""
+        if cache_key not in self._query_cache:
+            self._cache_stats['misses'] += 1
+            return None
 
-    def _invalidate_expired_cache(self) -> None:
-        """Удаление просроченного кэша"""
-        current_time = datetime.now()
-        expired_keys = [
-            key for key, timestamp in self._cache_timestamps.items()
-            if current_time - timestamp >= timedelta(seconds=self.cache_ttl_seconds)
-        ]
-        for key in expired_keys:
-            self._cache_timestamps.pop(key, None)
+        entry = self._query_cache[cache_key]
+        cache_time = entry.get('timestamp', datetime.min)
 
-    @lru_cache(maxsize=100)
-    def _find_similar_tasks_cached(self, query_hash: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """Кешированная версия поиска похожих задач"""
-        return self._find_similar_tasks_uncached(query_hash, limit)
+        # Проверяем TTL
+        if datetime.now() - cache_time >= timedelta(seconds=self.cache_ttl_seconds):
+            # Кэш просрочен, удаляем
+            del self._query_cache[cache_key]
+            self._cache_stats['evictions'] += 1
+            self._cache_stats['misses'] += 1
+            return None
+
+        self._cache_stats['hits'] += 1
+        return entry
+
+    def _set_cache_entry(self, cache_key: str, result: List[Dict[str, Any]]) -> None:
+        """Сохранение записи в кэше"""
+        # Проверяем лимит размера кэша
+        if len(self._query_cache) >= self.cache_size:
+            # Удаляем самую старую запись (простая стратегия LRU)
+            oldest_key = min(self._query_cache.keys(),
+                           key=lambda k: self._query_cache[k].get('timestamp', datetime.min))
+            del self._query_cache[oldest_key]
+            self._cache_stats['evictions'] += 1
+
+        self._query_cache[cache_key] = {
+            'result': result,
+            'timestamp': datetime.now()
+        }
+        self._cache_stats['size'] = len(self._query_cache)
+
+    def _clear_query_cache(self) -> None:
+        """Очистка кэша запросов"""
+        self._query_cache.clear()
+        self._cache_stats = {'hits': 0, 'misses': 0, 'evictions': 0, 'size': 0}
+
+        # Сохраняем пустой кэш на диск если включена персистентность
+        if self.enable_cache_persistence:
+            self._save_persistent_cache()
+
+    def _load_persistent_cache(self) -> None:
+        """Загрузка персистентного кэша с диска"""
+        cache_file_path = self.experience_dir / self.cache_file
+        if not cache_file_path.exists():
+            return
+
+        try:
+            with open(cache_file_path, 'r', encoding='utf-8') as f:
+                cache_data = json.load(f)
+
+            # Восстанавливаем кэш с проверкой TTL
+            current_time = datetime.now()
+            valid_entries = {}
+
+            for key, entry in cache_data.get('query_cache', {}).items():
+                entry_time = datetime.fromisoformat(entry.get('timestamp', ''))
+                if current_time - entry_time < timedelta(seconds=self.cache_ttl_seconds):
+                    valid_entries[key] = {
+                        'result': entry.get('result', []),
+                        'timestamp': entry_time
+                    }
+
+            self._query_cache = valid_entries
+            self._cache_stats['size'] = len(self._query_cache)
+
+            logger.debug(f"Loaded {len(self._query_cache)} valid cache entries from disk")
+
+        except Exception as e:
+            logger.warning(f"Failed to load persistent cache: {e}")
+
+    def _save_persistent_cache(self) -> None:
+        """Сохранение персистентного кэша на диск"""
+        if not self.enable_cache_persistence:
+            return
+
+        try:
+            cache_data = {
+                'query_cache': self._query_cache,
+                'stats': self._cache_stats,
+                'metadata': {
+                    'created_at': datetime.now().isoformat(),
+                    'cache_size': self.cache_size,
+                    'ttl_seconds': self.cache_ttl_seconds
+                }
+            }
+
+            with open(cache_file_path, 'w', encoding='utf-8') as f:
+                json.dump(cache_data, f, indent=2, ensure_ascii=False, default=str)
+
+            logger.debug(f"Saved {len(self._query_cache)} cache entries to disk")
+
+        except Exception as e:
+            logger.error(f"Failed to save persistent cache: {e}")
 
     def _find_similar_tasks_uncached(self, query_normalized: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Не кешированная версия поиска похожих задач"""
@@ -374,17 +465,16 @@ class LearningTool(BaseTool):
             Список похожих задач
         """
         query_normalized = normalize_unicode_text(query)
-        query_hash = hashlib.md5(query_normalized.encode()).hexdigest()
+        cache_key = self._get_query_hash(query_normalized, limit)
 
         # Проверяем кэш
-        cache_key = self._get_cache_key("find_similar_tasks", query_hash, limit)
-        if self._is_cache_valid(cache_key):
-            similar_tasks = self._find_similar_tasks_cached(query_hash, limit)
+        cache_entry = self._get_cache_entry(cache_key)
+        if cache_entry is not None:
+            similar_tasks = cache_entry['result']
         else:
-            # Очищаем просроченный кэш
-            self._invalidate_expired_cache()
+            # Выполняем поиск и кэшируем результат
             similar_tasks = self._find_similar_tasks_uncached(query_normalized, limit)
-            self._cache_timestamps[cache_key] = datetime.now()
+            self._set_cache_entry(cache_key, similar_tasks)
 
         if not similar_tasks:
             return f"Похожие задачи не найдены для запроса: '{query}'"
@@ -479,5 +569,29 @@ class LearningTool(BaseTool):
         if stats.get('total_tasks', 0) > 0:
             success_rate = (stats.get('successful_tasks', 0) / stats['total_tasks']) * 100
             result += f"• Процент успешности: {success_rate:.1f}%\n"
+
+        return result
+
+    def get_cache_stats(self) -> str:
+        """
+        Получение статистики кеширования
+
+        Returns:
+            Статистика использования кэша
+        """
+        # Статистика кэша поиска похожих задач
+        total_requests = self._cache_stats['hits'] + self._cache_stats['misses']
+        hit_rate = (self._cache_stats['hits'] / total_requests * 100) if total_requests > 0 else 0
+
+        result = "📊 Статистика кеширования LearningTool:\n\n"
+        result += "**Кэш поиска похожих задач:**\n"
+        result += f"• Всего запросов: {total_requests}\n"
+        result += f"• Попаданий в кэш: {self._cache_stats['hits']}\n"
+        result += f"• Промахов кэша: {self._cache_stats['misses']}\n"
+        result += f"• Выселений из кэша: {self._cache_stats['evictions']}\n"
+        result += f"• Текущий размер кэша: {self._cache_stats['size']}/{self.cache_size}\n"
+        result += f"• Процент попаданий: {hit_rate:.1f}%\n"
+        result += f"• TTL кэша: {self.cache_ttl_seconds} сек\n"
+        result += f"• Персистентность кэша: {'включена' if self.enable_cache_persistence else 'отключена'}\n"
 
         return result

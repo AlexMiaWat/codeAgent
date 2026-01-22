@@ -85,7 +85,7 @@ class TestSmartAgentStatic:
         from crewai import Agent
         assert sig.return_annotation == Agent
 
-    @patch('src.tools.docker_utils.is_docker_available')
+    @patch('src.agents.smart_agent.is_docker_available')
     @patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai')
     def test_create_smart_agent_with_mocked_dependencies(self, mock_llm_wrapper, mock_docker):
         """Тест создания Smart Agent с замоканными зависимостями"""
@@ -135,7 +135,7 @@ class TestSmartAgentStatic:
         """Проверка генерации backstory по умолчанию"""
         from src.agents.smart_agent import create_smart_agent
 
-        with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+        with patch('src.agents.smart_agent.is_docker_available', return_value=False):
             with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     project_dir = Path(tmp_dir)
@@ -156,7 +156,7 @@ class TestSmartAgentStatic:
         """Проверка инициализации инструментов в Smart Agent"""
         from src.agents.smart_agent import create_smart_agent
 
-        with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+        with patch('src.agents.smart_agent.is_docker_available', return_value=False):
             with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     project_dir = Path(tmp_dir)
@@ -180,7 +180,7 @@ class TestSmartAgentStatic:
         """Проверка конфигурации LLM в Smart Agent"""
         from src.agents.smart_agent import create_smart_agent
 
-        with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+        with patch('src.agents.smart_agent.is_docker_available', return_value=False):
             with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=Mock()):
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     project_dir = Path(tmp_dir)
@@ -200,7 +200,7 @@ class TestSmartAgentStatic:
         """Проверка конфигурации Smart Agent без LLM"""
         from src.agents.smart_agent import create_smart_agent
 
-        with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+        with patch('src.agents.smart_agent.is_docker_available', return_value=False):
             with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     project_dir = Path(tmp_dir)
@@ -221,7 +221,7 @@ class TestSmartAgentStatic:
         """Проверка конфигурации Docker в Smart Agent"""
         from src.agents.smart_agent import create_smart_agent
 
-        with patch('src.tools.docker_utils.is_docker_available', return_value=True):
+        with patch('src.agents.smart_agent.is_docker_available', return_value=True):
             with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
                 with tempfile.TemporaryDirectory() as tmp_dir:
                         project_dir = Path(tmp_dir)
@@ -244,7 +244,7 @@ class TestSmartAgentStatic:
         """Проверка конфигурации Smart Agent без Docker"""
         from src.agents.smart_agent import create_smart_agent
 
-        with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+        with patch('src.agents.smart_agent.is_docker_available', return_value=False):
             with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     project_dir = Path(tmp_dir)
@@ -269,7 +269,7 @@ class TestSmartAgentStatic:
         """Проверка создания директории опыта"""
         from src.agents.smart_agent import create_smart_agent
 
-        with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+        with patch('src.agents.smart_agent.is_docker_available', return_value=False):
             with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     project_dir = Path(tmp_dir)
@@ -297,7 +297,7 @@ class TestSmartAgentStatic:
         """Проверка поддержки Unicode в Smart Agent"""
         from src.agents.smart_agent import create_smart_agent
 
-        with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+        with patch('src.agents.smart_agent.is_docker_available', return_value=False):
             with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     project_dir = Path(tmp_dir)
@@ -321,7 +321,7 @@ class TestSmartAgentStatic:
         """Проверка параметра max_experience_tasks"""
         from src.agents.smart_agent import create_smart_agent
 
-        with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+        with patch('src.agents.smart_agent.is_docker_available', return_value=False):
             with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     project_dir = Path(tmp_dir)

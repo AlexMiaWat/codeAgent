@@ -439,6 +439,27 @@ class TestLearningToolDataFormats:
             assert isinstance(result, str)
             assert "Создать тестовый файл" in result
 
+    def test_task_search_with_diacritics_normalization(self):
+        """Проверка поиска задач с учетом Unicode нормализации диакритических знаков"""
+        from src.tools.learning_tool import LearningTool
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tool = LearningTool(experience_dir=tmp_dir)
+
+            # Добавляем задачу с диакритическими знаками
+            tool.save_task_experience(
+                task_id="diacritics_task",
+                task_description="Créer un fichier de test avec des caractères spéciaux",
+                success=True
+            )
+
+            # Ищем только по слову "creer" (без диакритических знаков)
+            result = tool.find_similar_tasks("creer")
+
+            assert isinstance(result, str)
+            # Проверяем что найдена задача (не "Похожие задачи не найдены")
+            assert "найдено" in result.lower() and "Créer un fichier" in result
+
     def test_empty_patterns_handling(self):
         """Проверка обработки пустых паттернов"""
         from src.tools.learning_tool import LearningTool

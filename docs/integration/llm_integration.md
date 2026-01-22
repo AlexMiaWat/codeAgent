@@ -25,7 +25,7 @@ Code Agent использует систему управления нескол
 
 ## Конфигурация
 
-### Файл `config/llm_settings.yaml`
+### Файл `config/llm_settings.yaml` (актуальная конфигурация 2026-01-22)
 
 ```yaml
 llm:
@@ -33,21 +33,91 @@ llm:
   default_model: meta-llama/llama-3.2-1b-instruct
   timeout: 200
   retry_attempts: 1
-  strategy: "best_of_two"
-  
-  # Роли моделей
+  strategy: best_of_two
+
+  # Роли моделей (обновлено)
   model_roles:
-    primary: ["meta-llama/llama-3.2-1b-instruct", "microsoft/phi-3-mini-128k-instruct"]
-    duplicate: ["meta-llama/llama-3.2-3b-instruct", "microsoft/wizardlm-2-8x22b"]
-    reserve: ["google/gemma-2-27b-it", "mistralai/mistral-small-24b-instruct-2501"]
-    fallback: ["kwaipilot/kat-coder-pro:free", "undi95/remm-slerp-l2-13b"]
+    primary: []  # Автоматический выбор
+    duplicate: []  # Автоматический выбор
+    reserve:
+      - kwaipilot/kat-coder-pro:free
+    fallback:
+      - undi95/remm-slerp-l2-13b
+      - microsoft/wizardlm-2-8x22b
+
+  # Параллельная обработка (новое)
+  parallel:
+    enabled: true
+    models:
+      - microsoft/wizardlm-2-8x22b
+      - microsoft/phi-3-mini-128k-instruct
+    evaluator_model: microsoft/wizardlm-2-8x22b
+    selection_criteria:
+      - quality
+      - relevance
+      - completeness
+      - efficiency
+
+  _last_updated: '2026-01-22T21:05:01.819254'
+  _update_source: auto_test_results
 
 providers:
   openrouter:
     base_url: https://openrouter.ai/api/v1
-    api_key: ${OPENROUTER_API_KEY}
     models:
-      # Определение моделей...
+      # Новые провайдеры (2026-01-22)
+      anthropic:
+        - name: anthropic/claude-3.5-sonnet
+          max_tokens: 4096
+          context_window: 200000
+          temperature: 0.7
+      openai:
+        - name: openai/gpt-4o
+          max_tokens: 4096
+          context_window: 128000
+          temperature: 0.7
+        - name: openai/gpt-4o-mini
+          max_tokens: 4096
+          context_window: 128000
+          temperature: 0.7
+      microsoft:
+        - name: microsoft/wizardlm-2-8x22b
+          max_tokens: 4096
+          context_window: 65536
+          temperature: 0.7
+        - name: microsoft/phi-3-mini-128k-instruct
+          max_tokens: 4096
+          context_window: 128000
+          temperature: 0.7
+      meta-llama:
+        - name: meta-llama/llama-3.2-1b-instruct
+          max_tokens: 4096
+          context_window: 131072
+          temperature: 0.7
+        - name: meta-llama/llama-3.2-3b-instruct
+          max_tokens: 4096
+          context_window: 131072
+          temperature: 0.7
+      google:
+        - name: google/gemma-2-27b-it
+          max_tokens: 2048
+          context_window: 8192
+          temperature: 0.7
+      mistralai:
+        - name: mistralai/mistral-small-24b-instruct-2501
+          max_tokens: 4096
+          context_window: 32768
+          temperature: 0.7
+      kwaipilot:
+        - name: kwaipilot/kat-coder-pro:free
+          max_tokens: 4096
+          context_window: 128000
+          temperature: 0.7
+      undi95:
+        - name: undi95/remm-slerp-l2-13b
+          max_tokens: 1536
+          context_window: 6144
+          temperature: 0.7
 ```
 
 ### Переменные окружения
@@ -78,23 +148,30 @@ response = await mgr.generate_response(
 - При ошибке автоматически переключается на следующую модель из fallback списка
 - Продолжает до успешного ответа или исчерпания всех моделей
 
-### 2. Parallel (Best of Two)
+### 2. Parallel (Best of Two) - Оптимизированная стратегия
 
-Используются две модели параллельно, выбирается лучший ответ:
+Используются две модели параллельно с интеллектуальным выбором лучшего ответа:
 
 ```python
+# Автоматически используется best_of_two стратегия
 response = await mgr.generate_response(
-    prompt="Привет",
-    use_fastest=True,
-    use_parallel=True
+    prompt="Анализируй этот код",
+    strategy="best_of_two"  # Новая стратегия
 )
 ```
 
-**Поведение:**
-- Запускаются две primary модели параллельно
-- Обе модели генерируют ответы одновременно
-- Оценка ответов выполняется через evaluator модель
-- Выбирается ответ с наивысшей оценкой
+**Поведение best_of_two:**
+- Выбираются две оптимальные модели из parallel.models
+- Модели WizardLM-2-8x22b и Phi-3-mini-128k-instruct работают параллельно
+- Оценка качества через evaluator_model (WizardLM-2-8x22b)
+- Критерии оценки: quality, relevance, completeness, efficiency
+- Выбирается ответ с наивысшей комплексной оценкой
+
+**Преимущества новой стратегии:**
+- **Качество**: Двойная проверка повышает качество ответов
+- **Надежность**: Fallback при ошибках одной из моделей
+- **Производительность**: Параллельное выполнение не увеличивает общее время
+- **Интеллект**: Оценщик учитывает контекст и сложность задачи
 
 ### 3. Fallback Chain
 
@@ -168,27 +245,39 @@ print(f"Results saved to: {output_path}")
 - Статистикой успешных/неудачных запросов
 - Рекомендациями по выбору моделей
 
-## Роли моделей
+## Роли моделей (обновлено 2026-01-22)
 
-### Primary (Рабочие)
-- Основные модели для повседневной работы
-- Быстрые и надежные
-- Используются по умолчанию
+### Автоматический выбор (новая парадигма)
+- **primary/duplicate**: Пустые массивы - автоматический выбор на основе тестирования
+- **reserve**: Kwaipilot/kat-coder-pro:free - специализированная модель для кода
+- **fallback**: Undi95/remm-slerp-l2-13b, Microsoft/WizardLM-2-8x22b - стабильные модели
 
-### Duplicate (Дублирующие)
-- Альтернативные модели с похожими характеристиками
-- Используются для параллельного выполнения
-- Могут использоваться как evaluator для оценки ответов
+### Parallel Models (новая категория)
+- **wizardlm-2-8x22b**: Мощная модель для параллельной обработки и оценки
+- **phi-3-mini-128k-instruct**: Быстрая модель среднего уровня для параллели
+- **evaluator_model**: wizardlm-2-8x22b - специализированная модель для оценки качества
 
-### Reserve (Резервные)
-- Резервные модели на случай проблем с primary
-- Обычно более мощные, но медленнее
-- Используются при fallback
+### Новые провайдеры в системе
 
-### Fallback (Последний резерв)
-- Модели на случай полного отказа остальных
-- Могут быть бесплатными или с ограничениями
-- Используются только в крайнем случае
+#### Anthropic Claude-3.5-sonnet
+- **Роль**: Высококачественные ответы для сложных задач
+- **Особенности**: Максимальное качество, большой контекст (200k)
+- **Использование**: Анализ кода, архитектурное планирование
+
+#### OpenAI GPT-4o/GPT-4o-mini
+- **Роль**: Быстрые и точные модели общего назначения
+- **Особенности**: Оптимизированная производительность, баланс цена/качество
+- **Использование**: Универсальные задачи, быстрая обработка
+
+#### Microsoft WizardLM-2-8x22b
+- **Роль**: Мощная модель для параллельной обработки
+- **Особенности**: Высокая производительность, хороший контекст
+- **Использование**: Параллельная оценка, сложные задачи
+
+#### Microsoft Phi-3-mini-128k
+- **Роль**: Быстрая модель среднего уровня
+- **Особенности**: Компактная, быстрая, достаточный контекст
+- **Использование**: Резервная модель, параллельная обработка
 
 ## Обработка ошибок
 
@@ -274,12 +363,27 @@ for model_name, response_time in fastest[:5]:
     print(f"{model_name}: {response_time:.2f}s")
 ```
 
-## Рекомендации
+## Рекомендации (обновлено 2026-01-22)
 
-1. **Для разработки**: Используйте бесплатные модели (fallback)
-2. **Для продакшена**: Используйте primary модели с fallback
-3. **Для критичных задач**: Используйте parallel режим (best_of_two)
-4. **Регулярно тестируйте**: Запускайте `LLMTestRunner` для проверки доступности моделей
+### Выбор стратегии
+
+1. **best_of_two (рекомендуется)**: Максимальное качество через параллельную оценку
+2. **single_model**: Для простых задач с ограниченным бюджетом
+3. **Автоматический fallback**: Всегда включен для надежности
+
+### Выбор провайдеров
+
+1. **Claude-3.5-sonnet**: Для сложного анализа кода и архитектуры
+2. **GPT-4o**: Для быстрой и качественной работы общего назначения
+3. **WizardLM-2-8x22b**: Для параллельной обработки и оценки
+4. **Phi-3-mini-128k**: Для быстрой резервной обработки
+
+### Оптимизация производительности
+
+- **Тестируйте регулярно**: Автоматическое тестирование каждые 24 часа
+- **Мониторьте качество**: Отслеживайте метрики через best_of_two
+- **Обновляйте конфигурацию**: Новые модели добавляются автоматически
+- **Используйте кэширование**: Для повторяющихся запросов
 
 ## Ограничения
 

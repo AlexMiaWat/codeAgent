@@ -210,6 +210,83 @@ class ConfigValidator:
             'description': 'Настройки системы контрольных точек'
         }
     }
+
+    # Схема валидации для секции smart_agent
+    SMART_AGENT_SCHEMA = {
+        'enabled': {
+            'required': False,
+            'type': bool,
+            'default': True,
+            'description': 'Включить smart режим агента'
+        },
+        'experience_dir': {
+            'required': False,
+            'type': str,
+            'default': 'smart_experience',
+            'description': 'Директория для хранения опыта выполнения задач'
+        },
+        'max_experience_tasks': {
+            'required': False,
+            'type': int,
+            'default': 1000,
+            'min_value': 10,
+            'max_value': 10000,
+            'description': 'Максимальное количество задач в истории опыта'
+        },
+        'max_iter': {
+            'required': False,
+            'type': int,
+            'default': 25,
+            'min_value': 5,
+            'max_value': 100,
+            'description': 'Максимальное количество итераций для Smart Agent'
+        },
+        'memory': {
+            'required': False,
+            'type': int,
+            'default': 100,
+            'min_value': 10,
+            'max_value': 1000,
+            'description': 'Размер памяти для хранения контекста'
+        },
+        'verbose': {
+            'required': False,
+            'type': bool,
+            'default': True,
+            'description': 'Подробный вывод для Smart Agent'
+        },
+        'learning_tool': {
+            'required': False,
+            'type': dict,
+            'description': 'Настройки LearningTool'
+        },
+        'context_analyzer_tool': {
+            'required': False,
+            'type': dict,
+            'description': 'Настройки ContextAnalyzerTool'
+        },
+        'llm_strategy': {
+            'required': False,
+            'type': str,
+            'default': 'best_of_two',
+            'allowed_values': ['single', 'best_of_two', 'fallback', 'parallel'],
+            'description': 'Стратегия использования LLM'
+        },
+        'cache_enabled': {
+            'required': False,
+            'type': bool,
+            'default': True,
+            'description': 'Включить кеширование результатов'
+        },
+        'cache_ttl_seconds': {
+            'required': False,
+            'type': int,
+            'default': 3600,
+            'min_value': 300,
+            'max_value': 86400,
+            'description': 'Время жизни кэша в секундах'
+        }
+    }
     
     def __init__(self, config: Dict[str, Any]):
         """
@@ -236,12 +313,15 @@ class ConfigValidator:
         # Валидация секций
         if 'project' in self.config:
             self._validate_section('project', self.PROJECT_SCHEMA)
-        
+
         if 'agent' in self.config:
             self._validate_section('agent', self.AGENT_SCHEMA)
-        
+
         if 'server' in self.config:
             self._validate_section('server', self.SERVER_SCHEMA)
+
+        if 'smart_agent' in self.config:
+            self._validate_section('smart_agent', self.SMART_AGENT_SCHEMA)
         
         # Если есть ошибки, выбрасываем исключение
         if self.errors:
@@ -326,6 +406,10 @@ class ConfigValidator:
                 self._validate_auto_todo_generation(field_path, value)
             elif field_name == 'checkpoint' and isinstance(value, dict):
                 self._validate_checkpoint(field_path, value)
+            elif field_name == 'learning_tool' and isinstance(value, dict):
+                self._validate_learning_tool(field_path, value)
+            elif field_name == 'context_analyzer_tool' and isinstance(value, dict):
+                self._validate_context_analyzer_tool(field_path, value)
     
     def _validate_auto_todo_generation(self, path: str, config: Dict[str, Any]) -> None:
         """Валидация настроек автоматической генерации TODO"""
@@ -343,13 +427,74 @@ class ConfigValidator:
         """Валидация настроек checkpoint"""
         if 'enabled' in config and not isinstance(config['enabled'], bool):
             self.errors.append(f"{path}.enabled должен быть булевым значением")
-        
+
         if 'max_task_attempts' in config:
             max_attempts = config['max_task_attempts']
             if not isinstance(max_attempts, int) or max_attempts < 1 or max_attempts > 100:
                 self.errors.append(
                     f"{path}.max_task_attempts должен быть целым числом от 1 до 100"
                 )
+
+    def _validate_learning_tool(self, path: str, config: Dict[str, Any]) -> None:
+        """Валидация настроек LearningTool"""
+        # Валидация enable_indexing
+        if 'enable_indexing' in config and not isinstance(config['enable_indexing'], bool):
+            self.errors.append(f"{path}.enable_indexing должен быть булевым значением")
+
+        # Валидация cache_size
+        if 'cache_size' in config:
+            cache_size = config['cache_size']
+            if not isinstance(cache_size, int) or cache_size < 10 or cache_size > 10000:
+                self.errors.append(f"{path}.cache_size должен быть целым числом от 10 до 10000")
+
+        # Валидация cache_ttl_seconds
+        if 'cache_ttl_seconds' in config:
+            cache_ttl = config['cache_ttl_seconds']
+            if not isinstance(cache_ttl, int) or cache_ttl < 60 or cache_ttl > 86400:
+                self.errors.append(f"{path}.cache_ttl_seconds должен быть целым числом от 60 до 86400 секунд")
+
+        # Валидация max_experience_tasks
+        if 'max_experience_tasks' in config:
+            max_tasks = config['max_experience_tasks']
+            if not isinstance(max_tasks, int) or max_tasks < 10 or max_tasks > 10000:
+                self.errors.append(f"{path}.max_experience_tasks должен быть целым числом от 10 до 10000")
+
+    def _validate_context_analyzer_tool(self, path: str, config: Dict[str, Any]) -> None:
+        """Валидация настроек ContextAnalyzerTool"""
+        # Валидация max_file_size
+        if 'max_file_size' in config:
+            max_size = config['max_file_size']
+            if not isinstance(max_size, int) or max_size < 1000 or max_size > 10000000:
+                self.errors.append(f"{path}.max_file_size должен быть целым числом от 1000 до 10000000 байт")
+
+        # Валидация supported_extensions
+        if 'supported_extensions' in config:
+            extensions = config['supported_extensions']
+            if not isinstance(extensions, list):
+                self.errors.append(f"{path}.supported_extensions должен быть списком")
+            else:
+                for ext in extensions:
+                    if not isinstance(ext, str) or not ext.startswith('.'):
+                        self.errors.append(f"{path}.supported_extensions содержит некорректное расширение: {ext}")
+                        break
+
+        # Валидация supported_languages
+        if 'supported_languages' in config:
+            languages = config['supported_languages']
+            if not isinstance(languages, list):
+                self.errors.append(f"{path}.supported_languages должен быть списком")
+            else:
+                valid_languages = ['python', 'javascript', 'typescript', 'java', 'cpp', 'c', 'go', 'rust', 'php']
+                for lang in languages:
+                    if not isinstance(lang, str) or lang.lower() not in valid_languages:
+                        self.errors.append(f"{path}.supported_languages содержит неподдерживаемый язык: {lang}")
+                        break
+
+        # Валидация max_dependency_depth
+        if 'max_dependency_depth' in config:
+            max_depth = config['max_dependency_depth']
+            if not isinstance(max_depth, int) or max_depth < 1 or max_depth > 10:
+                self.errors.append(f"{path}.max_dependency_depth должен быть целым числом от 1 до 10")
     
     def _check_type(self, value: Any, expected_type: Union[type, tuple]) -> bool:
         """

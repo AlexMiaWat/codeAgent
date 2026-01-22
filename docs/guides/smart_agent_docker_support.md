@@ -258,28 +258,33 @@ else:
 
 | Параметр | Новое значение | Предыдущее | Эффект |
 |----------|----------------|------------|--------|
-| `max_iter` | 25 | 15 | Лучше справляется со сложными задачами |
-| `memory` | 100 | 50 | Увеличивает контекст для длинных сессий |
-| `max_experience_tasks` | 200 | 100 | Больше опыта для обучения |
-| `verbose` | Оптимизирован | - | Можно отключать в production |
+| `max_iter` | 25 | 15 | Лучше справляется со сложными задачами, включая сложные многошаговые операции |
+| `memory` | 100 | 50 | Увеличивает контекст для длинных сессий и сложных задач |
+| `max_experience_tasks` | 200 | 100 | Больше опыта для обучения, улучшенные рекомендации |
+| `verbose` | Оптимизирован | - | Можно отключать в production для снижения шума логов |
+| `strategy` | best_of_two | - | Новая стратегия выбора LLM с параллельной оценкой |
+| `parallel.enabled` | true | - | Параллельная обработка для повышения производительности |
 
 ### LLM стратегия best_of_two
 
 Обновлена стратегия выбора моделей:
 
 ```yaml
-# config/llm_settings.yaml
+# config/llm_settings.yaml (актуальная конфигурация 2026-01-22)
 llm:
+  default_provider: openrouter
+  default_model: meta-llama/llama-3.2-1b-instruct
+  timeout: 200
+  retry_attempts: 1
   strategy: best_of_two
   model_roles:
-    primary:
-    - microsoft/wizardlm-2-8x22b  # Мощная модель для сложных задач
+    primary: []
     duplicate: []
     reserve:
-    - microsoft/phi-3-mini-128k-instruct  # Быстрая модель среднего уровня
+    - kwaipilot/kat-coder-pro:free
     fallback:
-    - meta-llama/llama-3.2-3b-instruct   # Стабильная модель для fallback
-    - meta-llama/llama-3.2-1b-instruct   # Легкая модель для простых задач
+    - undi95/remm-slerp-l2-13b
+    - microsoft/wizardlm-2-8x22b
   parallel:
     enabled: true
     models:
@@ -291,6 +296,22 @@ llm:
     - relevance
     - completeness
     - efficiency
+providers:
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    models:
+      # Новые провайдеры (2026-01-22)
+      anthropic:
+      - name: anthropic/claude-3.5-sonnet  # Высококачественные ответы
+      openai:
+      - name: openai/gpt-4o              # Быстрая модель GPT-4
+      - name: openai/gpt-4o-mini         # Оптимизированная версия
+      microsoft:
+      - name: microsoft/wizardlm-2-8x22b # Мощная модель для параллели
+      - name: microsoft/phi-3-mini-128k-instruct  # Быстрая среднего уровня
+      meta-llama:
+      - name: meta-llama/llama-3.2-1b-instruct    # Легкая модель
+      - name: meta-llama/llama-3.2-3b-instruct    # Стабильная модель
 ```
 
 ## Улучшения инструментов
@@ -439,14 +460,16 @@ with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai') as mock_llm:
     # Агент будет использовать LLM
 ```
 
-### Новые провайдеры LLM
+### Новые провайдеры LLM (2026-01-22)
 
-Добавлена поддержка дополнительных провайдеров:
+Добавлена поддержка дополнительных провайдеров через OpenRouter:
 
-- **Anthropic Claude-3.5-sonnet**: Высококачественные ответы для сложных задач
-- **OpenAI GPT-4o/GPT-4o-mini**: Быстрые и точные модели
-- **Microsoft WizardLM-2-8x22b**: Мощная модель для параллельной обработки
-- **Microsoft Phi-3-mini-128k**: Быстрая модель среднего уровня
+- **Anthropic Claude-3.5-sonnet**: Высококачественные ответы для сложных задач анализа и планирования
+- **OpenAI GPT-4o/GPT-4o-mini**: Быстрые и точные модели с оптимизированной производительностью
+- **Microsoft WizardLM-2-8x22b**: Мощная модель для параллельной обработки и оценки качества
+- **Microsoft Phi-3-mini-128k-instruct**: Быстрая модель среднего уровня для резервных сценариев
+- **Kwaipilot Kat-coder-pro:free**: Специализированная модель для задач кодирования
+- **Undi95 Remm-slerp-l2-13b**: Стабильная модель для fallback сценариев
 
 ### Производительность и выбор режима
 

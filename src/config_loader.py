@@ -86,9 +86,24 @@ class ConfigLoader:
                 error_msg += "\n  2. Убедитесь, что все обязательные поля присутствуют"
                 error_msg += "\n  3. Проверьте типы и значения полей"
                 error_msg += "\n  4. См. документацию: docs/guides/setup.md"
-                
+
                 logger.error(error_msg)
                 raise ValueError(error_msg) from e
+
+        # Валидация Smart Agent конфигурации
+        smart_agent_errors = self.validate_smart_agent_config()
+        if smart_agent_errors:
+            error_msg = "Ошибки валидации конфигурации Smart Agent:\n\n"
+            error_msg += "\n".join(f"  - {error}" for error in smart_agent_errors)
+            error_msg += "\n\n" + "=" * 70
+            error_msg += "\n\nДля решения проблем:"
+            error_msg += "\n  1. Проверьте параметры smart_agent в config.yaml"
+            error_msg += "\n  2. Убедитесь, что директория опыта существует или может быть создана"
+            error_msg += "\n  3. Проверьте разумность значений параметров производительности"
+            error_msg += "\n  4. См. документацию: docs/core/configuration_reference.md"
+
+            logger.error(error_msg)
+            raise ValueError(error_msg)
     
     def _substitute_env_vars(self, obj: Any) -> Any:
         """
@@ -280,5 +295,142 @@ class ConfigLoader:
         except ValueError as e:
             logger.error(f"Ошибка валидации пути файла статусов: {e}")
             raise
-        
+
         return validated_path
+
+    def get_smart_agent_config(self) -> Dict[str, Any]:
+        """
+        Получение конфигурации Smart Agent
+
+        Returns:
+            Словарь с настройками Smart Agent
+        """
+        smart_config = self.config.get('smart_agent', {})
+
+        # Устанавливаем значения по умолчанию
+        defaults = {
+            'enabled': True,
+            'experience_dir': 'smart_experience',
+            'max_experience_tasks': 1000,
+            'max_iter': 25,
+            'memory': 100,
+            'verbose': True,
+            'llm_strategy': 'best_of_two',
+            'cache_enabled': True,
+            'cache_ttl_seconds': 3600,
+            'learning_tool': {
+                'enable_indexing': True,
+                'cache_size': 1000,
+                'cache_ttl_seconds': 3600,
+                'max_experience_tasks': 1000
+            },
+            'context_analyzer_tool': {
+                'max_file_size': 1000000,
+                'supported_extensions': ['.md', '.txt', '.rst', '.py', '.js', '.ts', '.json', '.yaml', '.yml', '.java', '.cpp', '.hpp', '.c', '.h'],
+                'supported_languages': ['python', 'javascript', 'typescript', 'java', 'cpp', 'c'],
+                'max_dependency_depth': 5
+            }
+        }
+
+        # Рекурсивно сливаем конфигурацию с defaults
+        def merge_dicts(default: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
+            result = default.copy()
+            for key, value in user.items():
+                if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                    result[key] = merge_dicts(result[key], value)
+                else:
+                    result[key] = value
+            return result
+
+        return merge_dicts(defaults, smart_config)
+
+    def validate_smart_agent_config(self) -> List[str]:
+        """
+        Валидация конфигурации Smart Agent
+
+        Returns:
+            List[str]: Список ошибок валидации. Пустой список означает успешную валидацию.
+        """
+        errors = []
+
+        # Получаем конфигурацию Smart Agent
+        smart_config = self.get_smart_agent_config()
+
+        # Проверяем только если Smart Agent включен
+        if smart_config.get('enabled', False):
+            # Проверка директории опыта
+            experience_dir = Path(smart_config.get('experience_dir', 'smart_experience'))
+
+            # Если путь относительный, разрешаем его относительно project_dir
+            if not experience_dir.is_absolute():
+                try:
+                    project_dir = self.get_project_dir()
+                    experience_dir = project_dir / experience_dir
+                except ValueError:
+                    errors.append("Не удалось определить директорию проекта для валидации experience_dir")
+                    return errors
+
+            # Проверяем возможность создания директории
+            try:
+                if not experience_dir.exists():
+                    # Пробуем создать директорию
+                    experience_dir.mkdir(parents=True, exist_ok=True)
+                    logger.info(f"Создана директория опыта Smart Agent: {experience_dir}")
+                elif not experience_dir.is_dir():
+                    errors.append(f"experience_dir должен быть директорией, а не файлом: {experience_dir}")
+            except (OSError, PermissionError) as e:
+                errors.append(f"Не удалось создать или проверить директорию опыта: {experience_dir} - {e}")
+
+            # Проверка параметров производительности
+            max_iter = smart_config.get('max_iter', 25)
+            if not isinstance(max_iter, int) or max_iter < 1:
+                errors.append(f"max_iter должен быть положительным целым числом, получено: {max_iter}")
+            elif max_iter > 50:
+                errors.append(f"max_iter > 50 ({max_iter}) может привести к бесконечным циклам. Рекомендуется значение <= 50")
+
+            memory = smart_config.get('memory', 100)
+            if not isinstance(memory, int) or memory < 1:
+                errors.append(f"memory должен быть положительным целым числом, получено: {memory}")
+            elif memory > 1000:
+                errors.append(f"memory > 1000 ({memory}) может привести к чрезмерному потреблению памяти")
+
+            max_experience_tasks = smart_config.get('max_experience_tasks', 1000)
+            if not isinstance(max_experience_tasks, int) or max_experience_tasks < 1:
+                errors.append(f"max_experience_tasks должен быть положительным целым числом, получено: {max_experience_tasks}")
+            elif max_experience_tasks > 10000:
+                errors.append(f"max_experience_tasks > 10000 ({max_experience_tasks}) может привести к проблемам производительности")
+
+            # Проверка вложенных конфигураций
+            learning_tool = smart_config.get('learning_tool', {})
+            if not isinstance(learning_tool, dict):
+                errors.append("learning_tool должен быть словарем с настройками")
+            else:
+                cache_size = learning_tool.get('cache_size', 1000)
+                if not isinstance(cache_size, int) or cache_size < 1:
+                    errors.append(f"learning_tool.cache_size должен быть положительным целым числом, получено: {cache_size}")
+                elif cache_size > 10000:
+                    errors.append(f"learning_tool.cache_size > 10000 ({cache_size}) может привести к чрезмерному потреблению памяти")
+
+            context_analyzer = smart_config.get('context_analyzer_tool', {})
+            if not isinstance(context_analyzer, dict):
+                errors.append("context_analyzer_tool должен быть словарем с настройками")
+            else:
+                max_file_size = context_analyzer.get('max_file_size', 1000000)
+                if not isinstance(max_file_size, int) or max_file_size < 1:
+                    errors.append(f"context_analyzer_tool.max_file_size должен быть положительным целым числом, получено: {max_file_size}")
+                elif max_file_size > 10000000:  # 10MB
+                    errors.append(f"context_analyzer_tool.max_file_size > 10MB ({max_file_size}) может привести к проблемам производительности")
+
+                max_depth = context_analyzer.get('max_dependency_depth', 5)
+                if not isinstance(max_depth, int) or max_depth < 1:
+                    errors.append(f"context_analyzer_tool.max_dependency_depth должен быть положительным целым числом, получено: {max_depth}")
+                elif max_depth > 10:
+                    errors.append(f"context_analyzer_tool.max_dependency_depth > 10 ({max_depth}) может привести к чрезмерной глубине анализа")
+
+            # Проверка стратегии LLM
+            llm_strategy = smart_config.get('llm_strategy', 'best_of_two')
+            valid_strategies = ['single', 'best_of_two', 'fallback']
+            if llm_strategy not in valid_strategies:
+                errors.append(f"llm_strategy должен быть одним из: {valid_strategies}, получено: {llm_strategy}")
+
+        return errors

@@ -72,7 +72,7 @@ class TestSmartAgentStatic:
         with tempfile.TemporaryDirectory() as tmp_dir:
             project_dir = Path(tmp_dir)
 
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+            with patch('src.agents.smart_agent.is_docker_available', return_value=False):
                 with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
                     with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
                         agent = create_smart_agent(project_dir=project_dir, use_llm=False)
@@ -87,7 +87,7 @@ class TestSmartAgentStatic:
         with tempfile.TemporaryDirectory() as tmp_dir:
             project_dir = Path(tmp_dir)
 
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+            with patch('src.agents.smart_agent.is_docker_available', return_value=False):
                 with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
                     with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
                         agent = create_smart_agent(
@@ -118,7 +118,7 @@ class TestSmartAgentStatic:
         with tempfile.TemporaryDirectory() as tmp_dir:
             project_dir = Path(tmp_dir)
 
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+            with patch('src.agents.smart_agent.is_docker_available', return_value=False):
                 with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
                     with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
                         agent = create_smart_agent(project_dir=project_dir, use_llm=False)
@@ -140,10 +140,13 @@ class TestSmartAgentStatic:
         with tempfile.TemporaryDirectory() as tmp_dir:
             project_dir = Path(tmp_dir)
 
-            with patch('src.tools.docker_utils.is_docker_available', return_value=True):
+            with patch('src.agents.smart_agent.is_docker_available', return_value=True) as mock_docker:
                 with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', True):
                     with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=Mock()):
                         agent = create_smart_agent(project_dir=project_dir)
+
+                    # Проверяем что Docker проверка была вызвана
+                    mock_docker.assert_called_once()
 
                     assert agent.backstory is not None
                     assert "smart agent" in agent.backstory.lower()
@@ -184,7 +187,7 @@ class TestSmartAgentStatic:
             project_dir = Path(tmp_dir)
             experience_dir = "custom_experience"
 
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+            with patch('src.agents.smart_agent.is_docker_available', return_value=False):
                 with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
                     agent = create_smart_agent(
                         project_dir=project_dir,
@@ -235,7 +238,7 @@ class TestSmartAgentConstants:
             project_dir = Path(tmp_dir)
 
             # Тест с Docker и LLM
-            with patch('src.tools.docker_utils.is_docker_available', return_value=True):
+            with patch('src.agents.smart_agent.is_docker_available', return_value=True):
                 with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', True):
                     with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=Mock()):
                         agent_with_both = create_smart_agent(project_dir=project_dir)
@@ -243,7 +246,7 @@ class TestSmartAgentConstants:
                         assert "with LLM support" in agent_with_both.backstory
 
             # Тест без Docker и LLM
-            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+            with patch('src.agents.smart_agent.is_docker_available', return_value=False):
                 with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
                     with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
                         agent_without_both = create_smart_agent(project_dir=project_dir, use_llm=False)
