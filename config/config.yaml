@@ -6,13 +6,13 @@ project:
   # 
   # ВАЖНО: Разделение директорий:
   #   - codeAgent/ - директория самого агента (где находится .env файл с PROJECT_DIR)
-  #   - ${PROJECT_DIR} - целевой проект для работы агента (например, D:\Space\life)
+  #   - ${PROJECT_DIR} - целевой проект для работы агента (например, D:\Space\cli)
   #
   # Переменная PROJECT_DIR должна быть установлена в .env файле в корне codeAgent/:
-  #   PROJECT_DIR=D:\Space\life
+  #   PROJECT_DIR=D:\Space\cli
   #
   # Примеры:
-  #   Windows: PROJECT_DIR=D:\Space\life
+  #   Windows: PROJECT_DIR=D:\Space\cli
   #   Linux/Mac: PROJECT_DIR=/home/user/projects/myproject
   base_dir: ${PROJECT_DIR}
   
@@ -78,7 +78,7 @@ server:
   # Настройки автоперезапуска
   auto_reload: true              # Включить автоперезапуск
   reload_on_py_changes: true     # Перезапускать при изменении .py файлов
-  max_restarts: 3                # Максимальное количество перезапусков подряд (для предотвращения бесконечных циклов)
+  max_restarts: 5               # Максимальное количество перезапусков подряд (для предотвращения бесконечных циклов)
   
   # Настройки автоматической генерации TODO при пустом списке
   auto_todo_generation:
@@ -177,7 +177,11 @@ cursor:
     force_mode: true
     # Автоматическое одобрение MCP серверов/инструментов
     approve_mcps: true
-  
+    # Имя Docker контейнера для Cursor CLI (для обычных задач)
+    container_name: "cursor-agent"
+    # Имя Docker контейнера для постоянного использования (life-контейнер)
+    container_name_life: "cursor-agent-life"
+
   # Настройки разрешений для полного доступа
   permissions:
     enabled: true
