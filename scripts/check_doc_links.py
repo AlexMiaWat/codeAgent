@@ -102,13 +102,13 @@ def check_documentation_links() -> Tuple[int, int]:
                         'link_path': link_path,
                         'resolved_path': str(resolved_path.relative_to(PROJECT_ROOT))
                     })
-                    print(f"❌ {md_file.relative_to(PROJECT_ROOT)}")
-                    print(f"   Ссылка: [{link_text}]({link_path})")
-                    print(f"   Ожидаемый путь: {resolved_path.relative_to(PROJECT_ROOT)}")
+                    print(f"BROKEN: {md_file.relative_to(PROJECT_ROOT)}")
+                    print(f"   Link: [{link_text}]({link_path})")
+                    print(f"   Expected path: {resolved_path.relative_to(PROJECT_ROOT)}")
                     print()
         
         except Exception as e:
-            print(f"⚠️  Ошибка при обработке {md_file}: {e}")
+            print(f"WARNING: Error processing {md_file}: {e}")
     
     # Итоговая статистика
     print("=" * 70)
@@ -118,11 +118,11 @@ def check_documentation_links() -> Tuple[int, int]:
     print("=" * 70)
     
     if broken_links > 0:
-        print("\n📋 Список сломанных ссылок:")
-        for item in broken_files[:20]:  # Показываем первые 20
+        print("\nBROKEN LINKS LIST:")
+        for item in broken_files[:20]:  # Show first 20
             print(f"  - {item['file']}: [{item['link_text']}]({item['link_path']})")
         if len(broken_files) > 20:
-            print(f"  ... и еще {len(broken_files) - 20} ссылок")
+            print(f"  ... and {len(broken_files) - 20} more links")
     
     return total_links, broken_links
 

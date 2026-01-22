@@ -2,9 +2,16 @@
 Интеграционный тест checkpoint с сервером
 """
 
-import pytest
+import sys
 from pathlib import Path
-from src.checkpoint_manager import CheckpointManager
+import pytest
+
+# Add src to path for imports
+project_root = Path(__file__).parent.parent
+src_path = project_root / "src"
+sys.path.insert(0, str(src_path))
+
+from checkpoint_manager import CheckpointManager
 
 
 def test_checkpoint_basic_integration():

@@ -2,11 +2,17 @@
 Тесты системы контрольных точек и восстановления после сбоев
 """
 
+import sys
 import pytest
 import json
 import time
 from pathlib import Path
-from src.checkpoint_manager import CheckpointManager, TaskState
+
+# Add src to path for imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root / "src"))
+
+from checkpoint_manager import CheckpointManager, TaskState
 
 
 @pytest.fixture

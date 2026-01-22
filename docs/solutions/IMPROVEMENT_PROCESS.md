@@ -231,7 +231,7 @@ fix: Решение проблемы #N - краткое описание
 
 - [SKEPTIC_ANALYSIS_REPORT.md](./SKEPTIC_ANALYSIS_REPORT.md) - Исходный отчет
 - [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.md) - Детальный план
-- [IMPROVEMENT_TODO.md](../../IMPROVEMENT_TODO.md) - TODO-лист
+- [newPlan.md](../../newPlan.md) - План развития проекта
 - [README.md](../../README.md) - Основная документация проекта
 
 ---

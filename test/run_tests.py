@@ -182,6 +182,14 @@ class TestRunner:
         start_time = time.time()
         
         try:
+            # Устанавливаем PYTHONPATH для импортов из src/
+            env = os.environ.copy()
+            src_path = str(project_root / "src")
+            if "PYTHONPATH" in env and env["PYTHONPATH"]:
+                env["PYTHONPATH"] = src_path + os.pathsep + env["PYTHONPATH"]
+            else:
+                env["PYTHONPATH"] = src_path
+
             # Формируем команду запуска
             cmd = [sys.executable, str(test_path)]
             if extra_args:
@@ -201,7 +209,8 @@ class TestRunner:
                 text=True,
                 timeout=timeout,
                 encoding='utf-8',
-                errors='replace'
+                errors='replace',
+                env=env
             )
             
             duration = time.time() - start_time

@@ -6,15 +6,12 @@ llm:
   strategy: best_of_two
   model_roles:
     primary:
-    - allenai/molmo-2-8b:free
     - xiaomi/mimo-v2-flash:free
-    duplicate:
-    - liquid/lfm-2.5-1.2b-instruct:free
-    - nvidia/nemotron-3-nano-30b-a3b:free
+    duplicate: []
     reserve:
-    - liquid/lfm-2.5-1.2b-thinking:free
+    - kwaipilot/kat-coder-pro:free
     fallback:
-    - liquid/lfm-2.5-1.2b-instruct:free
+    - liquid/lfm-2.5-1.2b-thinking:free
     - nvidia/nemotron-3-nano-30b-a3b:free
   parallel:
     enabled: true
@@ -26,12 +23,12 @@ llm:
     - relevance
     - completeness
     - quality
-  _last_updated: '2026-01-21T19:15:00.000000'
-  _update_source: manual_free_models
+  _last_updated: '2026-01-22T11:44:59.342452'
+  _update_source: auto_test_results
   _stats:
     total_tested: 5
-    working_count: 5
-    fastest_model: allenai/molmo-2-8b:free
+    working_count: 1
+    fastest_model: xiaomi/mimo-v2-flash:free
 providers:
   openrouter:
     base_url: https://openrouter.ai/api/v1

@@ -12,7 +12,7 @@ import subprocess
 import shutil
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 import time
 from dataclasses import dataclass
 from dotenv import load_dotenv
@@ -569,7 +569,7 @@ class CursorCLIInterface:
         # Проверяем существование .cursor/rules - Cursor автоматически читает их
         cursor_rules_dir = project_path / ".cursor" / "rules"
         if cursor_rules_dir.exists():
-            logger.debug(f"Директория .cursor/rules существует, роль агента будет настроена через правила")
+            logger.debug("Директория .cursor/rules существует, роль агента будет настроена через правила")
             # Cursor CLI автоматически использует .cursor/rules, дополнительная настройка не требуется
         
         # Можно создать AGENTS.md с описанием роли (опционально)
@@ -666,7 +666,7 @@ This agent role is used for automated project tasks execution.
                 return []
                 
         except subprocess.TimeoutExpired:
-            logger.warning(f"Таймаут выполнения команды list_chats (30 секунд). Контейнер может быть занят или команда выполняется дольше ожидаемого.")
+            logger.warning("Таймаут выполнения команды list_chats (30 секунд). Контейнер может быть занят или команда выполняется дольше ожидаемого.")
             return []  # Возвращаем пустой список, это не критичная ошибка
         except Exception as e:
             logger.error(f"Ошибка в list_chats: {e}")
@@ -754,13 +754,13 @@ This agent role is used for automated project tasks execution.
                 ]
                 
                 try:
-                    result = subprocess.run(
+                    subprocess.run(
                         kill_cmd,
                         capture_output=True,
                         text=True,
                         timeout=15  # Увеличено с 10 до 15 секунд
                     )
-                    
+
                     # Команда с || true всегда возвращает 0
                     # Проверяем, были ли найдены процессы через stderr или попытку поиска
                     # Если pkill не нашел процессы - это нормально (их может не быть)

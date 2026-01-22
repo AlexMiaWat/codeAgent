@@ -29,7 +29,7 @@
 - [x] `docs/checkpoint_recovery.md` - Полная документация
 - [x] `docs/quick_recovery_guide.md` - Краткое руководство
 - [x] `CHECKPOINT_SYSTEM_SUMMARY.md` - Резюме реализации
-- [x] `CHECKPOINT_CHECKLIST.md` - Этот чеклист
+- [x] `checkpoint_checklist.md` - Этот чеклист
 - [x] `README.md` - Обновлен с информацией о checkpoint
 
 ### Примеры
@@ -260,7 +260,7 @@
 - Полная документация (checkpoint_recovery.md)
 - Краткое руководство (quick_recovery_guide.md)
 - Резюме реализации (CHECKPOINT_SYSTEM_SUMMARY.md)
-- Этот чеклист (CHECKPOINT_CHECKLIST.md)
+- Этот чеклист (checkpoint_checklist.md)
 
 ## 🚀 Готовность к использованию
 

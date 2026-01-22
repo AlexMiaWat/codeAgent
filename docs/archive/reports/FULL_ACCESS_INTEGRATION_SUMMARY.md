@@ -18,7 +18,7 @@ Cursor CLI теперь настроен для **автоматического
 5. **`docs/integration/QUICK_START_FULL_ACCESS.md`** - быстрый старт (150+ строк)
 6. **`docs/integration/FULL_ACCESS_INTEGRATION_REPORT.md`** - отчет о работе (400+ строк)
 7. **`test/test_full_access_permissions.py`** - тесты (280+ строк)
-8. **`FULL_ACCESS_CHEATSHEET.md`** - шпаргалка (100+ строк)
+8. **`docs/integration/FULL_ACCESS_CHEATSHEET.md`** - шпаргалка (100+ строк)
 
 ### Измененные файлы
 
