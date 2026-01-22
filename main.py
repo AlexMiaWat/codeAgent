@@ -293,12 +293,8 @@ def main():
         sys.exit(1)
     
     # Настраиваем обработку asyncio исключений один раз в начале
-    try:
-        # Пытаемся настроить обработчик для текущего event loop, если он существует
-        current_loop = asyncio.get_running_loop()
-        setup_asyncio_exception_handling()
-    except RuntimeError:
-        pass  # Event loop еще не создан
+    # Обработчик будет установлен при запуске сервера в asyncio.run()
+    pass
 
     # Запускаем сервер с поддержкой автоперезапуска
     restart_count = 0

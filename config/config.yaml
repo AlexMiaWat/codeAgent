@@ -401,6 +401,7 @@ instructions:
         Запусти тесты связанные с текущим функциналом и текущей задачей из src/test
 
         Агент курсора должен:
+        0. Актуализировать gitignore
         1. Выполнить требуемые команды для запуска тестов
         2. Создать репорты об ошибках по результатам полного тестирования
         3. Отчет в docs/results/test_full_{task_id}.md
@@ -483,6 +484,7 @@ instructions:
       wait_for_file: "docs/results/revision_code_{task_id}.md"
       control_phrase: "Ревизия кода завершена!"
       timeout: 600
+      check_report: true 
       
     - instruction_id: 2
       name: "Ревизия документации"
@@ -512,6 +514,7 @@ instructions:
       wait_for_file: "docs/results/revision_docs_{task_id}.md"
       control_phrase: "Ревизия документации завершена!"
       timeout: 600
+      check_report: true 
       
     - instruction_id: 3
       name: "Удаление лишних файлов"
@@ -522,9 +525,10 @@ instructions:
         **Задачи:**
         1. Удали временные файлы результатов тестов: `results/*.csv`, `results/*.json`
         2. Удали старые логи (старше 1 месяца): `logs/*.log` (кроме текущих)
-        3. Очисти кэши: `__pycache__/`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`
+        3. Очисти кэши: `__pycache__/`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`, metrics/ и т.д. любын артефакты
         4. Удали backup файлы: `*.bak`, `*.backup`
         5. Удали промежуточные отчеты из `docs/testing/` и `docs/archive/reports/`, 'docs/results/', 'docs/reviews/' и т.д.
+        6. Удалить устаревшие тесты. Либо дубли дестов. Слабые и бесполезные тесты.
         
         **ВАЖНО - Проверка ссылок:**
         - Проверь ссылки на файлы перед удалением
@@ -562,6 +566,7 @@ instructions:
         3. Обнови все ссылки в документации (используй `scripts/check_doc_links.py`)
         4. Создай/обнови индексы: `docs/README.md`, `docs/guides/README.md`
         5. Обнови `CHANGELOG.md` с описанием ревизии
+        6. Актуализировать gitignore
         
         **Отчет:**
         Создай отчет в docs/results/revision_optimize_{task_id}.md:
@@ -598,6 +603,7 @@ instructions:
       wait_for_file: "docs/results/revision_final_{task_id}.md"
       control_phrase: "Ревизия проекта завершена!"
       timeout: 600
+      check_report: true 
       
     - instruction_id: 6
       name: "Коммит и отправка результатов ревизии"

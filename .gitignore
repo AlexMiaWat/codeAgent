@@ -266,3 +266,4 @@ package-lock.json
 *.iso
 nul
 .codeagent_fallback_state.json
+.codeagent_fallback_state.json

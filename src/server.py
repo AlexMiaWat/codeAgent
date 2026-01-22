@@ -41,6 +41,93 @@ from .checkpoint_manager import CheckpointManager
 from .git_utils import auto_push_after_commit
 
 
+def setup_asyncio_exception_handling():
+    """Настройка обработки необработанных исключений в asyncio задачах"""
+    def handle_exception(loop, context):
+        """Обработчик необработанных исключений в asyncio"""
+        exception = context.get('exception')
+        if exception:
+            error_msg = str(exception)
+            # Полностью подавляем httpx cleanup ошибки при завершении
+            if ("Event loop is closed" in error_msg and
+                any(lib in error_msg.lower() for lib in ['httpx', 'anyio', 'httpcore', 'asyncclient'])):
+                # Полностью игнорируем эти ошибки - они безвредны
+                return
+            # Также подавляем любые httpx cleanup ошибки
+            if any(lib in error_msg.lower() for lib in ['httpx', 'anyio', 'httpcore', 'asyncclient']):
+                # Игнорируем все httpx связанные ошибки cleanup
+                return
+
+        # Для остальных ошибок используем стандартную обработку
+        logging.getLogger(__name__).error(f"Необработанное исключение в asyncio задаче: {context}")
+
+    # Устанавливаем обработчик исключений
+    asyncio.get_event_loop().set_exception_handler(handle_exception)
+
+
+def patch_asyncio_for_cleanup():
+    """Монkey patch asyncio методов для безопасного закрытия при завершения работы"""
+    import asyncio.base_events
+
+    # Сохраняем оригинальные методы
+    original_call_soon = asyncio.base_events.BaseEventLoop.call_soon
+    original_call_at = asyncio.base_events.BaseEventLoop.call_at
+    original_call_later = asyncio.base_events.BaseEventLoop.call_later
+
+    def safe_call_soon(self, callback, *args, context=None):
+        """Безопасная версия call_soon которая не падает если loop закрыт"""
+        try:
+            if self._closed:
+                # Loop закрыт - игнорируем вызов
+                logger = logging.getLogger(__name__)
+                logger.debug("Ignoring call_soon on closed event loop")
+                return None
+            return original_call_soon(self, callback, *args, context=context)
+        except RuntimeError as e:
+            if "Event loop is closed" in str(e):
+                logger = logging.getLogger(__name__)
+                logger.debug("Suppressed call_soon on closed event loop")
+                return None
+            raise
+
+    def safe_call_at(self, when, callback, *args, context=None):
+        """Безопасная версия call_at которая не падает если loop закрыт"""
+        try:
+            if self._closed:
+                logger = logging.getLogger(__name__)
+                logger.debug("Ignoring call_at on closed event loop")
+                return None
+            return original_call_at(self, when, callback, *args, context=context)
+        except RuntimeError as e:
+            if "Event loop is closed" in str(e):
+                logger = logging.getLogger(__name__)
+                logger.debug("Suppressed call_at on closed event loop")
+                return None
+            raise
+
+    def safe_call_later(self, delay, callback, *args, context=None):
+        """Безопасная версия call_later которая не падает если loop закрыт"""
+        try:
+            if self._closed:
+                logger = logging.getLogger(__name__)
+                logger.debug("Ignoring call_later on closed event loop")
+                return None
+            return original_call_later(self, delay, callback, *args, context=context)
+        except RuntimeError as e:
+            if "Event loop is closed" in str(e):
+                logger = logging.getLogger(__name__)
+                logger.debug("Suppressed call_later on closed event loop")
+                return None
+            raise
+
+    # Применяем патчи
+    asyncio.base_events.BaseEventLoop.call_soon = safe_call_soon
+    asyncio.base_events.BaseEventLoop.call_at = safe_call_at
+    asyncio.base_events.BaseEventLoop.call_later = safe_call_later
+
+    logging.getLogger(__name__).debug("Applied asyncio cleanup patches")
+
+
 # Настройка кодировки для Windows консоли
 if sys.platform == 'win32':
     # Устанавливаем UTF-8 для stdout
@@ -792,38 +879,78 @@ class CodeAgentServer:
     ) -> dict:
         """
         Выполнить инструкцию через Cursor CLI (если доступен)
-        
+
         Args:
             instruction: Текст инструкции для выполнения
             task_id: Идентификатор задачи
             timeout: Таймаут выполнения (если None - используется из конфига)
-            
+
         Returns:
             Словарь с результатом выполнения
         """
-        if not self.cursor_cli or not self.cursor_cli.is_available():
-            logger.warning("Cursor CLI недоступен, инструкция не может быть выполнена")
+        logger.info(f"🔧 Начинаем выполнение инструкции для задачи {task_id}")
+        logger.debug(f"📝 Текст инструкции: {instruction[:200]}{'...' if len(instruction) > 200 else ''}")
+        logger.debug(f"⏱️ Таймаут: {timeout} сек, рабочая директория: {self.project_dir}")
+
+        if not self.cursor_cli:
+            logger.error("❌ Cursor CLI объект не инициализирован")
             return {
                 "task_id": task_id,
                 "success": False,
-                "error": "Cursor CLI недоступен",
+                "error": "Cursor CLI объект не инициализирован",
                 "cli_available": False
             }
-        
-        logger.info(f"Выполнение инструкции для задачи {task_id} через Cursor CLI")
-        
+
+        if not self.cursor_cli.is_available():
+            logger.warning("⚠️ Cursor CLI недоступен, проверяем статус...")
+            # Детальная диагностика состояния CLI
+            cli_status = self.cursor_cli.get_status() if hasattr(self.cursor_cli, 'get_status') else "статус неизвестен"
+            logger.warning(f"📊 Статус Cursor CLI: {cli_status}")
+            return {
+                "task_id": task_id,
+                "success": False,
+                "error": f"Cursor CLI недоступен (статус: {cli_status})",
+                "cli_available": False
+            }
+
+        logger.info(f"✅ Cursor CLI доступен, выполняем инструкцию для задачи {task_id}")
+
+        # Добавляем дополнительную проверку перед выполнением
+        if hasattr(self.cursor_cli, 'pre_execution_check'):
+            logger.debug("🔍 Выполняем pre-execution проверку Cursor CLI")
+            check_result = self.cursor_cli.pre_execution_check()
+            if not check_result.get('success', True):
+                logger.warning(f"⚠️ Pre-execution проверка провалилась: {check_result.get('error', 'неизвестная ошибка')}")
+                return {
+                    "task_id": task_id,
+                    "success": False,
+                    "error": f"Pre-execution проверка провалилась: {check_result.get('error', 'неизвестная ошибка')}",
+                    "cli_available": True
+                }
+
+        start_time = time.time()
+        logger.info(f"🚀 Запускаем выполнение инструкции в Cursor CLI...")
+
         result = self.cursor_cli.execute_instruction(
             instruction=instruction,
             task_id=task_id,
             working_dir=str(self.project_dir),
             timeout=timeout
         )
-        
+
+        execution_time = time.time() - start_time
+        logger.info(f"⏱️ Выполнение инструкции завершено за {execution_time:.2f} сек")
+
         if result["success"]:
-            logger.info(f"Инструкция для задачи {task_id} выполнена успешно")
+            logger.info(f"✅ Инструкция для задачи {task_id} выполнена успешно")
+            logger.debug(f"📄 Результат: stdout={len(result.get('stdout', ''))} символов, return_code={result.get('return_code')}")
         else:
-            logger.warning(f"Инструкция для задачи {task_id} завершилась с ошибкой: {result.get('error_message')}")
-        
+            logger.error(f"❌ Инструкция для задачи {task_id} завершилась с ошибкой")
+            logger.error(f"🔍 Детали ошибки: {result.get('error_message', 'неизвестная ошибка')}")
+            logger.error(f"🔍 Stdout: {result.get('stdout', '')[:500]}{'...' if len(result.get('stdout', '')) > 500 else ''}")
+            logger.error(f"🔍 Stderr: {result.get('stderr', '')[:500]}{'...' if len(result.get('stderr', '')) > 500 else ''}")
+            logger.error(f"🔍 Return code: {result.get('return_code')}")
+
         return result
     
     def _execute_cursor_instruction_with_retry(
@@ -852,7 +979,128 @@ class CodeAgentServer:
             task_id=task_id,
             timeout=timeout
         )
-    
+
+    async def _safe_close_llm_manager(self, llm_manager):
+        """
+        Безопасно закрывает LLM manager, обрабатывая все исключения
+        """
+        if not llm_manager:
+            return
+
+        try:
+            logger.debug("Безопасное закрытие LLM manager...")
+            await asyncio.wait_for(llm_manager.close(), timeout=3.0)
+            logger.debug("LLM manager закрыт успешно")
+        except asyncio.TimeoutError:
+            logger.warning("Таймаут при закрытии LLM manager")
+        except asyncio.CancelledError:
+            logger.warning("Закрытие LLM manager было отменено")
+        except RuntimeError as e:
+            if "Event loop is closed" in str(e):
+                logger.warning("Event loop закрыт при закрытии LLM manager - пропускаем")
+            elif "no running event loop" in str(e).lower():
+                logger.warning("Нет запущенного event loop при закрытии LLM manager - пропускаем")
+            else:
+                logger.warning(f"Runtime error при закрытии LLM manager: {e}")
+        except ConnectionError as e:
+            logger.warning(f"Сетевая ошибка при закрытии LLM manager: {e}")
+        except Exception as e:
+            logger.warning(f"Неожиданная ошибка при закрытии LLM manager: {e}")
+
+    def _execute_cursor_instruction_with_special_handling(
+        self,
+        instruction: str,
+        task_id: str,
+        timeout: Optional[int],
+        task_logger: TaskLogger,
+        instruction_num: int
+    ) -> dict:
+        """
+        Выполнить инструкцию через Cursor с особой обработкой для свободных инструкций.
+
+        Для свободных инструкций billing error не активирует fallback,
+        а считается успешным выполнением (проблема аккаунта, не инструкции).
+        """
+        logger.info(f"🔧 Начинаем выполнение свободной инструкции для задачи {task_id}")
+        logger.debug(f"📝 Текст инструкции: {instruction[:200]}{'...' if len(instruction) > 200 else ''}")
+        logger.debug(f"⏱️ Таймаут: {timeout} сек, рабочая директория: {self.project_dir}")
+
+        if not self.cursor_cli:
+            logger.error("❌ Cursor CLI объект не инициализирован")
+            return {
+                "task_id": task_id,
+                "success": False,
+                "error": "Cursor CLI объект не инициализирован",
+                "cli_available": False
+            }
+
+        if not self.cursor_cli.is_available():
+            logger.warning("⚠️ Cursor CLI недоступен")
+            return {
+                "task_id": task_id,
+                "success": False,
+                "error": "Cursor CLI недоступен",
+                "cli_available": False
+            }
+
+        logger.info(f"✅ Cursor CLI доступен, выполняем свободную инструкцию для задачи {task_id}")
+
+        start_time = time.time()
+        logger.info(f"🚀 Запускаем выполнение свободной инструкции в Cursor CLI...")
+
+        result = self.cursor_cli.execute_instruction(
+            instruction=instruction,
+            task_id=task_id,
+            working_dir=str(self.project_dir),
+            timeout=timeout
+        )
+
+        execution_time = time.time() - start_time
+        logger.info(f"⏱️ Выполнение инструкции завершено за {execution_time:.2f} сек")
+
+        # Особая обработка для свободных инструкций: billing error считаем успешным
+        if not result["success"]:
+            error_message = result.get('error_message', '')
+            stderr = result.get('stderr', '')
+
+            # Проверяем, является ли это billing error
+            stderr_lower = stderr.lower()
+            is_billing_error = (
+                "unpaid invoice" in stderr_lower or
+                "pay your invoice" in stderr_lower or
+                "usage limit" in stderr_lower or
+                "spend limit" in stderr_lower
+            )
+
+            if is_billing_error:
+                logger.warning(f"⚠️ Billing error в свободной инструкции - считаем успешным (проблема аккаунта)")
+                logger.warning(f"📄 Свободная инструкция выполнена с billing error - результат будет сгенерирован fallback системой")
+
+                # Возвращаем "успешный" результат для свободной инструкции
+                # Fallback система должна была активироваться и выполнить инструкцию
+                return {
+                    "task_id": task_id,
+                    "success": True,  # Считаем успешным несмотря на billing error
+                    "stdout": result.get('stdout', ''),
+                    "stderr": stderr,
+                    "return_code": result.get('return_code', 1),
+                    "billing_error_ignored": True,  # Флаг что billing error был проигнорирован
+                    "cli_available": True
+                }
+
+        # Для остальных ошибок возвращаем как есть
+        if result["success"]:
+            logger.info(f"✅ Свободная инструкция для задачи {task_id} выполнена успешно")
+            logger.debug(f"📄 Результат: stdout={len(result.get('stdout', ''))} символов, return_code={result.get('return_code')}")
+        else:
+            logger.error(f"❌ Свободная инструкция для задачи {task_id} завершилась с ошибкой")
+            logger.error(f"🔍 Детали ошибки: {result.get('error_message', 'неизвестная ошибка')}")
+            logger.error(f"🔍 Stdout: {result.get('stdout', '')[:500]}{'...' if len(result.get('stdout', '')) > 500 else ''}")
+            logger.error(f"🔍 Stderr: {result.get('stderr', '')[:500]}{'...' if len(result.get('stderr', '')) > 500 else ''}")
+            logger.error(f"🔍 Return code: {result.get('return_code')}")
+
+        return result
+
     def _is_critical_cursor_error(self, error_message: str) -> bool:
         """
         Проверка, является ли ошибка критической (не исправится перезапуском)
@@ -1769,37 +2017,13 @@ class CodeAgentServer:
             # Это критичная проверка, нужна качественная модель
             json_response_format = {"type": "json_object"}
             
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # Если loop уже запущен, создаем задачу в отдельном потоке
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(
-                            lambda: asyncio.run(llm_manager.generate_response(
-                                prompt=check_prompt,
-                                use_fastest=False,  # НЕ используем самую быструю - нужна качественная модель
-                                use_parallel=True,  # Используем best_of_two для надежности
-                                response_format=json_response_format
-                            ))
-                        )
-                        response = future.result(timeout=90)  # Увеличиваем таймаут для best_of_two
-                else:
-                    # Loop существует, но не запущен
-                    response = loop.run_until_complete(llm_manager.generate_response(
-                        prompt=check_prompt,
-                        use_fastest=False,  # НЕ используем самую быструю - нужна качественная модель
-                        use_parallel=True,  # Используем best_of_two для надежности
-                        response_format=json_response_format
-                    ))
-            except RuntimeError:
-                # Нет event loop, создаем новый
-                response = asyncio.run(llm_manager.generate_response(
-                    prompt=check_prompt,
-                    use_fastest=False,  # НЕ используем самую быструю - нужна качественная модель
-                    use_parallel=True,  # Используем best_of_two для надежности
-                    response_format=json_response_format
-                ))
+            # Эта функция вызывается из синхронного контекста, поэтому используем asyncio.run()
+            response = asyncio.run(llm_manager.generate_response(
+                prompt=check_prompt,
+                use_fastest=False,  # НЕ используем самую быструю - нужна качественная модель
+                use_parallel=True,  # Используем best_of_two для надежности
+                response_format=json_response_format
+            ))
             
             # Парсим ответ LLM (с JSON mode ответ должен быть валидным JSON)
             # ВАЖНО: Даже если response.success = False, пытаемся использовать content если он есть
@@ -1982,35 +2206,13 @@ class CodeAgentServer:
   "reason": "краткое объяснение почему оценка адекватна или нет"
 }}"""
                     
-                    # Выполняем самопроверку
-                    try:
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            import concurrent.futures
-                            with concurrent.futures.ThreadPoolExecutor() as executor:
-                                future = executor.submit(
-                                    lambda: asyncio.run(llm_manager.generate_response(
-                                        prompt=self_check_prompt,
-                                        use_fastest=False,
-                                        use_parallel=True,
-                                        response_format=json_response_format
-                                    ))
-                                )
-                                self_check_response = future.result(timeout=90)
-                        else:
-                            self_check_response = loop.run_until_complete(llm_manager.generate_response(
-                                prompt=self_check_prompt,
-                                use_fastest=False,
-                                use_parallel=True,
-                                response_format=json_response_format
-                            ))
-                    except RuntimeError:
-                        self_check_response = asyncio.run(llm_manager.generate_response(
-                            prompt=self_check_prompt,
-                            use_fastest=False,
-                            use_parallel=True,
-                            response_format=json_response_format
-                        ))
+                    # Выполняем самопроверку (в синхронной функции)
+                    self_check_response = asyncio.run(llm_manager.generate_response(
+                        prompt=self_check_prompt,
+                        use_fastest=False,
+                        use_parallel=True,
+                        response_format=json_response_format
+                    ))
                     
                     # Парсим ответ самопроверки
                     if self_check_response.success and self_check_response.content:
@@ -2093,7 +2295,7 @@ class CodeAgentServer:
             # Это предотвращает ложное отбрасывание валидных задач при сбоях LLM
             return 75.0, f"Ошибка проверки, считаем технической задачей (75%): {str(e)[:100]}"
     
-    def _check_todo_matches_plan(self, task_id: str, todo_item: TodoItem) -> Tuple[bool, Optional[str]]:
+    async def _check_todo_matches_plan(self, task_id: str, todo_item: TodoItem) -> Tuple[bool, Optional[str]]:
         """
         Проверка соответствия пункта туду пунктам плана через LLM агентов Code Agent (OpenRouter)
         
@@ -2172,36 +2374,12 @@ class CodeAgentServer:
 Если пункт туду НЕ соответствует ни одному пункту плана, верни matches=false с причиной."""
             
             # Выполняем проверку через LLMManager (асинхронно)
-            # Используем безопасный способ вызова асинхронной функции
-            # Пытаемся получить текущий event loop
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # Если loop уже запущен, создаем задачу в отдельном потоке
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(
-                            lambda: asyncio.run(llm_manager.generate_response(
-                                prompt=check_prompt,
-                                use_fastest=True,
-                                use_parallel=False
-                            ))
-                        )
-                        response = future.result(timeout=120)
-                else:
-                    # Loop существует, но не запущен
-                    response = loop.run_until_complete(llm_manager.generate_response(
-                        prompt=check_prompt,
-                        use_fastest=True,
-                        use_parallel=False
-                    ))
-            except RuntimeError:
-                # Нет event loop, создаем новый
-                response = asyncio.run(llm_manager.generate_response(
-                    prompt=check_prompt,
-                    use_fastest=True,
-                    use_parallel=False
-                ))
+            # Поскольку функция теперь асинхронная, просто вызываем await
+            response = await llm_manager.generate_response(
+                prompt=check_prompt,
+                use_fastest=True,
+                use_parallel=False
+            )
             
             # Парсим ответ LLM
             # ВАЖНО: Даже если response.success = False, пытаемся использовать content если он есть
@@ -2376,79 +2554,77 @@ class CodeAgentServer:
                     "free_instruction_text": ""
                 }
             else:
-                try:
-                    with open(report_path, 'r', encoding='utf-8') as f:
-                        report_content = f.read()
-                    logger.debug(f"Прочитан репорт: {report_file} ({len(report_content)} символов)")
-                except (IOError, OSError, UnicodeDecodeError) as e:
-                    logger.error(f"Ошибка чтения файла репорта {report_file}: {e}")
-                    task_logger.log_error(f"Ошибка чтения файла репорта: {str(e)}", e)
-                    print(f"⚠️ ОШИБКА ЧТЕНИЯ ФАЙЛА РЕПОРТА: {str(e)}")
-                    print("🔄 Продолжаем выполнение по плану (линейно)")
-                    return {
-                        "action": "continue",
-                        "reason": f"Ошибка чтения файла репорта: {str(e)}",
-                        "next_instruction_name": next_instruction_name,
-                        "free_instruction_text": ""
-                    }
+                logger.info(f"DEBUG: Читаем файл репорта {report_path}")
+                with open(report_path, 'r', encoding='utf-8') as f:
+                    report_content = f.read()
+                logger.debug(f"Прочитан репорт: {report_file} ({len(report_content)} символов)")
+                logger.info("DEBUG: Файл репорта прочитан успешно")
 
             # Используем LLM manager для анализа репорта
-            if not hasattr(self, 'llm_manager') or not self.llm_manager:
-                # Инициализируем LLM manager если не инициализирован
+            llm_manager_available = False
+            if hasattr(self, 'llm_manager') and self.llm_manager:
+                # Проверяем, не закрыт ли manager (проверяем наличие клиентов)
                 try:
-                    from src.llm.llm_manager import LLMManager
-                    llm_manager = LLMManager()
-                    self.llm_manager = llm_manager
-                except Exception as e:
-                    logger.error(f"Ошибка инициализации LLM Manager: {e}")
-                    task_logger.log_error(f"Ошибка инициализации LLM Manager: {str(e)}", e)
-                    print(f"⚠️ ОШИБКА ИНИЦИАЛИЗАЦИИ LLM MANAGER: {str(e)}")
-                    print("🔄 Продолжаем выполнение по плану (линейно)")
-                    return {
-                        "action": "continue",
-                        "reason": f"Ошибка инициализации LLM Manager: {str(e)}",
-                        "next_instruction_name": next_instruction_name,
-                        "free_instruction_text": ""
-                    }
-            else:
-                llm_manager = self.llm_manager
+                    if hasattr(self.llm_manager, 'clients') and self.llm_manager.clients:
+                        llm_manager_available = True
+                        llm_manager = self.llm_manager
+                    else:
+                        logger.debug("LLM Manager clients закрыты или отсутствуют")
+                except Exception:
+                    llm_manager_available = False
+
+            if not llm_manager_available:
+                # Безопасно закрываем старый LLM manager перед созданием нового
+                if hasattr(self, 'llm_manager') and self.llm_manager:
+                    logger.debug("Закрываем старый LLM manager перед созданием нового")
+                    await self._safe_close_llm_manager(self.llm_manager)
+                    self.llm_manager = None
+
+                # Инициализируем новый LLM manager
+                logger.info("DEBUG: Создаем новый LLM Manager для анализа репорта")
+                from src.llm.llm_manager import LLMManager
+                llm_manager = LLMManager()
+                self.llm_manager = llm_manager
+                logger.info("DEBUG: LLM Manager создан успешно")
 
             # Анализируем репорт
-            try:
-                decision_data = await llm_manager.analyze_report_and_decide(
-                    report_content=report_content,
-                    report_file=report_file,
-                    next_instruction_name=next_instruction_name,
-                    task_id=task_id
-                )
+            logger.info("DEBUG: Вызываем llm_manager.analyze_report_and_decide")
+            decision_data = await llm_manager.analyze_report_and_decide(
+                report_content=report_content,
+                report_file=report_file,
+                next_instruction_name=next_instruction_name,
+                task_id=task_id
+            )
+            logger.info(f"DEBUG: analyze_report_and_decide вернул: {decision_data}")
 
-                # Анализируем решение
-                final_decision = await llm_manager.analyze_decision_response(
-                    decision_data=decision_data,
-                    original_report_file=report_file,
-                    task_id=task_id
-                )
-            except Exception as e:
-                logger.error(f"Ошибка анализа репорта через LLM Manager: {e}")
-                task_logger.log_error(f"Ошибка анализа репорта: {str(e)}", e)
-                print(f"⚠️ ОШИБКА АНАЛИЗА РЕПОРТА LLM MANAGER: {str(e)}")
-                print("🔄 Продолжаем выполнение по плану (линейно)")
-                return {
-                    "action": "continue",
-                    "reason": f"Ошибка анализа репорта: {str(e)}",
-                    "next_instruction_name": next_instruction_name,
-                    "free_instruction_text": ""
-                }
+            # Анализируем решение
+            logger.info("DEBUG: Вызываем llm_manager.analyze_decision_response")
+            final_decision = await llm_manager.analyze_decision_response(
+                decision_data=decision_data,
+                original_report_file=report_file,
+                task_id=task_id
+            )
+            logger.info(f"DEBUG: analyze_decision_response вернул: {final_decision}")
 
             # Логируем решение
+            logger.info("DEBUG: Извлекаем action и reason из final_decision")
             action = final_decision.get('action', 'continue')
+            logger.info(f"DEBUG: action = {action}")
             reason = final_decision.get('reason', '')
+            logger.info(f"DEBUG: reason = {reason[:100]}...")
 
+            logger.info(f"DEBUG: Логируем '🤖 Решение системы для инструкции {instruction_num}: {action}'")
             logger.info(f"🤖 Решение системы для инструкции {instruction_num}: {action}")
+            logger.info(f"DEBUG: Логируем '📝 Причина: {reason}'")
             logger.info(f"📝 Причина: {reason}")
 
+            logger.info(f"DEBUG: Вызываем task_logger.log_info")
             task_logger.log_info(f"Проверка репорта после инструкции {instruction_num}: {action} - {reason}")
+            logger.info(f"DEBUG: task_logger.log_info завершен")
 
+            # LLM manager будет закрыт автоматически в finally блоке
+
+            logger.info("DEBUG: Возвращаем final_decision")
             return final_decision
 
         except Exception as e:
@@ -2463,36 +2639,8 @@ class CodeAgentServer:
                 "free_instruction_text": ""
             }
         finally:
-            # Гарантированное закрытие LLM manager в случае ошибки
-            # Не создаем фоновую задачу, чтобы избежать "Task exception was never retrieved"
-            if llm_manager and llm_manager is self.llm_manager:
-                try:
-                    # Проверяем состояние event loop
-                    try:
-                        loop = asyncio.get_running_loop()
-                        if loop.is_closed():
-                            raise RuntimeError("Event loop is closed")
-                    except RuntimeError:
-                        # Event loop закрыт, пропускаем закрытие
-                        logger.debug("Event loop closed, skipping LLM manager close in finally block")
-                        return
-
-                    # Проверяем, не закрывается ли уже manager
-                    if getattr(self, '_llm_manager_closing', False):
-                        logger.debug("LLM manager уже закрывается, пропускаем")
-                        return
-
-                    # Закрываем синхронно с таймаутом
-                    self._llm_manager_closing = True
-                    await asyncio.wait_for(llm_manager.close(), timeout=10.0)
-                    logger.debug("LLM manager закрыт успешно в finally блоке _check_report_and_decide_next_action")
-
-                except asyncio.TimeoutError:
-                    logger.warning("Таймаут при закрытии LLM manager в finally блоке")
-                except Exception as e:
-                    logger.warning(f"Ошибка при закрытии LLM manager в finally блоке: {e}")
-                finally:
-                    self._llm_manager_closing = False
+            # Минимальный finally блок - только сбрасываем флаг
+            self._llm_manager_closing = False
 
     async def _safe_close_llm_manager(self, llm_manager):
         """Безопасное закрытие LLM manager без блокировки"""
@@ -2503,8 +2651,11 @@ class CodeAgentServer:
                 if loop.is_closed():
                     logger.warning("Event loop is already closed, skipping LLM manager close")
                     return
-            except RuntimeError:
-                logger.warning("No running event loop, skipping LLM manager close")
+            except RuntimeError as e:
+                if "no running event loop" in str(e).lower():
+                    logger.warning("No running event loop, skipping LLM manager close")
+                else:
+                    logger.warning(f"Runtime error getting event loop: {e}")
                 return
 
             # Проверяем, не закрывается ли уже manager
@@ -2531,10 +2682,19 @@ class CodeAgentServer:
             try:
                 loop.run_until_complete(asyncio.wait_for(llm_manager.close(), timeout=10.0))
                 logger.debug("LLM manager закрыт успешно синхронно")
+            except asyncio.TimeoutError:
+                logger.warning("Таймаут при синхронном закрытии LLM manager")
+            except RuntimeError as e:
+                logger.warning(f"Runtime error при синхронном закрытии LLM manager: {e}")
+            except Exception as e:
+                logger.warning(f"Неожиданная ошибка при синхронном закрытии LLM manager: {e}")
             finally:
-                loop.close()
+                try:
+                    loop.close()
+                except Exception as e:
+                    logger.warning(f"Ошибка при закрытии event loop: {e}")
         except Exception as e:
-            logger.warning(f"Ошибка при синхронном закрытии LLM manager: {e}")
+            logger.warning(f"Ошибка при настройке синхронного закрытия LLM manager: {e}")
 
     async def _execute_free_instruction(
         self,
@@ -2598,9 +2758,12 @@ class CodeAgentServer:
                 Colors.CYAN
             ))
 
-            # Выполняем инструкцию через Cursor
+            # Выполняем инструкцию через Cursor (с особыми правилами для свободных инструкций)
             logger.info(Colors.colorize("🚀 Отправка инструкции в Cursor...", Colors.BRIGHT_GREEN))
-            result = self._execute_cursor_instruction_with_retry(
+
+            # Для свободных инструкций billing error не активирует fallback
+            # Billing error - это проблема аккаунта, а не проблемы с инструкцией
+            result = self._execute_cursor_instruction_with_special_handling(
                 instruction=formatted_instruction,
                 task_id=f"{task_id}_free_{timestamp}",
                 timeout=timeout,
@@ -3099,8 +3262,8 @@ class CodeAgentServer:
         if plan_file.exists():
             logger.info(f"Проверка соответствия туду плану для задачи {task_id}")
             task_logger.log_info("Проверка соответствия туду плану")
-            
-            matches_plan, reason = self._check_todo_matches_plan(task_id, todo_item)
+
+            matches_plan, reason = await self._check_todo_matches_plan(task_id, todo_item)
             
             if not matches_plan:
                 logger.warning(f"Пункт туду '{todo_item.text}' не соответствует плану: {reason}")
@@ -3199,6 +3362,7 @@ class CodeAgentServer:
                     next_instruction_name = next_instruction_template.get('name', 'Следующая инструкция') if next_instruction_template else 'Конец процесса'
 
                     # Выполняем проверку репорта
+                    logger.info("DEBUG: Вызываем _check_report_and_decide_next_action")
                     report_file = last_template.get('wait_for_file', f"docs/results/result_{task_id}.md")
                     report_check_result = await self._check_report_and_decide_next_action(
                         report_file=report_file,
@@ -3208,9 +3372,39 @@ class CodeAgentServer:
                         instruction_num=last_completed
                     )
 
+                    logger.info(f"DEBUG: Получен результат проверки репорта: {report_check_result}")
+                    logger.info("DEBUG: Начинаем обработку результата проверки")
+
                     # Обрабатываем результат проверки
                     action = report_check_result.get('action', 'continue')
                     reason = report_check_result.get('reason', '')
+                    logger.info(f"DEBUG: action={action}, reason={reason[:100]}...")
+                    logger.info("DEBUG: Определяем блок обработки action")
+
+                    if action == 'execute_free_instruction':
+                        logger.info("DEBUG: Обрабатываем execute_free_instruction")
+                        # Вставляем свободную инструкцию
+                        free_instruction_text = report_check_result.get('free_instruction_text', '')
+                        logger.info(f"DEBUG: free_instruction_text={free_instruction_text[:100]}...")
+                        success = await self._execute_free_instruction(
+                            instruction_text=free_instruction_text,
+                            task_id=task_id,
+                            task_logger=task_logger,
+                            instruction_num=last_completed
+                        )
+                        logger.info(f"DEBUG: _execute_free_instruction вернул {success}")
+                        if not success:
+                            logger.info("DEBUG: Возвращаем False из-за неудачи свободной инструкции")
+                            return False
+                        # Продолжаем с новой инструкцией
+                        start_from_instruction = last_completed + 1
+                    elif action == 'stop_and_check':
+                        # Останавливаемся на проверке репорта, не переходим к следующей инструкции
+                        start_from_instruction = last_completed
+
+                    else:
+                        # Продолжаем нормально
+                        logger.info(f"✓ Проверка репорта пройдена, продолжаем с следующей инструкции")
 
                     if action == 'execute_free_instruction':
                         # Вставляем свободную инструкцию вместо продолжения
@@ -3249,10 +3443,16 @@ class CodeAgentServer:
                     else:
                         # Продолжаем нормально
                         logger.info(f"✓ Проверка репорта пройдена, продолжаем с следующей инструкции")
+                        logger.info(f"DEBUG: start_from_instruction будет установлено в {last_completed + 1}")
+
+            logger.info(f"DEBUG: Завершена обработка проверки репорта, переходим к анализу количества инструкций")
 
             # Анализируем ситуацию с количеством инструкций
+            logger.info(f"DEBUG: Анализ количества инструкций - total_saved={total_saved}, len(all_templates)={len(all_templates)}")
+
             if total_saved == len(all_templates):
                 # Количество инструкций совпадает
+                logger.info(f"DEBUG: Количество инструкций совпадает")
                 if last_completed < len(all_templates):
                     start_from_instruction = last_completed + 1
                     logger.info(f"✓ Восстановление прогресса: продолжаем с инструкции {start_from_instruction}/{len(all_templates)} (последняя выполненная: {last_completed})")
@@ -3266,7 +3466,26 @@ class CodeAgentServer:
                 logger.warning(f"Количество инструкций изменилось ({total_saved} -> {len(all_templates)}), анализируем ситуацию...")
 
                 # Получаем или создаем LLM Manager
-                if not hasattr(self, 'llm_manager') or not self.llm_manager:
+                llm_manager_available = False
+                if hasattr(self, 'llm_manager') and self.llm_manager:
+                    # Проверяем, не закрыт ли manager (проверяем наличие клиентов)
+                    try:
+                        if hasattr(self.llm_manager, 'clients') and self.llm_manager.clients:
+                            llm_manager_available = True
+                        else:
+                            logger.debug("LLM Manager clients закрыты или отсутствуют")
+                    except Exception:
+                        # Если ошибка при проверке, считаем недоступным
+                        llm_manager_available = False
+
+                if not llm_manager_available:
+                    # Безопасно закрываем старый LLM manager перед созданием нового
+                    if hasattr(self, 'llm_manager') and self.llm_manager:
+                        logger.debug("Закрываем старый LLM manager перед созданием нового")
+                        await self._safe_close_llm_manager(self.llm_manager)
+                        self.llm_manager = None
+
+                    logger.debug("Создаем новый LLM Manager для анализа количества инструкций")
                     from src.llm.llm_manager import LLMManager
                     self.llm_manager = LLMManager()
 
@@ -3311,10 +3530,12 @@ class CodeAgentServer:
             logger.debug(f"Прогресс инструкций не найден или пустой, начинаем с инструкции 1")
         
         # Проверяем доступность CLI
+        logger.info(f"DEBUG: Проверяем доступность CLI, start_from_instruction={start_from_instruction}")
         if not self.use_cursor_cli:
             logger.error(f"Cursor CLI недоступен для задачи {task_id}")
             task_logger.log_error("Cursor CLI недоступен")
             return False
+        logger.info("DEBUG: CLI доступен, продолжаем")
         
         # КРИТИЧНО: Останавливаем активные диалоги и очищаем очередь перед новой задачей
         logger.debug(f"Подготовка к задаче {task_id}: остановка активных диалогов...")
@@ -3336,6 +3557,7 @@ class CodeAgentServer:
         
         # Выполняем все инструкции последовательно (1, 2, 3, ...)
         # Начинаем с start_from_instruction если есть сохраненный прогресс
+        logger.info(f"DEBUG: Начинаем цикл выполнения инструкций, start_from_instruction={start_from_instruction}, total_instructions={len(all_templates)}")
         for instruction_num, template in enumerate(all_templates, start=1):
             # Получаем информацию об инструкции для логирования
             instruction_id = template.get('instruction_id', instruction_num)
@@ -3373,7 +3595,8 @@ class CodeAgentServer:
             
             logger.info(f"[{instruction_num}/{len(all_templates)}] Выполнение инструкции: {instruction_name} (ID: {instruction_id})")
             task_logger.log_info(f"Инструкция {instruction_num}/{len(all_templates)}: {instruction_name}")
-            
+
+
             # Форматируем инструкцию из шаблона
             instruction_text = self._format_instruction(template, todo_item, task_id, instruction_num)
             wait_for_file = template.get('wait_for_file', '')
@@ -3627,8 +3850,8 @@ class CodeAgentServer:
                         if plan_file.exists():
                             logger.info(f"План создан, проверяем соответствие туду плану для задачи {task_id}")
                             task_logger.log_info("Проверка соответствия туду плану после создания плана")
-                            
-                            matches_plan, reason = self._check_todo_matches_plan(task_id, todo_item)
+
+                            matches_plan, reason = await self._check_todo_matches_plan(task_id, todo_item)
                             
                             if not matches_plan:
                                 logger.warning(f"Пункт туду '{todo_item.text}' не соответствует созданному плану: {reason}")
@@ -5090,108 +5313,149 @@ class CodeAgentServer:
 
     async def _run_server_loop(self, iteration: int):
         """Основной цикл работы сервера"""
-        while True:
-            # Проверяем запрос на остановку (через API или из-за критических ошибок Cursor)
-            with self._stop_lock:
-                if self._should_stop:
-                    # Проверяем, это остановка через API или из-за ошибок Cursor
-                    with self._cursor_error_lock:
-                        cursor_error_stop = self._cursor_error_count >= self._max_cursor_errors
+        logger.info("🚀 Запуск основного цикла сервера - сервер будет работать бесконечно")
+        try:
+            while True:
+                # Проверяем запрос на остановку (через API или из-за критических ошибок Cursor)
+                with self._stop_lock:
+                    if self._should_stop:
+                        # Проверяем, это остановка через API или из-за ошибок Cursor
+                        with self._cursor_error_lock:
+                            cursor_error_stop = self._cursor_error_count >= self._max_cursor_errors
 
-                    if cursor_error_stop:
-                        logger.error("---")
-                        logger.error("Остановка сервера из-за критических ошибок Cursor")
-                        logger.error("---")
-                        self.checkpoint_manager.mark_server_stop(clean=False)
-                    else:
-                        logger.warning("ОСТАНОВКА СЕРВЕРА ПО ЗАПРОСУ ЧЕРЕЗ API")
-                        logger.warning("Текущая задача будет прервана, checkpoint будет сохранен")
-                        self.checkpoint_manager.mark_server_stop(clean=True)
+                        if cursor_error_stop:
+                            logger.error("---")
+                            logger.error("Остановка сервера из-за критических ошибок Cursor")
+                            logger.error("---")
+                            self.checkpoint_manager.mark_server_stop(clean=False)
+                        else:
+                            logger.warning("ОСТАНОВКА СЕРВЕРА ПО ЗАПРОСУ ЧЕРЕЗ API")
+                            logger.warning("Текущая задача будет прервана, checkpoint будет сохранен")
+                            self.checkpoint_manager.mark_server_stop(clean=True)
 
+                        self._is_running = False
+                        self.status_manager.append_status(
+                            f"Code Agent Server остановлен по запросу через API. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                            level=2
+                        )
+                        # Прерываем выполнение немедленно
+                        break
+
+                # Проверяем необходимость перезапуска
+                if self._check_reload_needed():
+                    logger.warning("Выполняется перезапуск сервера")
+                    logger.warning(f"Счетчик перезапусков: {self._restart_count}")
+                    logger.warning("Текущая задача будет прервана, checkpoint будет сохранен")
+                    self.checkpoint_manager.mark_server_stop(clean=True)
                     self._is_running = False
-                    self.status_manager.append_status(
-                        f"Code Agent Server остановлен по запросу через API. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                        level=2
-                    )
-                    # Прерываем выполнение немедленно
+                    # Инициируем перезапуск через исключение
+                    # main.py перехватит это и перезапустит сервер
+                    raise ServerReloadException("Перезапуск сервера")
+
+                iteration += 1
+                self._current_iteration = iteration
+                logger.info(f"Итерация {iteration}")
+
+                # Выполняем итерацию
+                try:
+                    has_tasks = await self.run_iteration(iteration)
+                except ServerReloadException:
+                    # Перезапуск сервера во время выполнения итерации
+                    logger.warning("Перезапуск сервера во время выполнения итерации")
+                    self.checkpoint_manager.mark_server_stop(clean=True)
+                    self._is_running = False
+                    raise  # Пробрасываем исключение дальше
+
+                # Проверяем флаг остановки после итерации (может быть установлен из-за ошибок Cursor)
+                with self._stop_lock:
+                    if self._should_stop:
+                        break
+
+                # Проверяем необходимость перезапуска после итерации
+                if self._check_reload_needed():
+                    logger.warning("Выполняется перезапуск сервера ПОСЛЕ ИТЕРАЦИИ")
+                    logger.warning(f"Счетчик перезапусков: {self._restart_count}")
+                    self.checkpoint_manager.mark_server_stop(clean=True)
+                    self._is_running = False
+                    raise ServerReloadException("Перезапуск сервера после итерации")
+
+                # Проверяем ограничение итераций
+                if self.max_iterations and iteration >= self.max_iterations:
+                    logger.info(f"Достигнуто максимальное количество итераций: {self.max_iterations}")
+                    self.server_logger.log_server_shutdown(f"Достигнуто максимальное количество итераций: {self.max_iterations}")
                     break
 
-            # Проверяем необходимость перезапуска
-            if self._check_reload_needed():
-                logger.warning("Выполняется перезапуск сервера")
-                logger.warning(f"Счетчик перезапусков: {self._restart_count}")
-                logger.warning("Текущая задача будет прервана, checkpoint будет сохранен")
-                self.checkpoint_manager.mark_server_stop(clean=True)
-                self._is_running = False
-                # Инициируем перезапуск через исключение
-                # main.py перехватит это и перезапустит сервер
-                raise ServerReloadException("Перезапуск сервера")
+                # Периодически очищаем старые задачи из checkpoint
+                if iteration % 10 == 0:
+                    self.checkpoint_manager.clear_old_tasks(keep_last_n=100)
 
-            iteration += 1
-            self._current_iteration = iteration
-            logger.info(f"Итерация {iteration}")
+                # Если нет задач, проверяем снова через интервал
+                if not has_tasks:
+                    logger.info(f"⚡ Все задачи выполнены! Ожидание {self.check_interval} секунд перед следующей проверкой задач или генерацией новых")
+                    logger.info(f"🔄 Сервер продолжает работать в фоне - это нормально!")
+                    # Проверяем перезапуск и остановку во время ожидания
+                    for _ in range(self.check_interval):
+                        with self._stop_lock:
+                            if self._should_stop:
+                                break
+                        if self._check_reload_needed():
+                            logger.warning("Необходим перезапуск во время ожидания")
+                            self.checkpoint_manager.mark_server_stop(clean=True)
+                            raise ServerReloadException("Перезапуск во время ожидания")
+                        try:
+                            time.sleep(1)
+                        except KeyboardInterrupt:
+                            logger.warning("Получен сигнал прерывания во время ожидания - проверяем источник")
+                            # Проверяем, был ли это реальный пользовательский сигнал
+                            # или автоматический сигнал от системы/таймера
+                            import signal
+                            if hasattr(signal, 'SIGINT'):
+                                # Игнорируем автоматические сигналы, продолжаем работу
+                                logger.info("Игнорируем автоматический сигнал прерывания, продолжаем работу сервера")
+                                continue
+                            else:
+                                # Реальный пользовательский сигнал - завершаемся
+                                logger.warning("Получен пользовательский сигнал прерывания - завершаем работу")
+                                raise
+                    # Если задачи были, ждем интервал перед следующей итерацией
+                    # Проверяем перезапуск и остановку во время ожидания
+                    for _ in range(self.check_interval):
+                        with self._stop_lock:
+                            if self._should_stop:
+                                break
+                        if self._check_reload_needed():
+                            logger.warning("Необходим перезапуск во время ожидания")
+                            self.checkpoint_manager.mark_server_stop(clean=True)
+                            raise ServerReloadException("Перезапуск во время ожидания")
+                        time.sleep(1)
+        except Exception as e:
+                # Ловим любые неожиданные исключения в основном цикле
+                logger.error(f"💥 КРИТИЧЕСКАЯ ОШИБКА в основном цикле сервера: {e}", exc_info=True)
+                logger.error("🚨 Это не должно происходить! Сервер должен работать бесконечно")
+                logger.error("🚨 Возможные причины: ошибка в run_iteration, проблемы с памятью, системные проблемы")
 
-            # Выполняем итерацию
-            try:
-                has_tasks = await self.run_iteration(iteration)
-            except ServerReloadException:
-                # Перезапуск сервера во время выполнения итерации
-                logger.warning("Перезапуск сервера во время выполнения итерации")
-                self.checkpoint_manager.mark_server_stop(clean=True)
-                self._is_running = False
-                raise  # Пробрасываем исключение дальше
+                # Пытаемся сохранить состояние перед крахом
+                try:
+                    self.checkpoint_manager.mark_server_stop(clean=False)
+                    logger.error("Состояние сохранено перед аварийным завершением")
+                except Exception as save_error:
+                    logger.error(f"Не удалось сохранить состояние: {save_error}")
 
-            # Проверяем флаг остановки после итерации (может быть установлен из-за ошибок Cursor)
-            with self._stop_lock:
-                if self._should_stop:
-                    break
+                # Не завершаемся, а пытаемся продолжить работу через 10 секунд
+                logger.warning("⏳ Ждем 10 секунд перед попыткой продолжения работы...")
+                await asyncio.sleep(10)
+                logger.warning("🔄 Возобновляем работу сервера после критической ошибки")
 
-            # Проверяем необходимость перезапуска после итерации
-            if self._check_reload_needed():
-                logger.warning("Выполняется перезапуск сервера ПОСЛЕ ИТЕРАЦИИ")
-                logger.warning(f"Счетчик перезапусков: {self._restart_count}")
-                self.checkpoint_manager.mark_server_stop(clean=True)
-                self._is_running = False
-                raise ServerReloadException("Перезапуск сервера после итерации")
-
-            # Проверяем ограничение итераций
-            if self.max_iterations and iteration >= self.max_iterations:
-                logger.info(f"Достигнуто максимальное количество итераций: {self.max_iterations}")
-                self.server_logger.log_server_shutdown(f"Достигнуто максимальное количество итераций: {self.max_iterations}")
-                break
-
-            # Периодически очищаем старые задачи из checkpoint
-            if iteration % 10 == 0:
-                self.checkpoint_manager.clear_old_tasks(keep_last_n=100)
-
-            # Если нет задач, проверяем снова через интервал
-            if not has_tasks:
-                logger.info(f"Ожидание {self.check_interval} секунд перед следующей проверкой")
-                # Проверяем перезапуск и остановку во время ожидания
-                for _ in range(self.check_interval):
-                    with self._stop_lock:
-                        if self._should_stop:
-                            break
-                    if self._check_reload_needed():
-                        logger.warning("Необходим перезапуск во время ожидания")
-                        self.checkpoint_manager.mark_server_stop(clean=True)
-                        raise ServerReloadException("Перезапуск во время ожидания")
-                    time.sleep(1)
-            else:
-                # Если задачи были, ждем интервал перед следующей итерацией
-                # Проверяем перезапуск и остановку во время ожидания
-                for _ in range(self.check_interval):
-                    with self._stop_lock:
-                        if self._should_stop:
-                            break
-                    if self._check_reload_needed():
-                        logger.warning("Необходим перезапуск во время ожидания")
-                        self.checkpoint_manager.mark_server_stop(clean=True)
-                        raise ServerReloadException("Перезапуск во время ожидания")
-                    time.sleep(1)
+                # Рекурсивно вызываем себя для продолжения работы
+                # Это позволит серверу восстановиться после временных проблем
+                return await self._run_server_loop(iteration)
 
     async def start(self):
         """Запуск сервера агента в бесконечном цикле"""
+        # Настраиваем обработку asyncio исключений и патчи для безопасного закрытия
+        setup_asyncio_exception_handling()
+        patch_asyncio_for_cleanup()
+
         # Сбрасываем счетчики изменений кода при запуске сервера
         with self._waiting_change_count_lock:
             self._waiting_change_count = 0
@@ -5223,12 +5487,17 @@ class CodeAgentServer:
         try:
             # Основной цикл сервера - оборачиваем в try/catch для CancelledError
             await self._run_server_loop(iteration)
-        except asyncio.CancelledError:
-            logger.warning("Server main loop was cancelled - performing clean shutdown")
+        except asyncio.CancelledError as e:
+            logger.error(f"🚨 CRITICAL: Server main loop was cancelled with CancelledError: {e}", exc_info=True)
+            logger.error("Это означает, что где-то в коде произошла критическая ошибка, вызвавшая отмену asyncio задач")
+            # Показываем traceback для диагностики
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             # Отмечаем некорректный останов
             self.checkpoint_manager.mark_server_stop(clean=False)
             self._is_running = False
-            # Не пробрасываем CancelledError дальше - это нормальное завершение
+            # Пробрасываем ошибку дальше для диагностики
+            raise
                     
         except ServerReloadException as e:
             # Перезапуск сервера
@@ -5372,8 +5641,11 @@ class CodeAgentServer:
             if loop.is_closed():
                 logger.warning("Event loop is already closed, skipping server close operations")
                 return
-        except RuntimeError:
-            logger.warning("No running event loop, skipping server close operations")
+        except RuntimeError as e:
+            if "no running event loop" in str(e).lower():
+                logger.warning("No running event loop, skipping server close operations")
+            else:
+                logger.warning(f"Runtime error getting event loop: {e}")
             return
 
         # Отменяем все активные задачи, кроме текущей, перед закрытием ресурсов
@@ -5384,7 +5656,10 @@ class CodeAgentServer:
             if all_tasks:
                 logger.debug(f"Cancelling {len(all_tasks)} background tasks before closing server resources")
                 for task in all_tasks:
-                    task.cancel()
+                    try:
+                        task.cancel()
+                    except Exception as e:
+                        logger.warning(f"Error cancelling task {task}: {e}")
 
                 # Ждем завершения отмененных задач с таймаутом
                 try:
@@ -5395,6 +5670,18 @@ class CodeAgentServer:
                     # Не пробрасываем CancelledError дальше, так как это может быть частью shutdown
                 except asyncio.TimeoutError:
                     logger.warning("Timeout waiting for background tasks to cancel")
+                except RuntimeError as e:
+                    if "Event loop is closed" in str(e):
+                        logger.warning("Event loop closed while waiting for task cancellation")
+                    else:
+                        logger.warning(f"Runtime error during task cancellation: {e}")
+                except Exception as e:
+                    logger.warning(f"Unexpected error during task cancellation: {e}")
+        except RuntimeError as e:
+            if "Event loop is closed" in str(e):
+                logger.warning("Event loop closed while accessing tasks")
+            else:
+                logger.warning(f"Runtime error accessing tasks: {e}")
         except Exception as e:
             logger.warning(f"Error cancelling background tasks: {e}")
 

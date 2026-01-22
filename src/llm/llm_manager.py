@@ -210,7 +210,7 @@ class LLMManager:
             logger.debug("LLM manager clients already closed")
             return
 
-        logger.info("Closing LLM manager clients...")
+        logger.debug("Closing LLM manager clients...")
 
         # Проверяем состояние event loop перед закрытием
         try:
@@ -221,9 +221,12 @@ class LLMManager:
                 self.clients.clear()
                 logger.info("All LLM manager clients cleared (event loop closed)")
                 return
-        except RuntimeError:
+        except RuntimeError as e:
             # Нет запущенного event loop
-            logger.warning("No running event loop, skipping client close operations")
+            if "no running event loop" in str(e).lower():
+                logger.warning("No running event loop, skipping client close operations")
+            else:
+                logger.warning(f"Runtime error getting event loop: {e}")
             self.clients.clear()
             logger.info("All LLM manager clients cleared (no event loop)")
             return
@@ -237,20 +240,107 @@ class LLMManager:
                 logger.debug(f"Cancelling {len(all_tasks)} background tasks before closing clients")
                 for task in all_tasks:
                     if not task.done():
-                        task.cancel()
+                        try:
+                            task.cancel()
+                        except Exception as e:
+                            logger.warning(f"Error cancelling task {task}: {e}")
 
                 # Ждем завершения отмененных задач
-                await asyncio.gather(*all_tasks, return_exceptions=True)
-                logger.debug("All background tasks cancelled")
+                try:
+                    await asyncio.gather(*all_tasks, return_exceptions=True)
+                    logger.debug("All background tasks cancelled")
+                except RuntimeError as e:
+                    if "Event loop is closed" in str(e):
+                        logger.warning("Event loop closed while waiting for task cancellation")
+                    else:
+                        logger.warning(f"Runtime error during task cancellation: {e}")
+                except Exception as e:
+                    logger.warning(f"Unexpected error during task cancellation: {e}")
+        except RuntimeError as e:
+            if "Event loop is closed" in str(e):
+                logger.warning("Event loop closed while accessing tasks")
+            else:
+                logger.warning(f"Runtime error accessing tasks: {e}")
         except Exception as e:
             logger.warning(f"Error cancelling background tasks: {e}")
 
         for provider_name, client in self.clients.items():
             try:
+                # Многоуровневая проверка состояния event loop перед закрытием клиента
+                try:
+                    current_loop = asyncio.get_running_loop()
+                    if current_loop.is_closed():
+                        logger.warning(f"Event loop already closed, skipping client close for provider {provider_name}")
+                        continue
+                except RuntimeError:
+                    # Нет запущенного loop, пропускаем
+                    logger.warning(f"No running event loop, skipping client close for provider {provider_name}")
+                    continue
+
                 logger.debug(f"Closing client for provider: {provider_name}")
-                # Добавляем таймаут для закрытия клиента
-                await asyncio.wait_for(client.close(), timeout=5.0)
-                logger.debug(f"Client for provider {provider_name} closed successfully")
+
+                # Проверяем, что loop все еще доступен непосредственно перед вызовом close()
+                # Многоуровневая защита от проблем с event loop
+                loop_state_check = False
+                try:
+                    # Проверяем текущее состояние loop несколько раз
+                    for _ in range(3):
+                        try:
+                            test_loop = asyncio.get_running_loop()
+                            if test_loop.is_closed():
+                                logger.warning(f"Event loop closed on iteration {_} for provider {provider_name}")
+                                loop_state_check = True
+                                break
+                            await asyncio.sleep(0.001)  # Короткая пауза для проверки стабильности
+                        except RuntimeError:
+                            logger.warning(f"No running event loop on iteration {_} for provider {provider_name}")
+                            loop_state_check = True
+                            break
+                except Exception as e:
+                    logger.warning(f"Error checking loop state for {provider_name}: {e}")
+                    loop_state_check = True
+
+                if loop_state_check:
+                    logger.debug(f"Skipping client close for {provider_name} due to unstable event loop")
+                    continue
+
+                # Для httpx клиентов - проверяем состояние транспорта
+                if hasattr(client, '_transport'):
+                    try:
+                        transport = client._transport
+                        if hasattr(transport, '_pool') and transport._pool is not None:
+                            # Проверяем, не закрыт ли уже pool
+                            if hasattr(transport._pool, '_closed') and transport._pool._closed:
+                                logger.debug(f"Transport pool already closed for provider {provider_name}")
+                                continue
+                    except Exception:
+                        # Игнорируем ошибки при проверке состояния
+                        pass
+
+                # Пытаемся закрыть клиента с защитой от ошибок event loop
+                try:
+                    # Сначала пробуем обычное закрытие с таймаутом
+                    await asyncio.wait_for(client.close(), timeout=5.0)
+                    logger.debug(f"Client for provider {provider_name} closed successfully")
+                except RuntimeError as e:
+                    if "Event loop is closed" in str(e):
+                        # Event loop закрыт - пытаемся закрыть клиента синхронно или игнорируем
+                        logger.warning(f"Event loop closed during client close for {provider_name}, attempting sync close")
+                        try:
+                            # Пробуем синхронное закрытие если доступно
+                            if hasattr(client, 'close') and not hasattr(client.close, '__call__'):
+                                # Метод не async, пробуем вызвать напрямую
+                                import concurrent.futures
+                                with concurrent.futures.ThreadPoolExecutor() as executor:
+                                    future = executor.submit(client.close)
+                                    future.result(timeout=2.0)
+                                logger.debug(f"Client for provider {provider_name} closed synchronously")
+                            else:
+                                logger.debug(f"Skipping async client close for {provider_name} due to closed event loop")
+                        except Exception:
+                            logger.debug(f"Sync close also failed for {provider_name}, skipping")
+                    else:
+                        raise  # Перебрасываем другие RuntimeError
             except asyncio.TimeoutError:
                 logger.warning(f"Timeout closing client for provider {provider_name}")
             except RuntimeError as e:
@@ -261,6 +351,30 @@ class LLMManager:
                     logger.warning(f"Runtime error closing client for provider {provider_name}: {e}")
             except Exception as e:
                 logger.warning(f"Error closing client for provider {provider_name}: {e}")
+
+        # Финальная проверка - отменяем любые оставшиеся задачи связанные с клиентами
+        try:
+            current_loop = asyncio.get_running_loop()
+            if not current_loop.is_closed():
+                # Ждем короткое время чтобы дать задачам закрытия клиентов завершиться
+                await asyncio.sleep(0.1)
+                # Проверяем есть ли незавершенные задачи связанные с HTTP клиентами
+                all_tasks = asyncio.all_tasks(current_loop)
+                client_tasks = [task for task in all_tasks
+                              if not task.done() and
+                              any(keyword in str(task) for keyword in ['aclose', 'close', 'http', 'client'])]
+                if client_tasks:
+                    logger.warning(f"Found {len(client_tasks)} unfinished client-related tasks, waiting briefly...")
+                    try:
+                        await asyncio.wait_for(asyncio.gather(*client_tasks, return_exceptions=True), timeout=1.0)
+                        logger.debug("Unfinished client tasks completed")
+                    except (asyncio.TimeoutError, RuntimeError):
+                        logger.warning("Timeout or error waiting for unfinished client tasks")
+        except RuntimeError:
+            # Нет запущенного loop
+            pass
+        except Exception as e:
+            logger.warning(f"Error during final client cleanup check: {e}")
 
         # Очищаем словарь клиентов
         self.clients.clear()
