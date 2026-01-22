@@ -36,12 +36,12 @@ code_reviewer_agent:
 # Smart Agent - агент с инструментами обучения и анализа контекста
 smart_agent:
   role: "Smart Project Executor Agent"
-  goal: "Execute tasks using learning from previous executions and project context analysis"
+  goal: "Execute tasks using learning from previous executions and project context analysis with optimized LLM settings"
   backstory: |
     You are a smart agent that learns from task execution history and analyzes project context.
     You use LearningTool and ContextAnalyzerTool to improve task execution quality.
+    Optimized for performance with best_of_two strategy and parallel model evaluation.
   allow_code_execution: true
-  verbose: true
   tools:
     - LearningTool
     - ContextAnalyzerTool

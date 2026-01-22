@@ -50,15 +50,7 @@ agent:
     - FileReadTool
     - FileWriteTool
   
-  # Модель LLM (слабая модель для простых задач)
-  model: "gpt-3.5-turbo"  # или "claude-haiku", "llama2"
-  
-  # Валидация модели
-  allowed_models:
-    - "gpt-3.5-turbo"
-    - "claude-haiku"
-    - "llama2"
-    - "mistral"
+  # Модель LLM настраивается в config/llm_settings.yaml
 
 # Настройки сервера
 server:
@@ -114,15 +106,13 @@ docs:
   results_dir: docs/results
   reviews_dir: docs/reviews
 
-# Настройки логирования
+# Настройки логирования (подробные настройки в config/logging.yaml)
 logging:
   level: INFO  # DEBUG, INFO, WARNING, ERROR
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   file: logs/code_agent.log
   console: true
   color: true
-  cursor_interactions: true  # Логировать все взаимодействия с Cursor
-  screenshot_on_error: true  # Сохранять скриншоты при ошибках
 
 # Настройки Smart Agent
 smart_agent:
@@ -133,7 +123,14 @@ smart_agent:
   experience_dir: "smart_experience"
 
   # Максимальное количество задач в истории опыта
-  max_experience_tasks: 100
+  max_experience_tasks: 200
+
+  # Параметры производительности
+  max_iter: 25  # Увеличено для сложных задач
+  memory: 100   # Увеличена память для хранения контекста
+
+  # Оптимизация verbose режима
+  verbose: true  # Оставлено для отладки, можно отключить в production
 
 # Настройки взаимодействия с Cursor IDE
 cursor:

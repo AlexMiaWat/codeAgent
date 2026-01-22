@@ -1,0 +1,99 @@
+# Конфигурация стоимости API вызовов для разных моделей
+# Стоимость указана в USD за 1K токенов (вход + выход)
+# Данные актуальны на 2026-01-22, требуется регулярное обновление
+
+# OpenRouter модели (основной провайдер)
+openrouter:
+  # Meta модели (относительно дешевые)
+  meta-llama/llama-3.2-1b-instruct:
+    input_cost_per_1k: 0.00015  # $0.00015 per 1K input tokens
+    output_cost_per_1k: 0.00015 # $0.00015 per 1K output tokens
+    context_window: 131072
+    max_tokens: 4096
+
+  meta-llama/llama-3.2-3b-instruct:
+    input_cost_per_1k: 0.00015
+    output_cost_per_1k: 0.00015
+    context_window: 131072
+    max_tokens: 4096
+
+  # Microsoft модели (средний уровень стоимости)
+  microsoft/phi-3-mini-128k-instruct:
+    input_cost_per_1k: 0.00020
+    output_cost_per_1k: 0.00020
+    context_window: 128000
+    max_tokens: 4096
+
+  microsoft/wizardlm-2-8x22b:
+    input_cost_per_1k: 0.00025
+    output_cost_per_1k: 0.00025
+    context_window: 65536
+    max_tokens: 4096
+
+  # Google модели (через OpenRouter)
+  google/gemma-2-27b-it:
+    input_cost_per_1k: 0.00030
+    output_cost_per_1k: 0.00030
+    context_window: 8192
+    max_tokens: 2048
+
+  # Mistral модели
+  mistralai/mistral-small-24b-instruct-2501:
+    input_cost_per_1k: 0.00035
+    output_cost_per_1k: 0.00035
+    context_window: 32768
+    max_tokens: 4096
+
+# Специфические модели (могут иметь другую стоимость)
+special_models:
+  # Cursor модели (auto, grok) - стоимость неизвестна, требует мониторинга
+  auto:
+    input_cost_per_1k: 0.0  # Требует измерения
+    output_cost_per_1k: 0.0
+    context_window: 0
+    max_tokens: 0
+    note: "Стоимость неизвестна - требует реального мониторинга"
+
+  grok:
+    input_cost_per_1k: 0.0  # Требует измерения
+    output_cost_per_1k: 0.0
+    context_window: 0
+    max_tokens: 0
+    note: "Стоимость неизвестна - требует реального мониторинга"
+
+# Настройки мониторинга
+monitoring:
+  # Включить логирование стоимости каждого вызова
+  log_costs: true
+
+  # Лимиты расходов (в USD)
+  limits:
+    daily_limit: 10.0   # Максимум $10 в день
+    monthly_limit: 100.0 # Максимум $100 в месяц
+
+  # Уведомления при превышении лимитов (%)
+  warning_thresholds: [50, 80, 95]
+
+  # Файл для хранения статистики стоимости
+  cost_log_file: "logs/llm_cost_tracking.json"
+
+  # Период агрегации статистики
+  aggregation_periods: ["hourly", "daily", "weekly", "monthly"]
+
+# Рекомендации по выбору моделей
+recommendations:
+  # Бюджетные модели (для тестирования и разработки)
+  budget_models: ["meta-llama/llama-3.2-1b-instruct", "meta-llama/llama-3.2-3b-instruct"]
+
+  # Оптимальные модели (баланс цена/качество)
+  balanced_models: ["microsoft/phi-3-mini-128k-instruct", "microsoft/wizardlm-2-8x22b"]
+
+  # Премиум модели (высокое качество, высокая стоимость)
+  premium_models: ["google/gemma-2-27b-it", "mistralai/mistral-small-24b-instruct-2501"]
+
+  # Максимальный бюджет на задачу (USD)
+  max_cost_per_task: 0.1  # $0.10 на задачу
+
+# ПРИМЕЧАНИЕ: Стоимость может меняться, регулярно проверяйте актуальные цены на OpenRouter
+# Последнее обновление: 2026-01-22
+# Источник: https://openrouter.ai/models

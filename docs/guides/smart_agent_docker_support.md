@@ -47,22 +47,33 @@ Smart Agent поддерживает два уровня гибкости:
 from src.agents import create_smart_agent
 from pathlib import Path
 
-# Автоопределение (рекомендуется)
+# Полная конфигурация с оптимизацией производительности
 agent = create_smart_agent(
     project_dir=Path("my_project"),
-    use_docker=None  # Автоопределение доступности Docker
+    # Docker настройки
+    use_docker=None,  # Автоопределение доступности Docker
+    # LLM настройки
+    use_llm_manager=True,  # Включить LLM интеграцию
+    llm_config_path="config/llm_settings.yaml",
+    # Параметры производительности (новые)
+    max_iter=25,  # Максимальное количество итераций (увеличено для сложных задач)
+    memory=100,   # Память для хранения контекста
+    verbose=True, # Подробное логирование (можно отключить в production)
+    # Опыт и обучение
+    experience_dir="smart_experience",  # Директория для хранения опыта
+    max_experience_tasks=1000,  # Максимальное количество задач в опыте
+    # Режим работы
+    allow_code_execution=True  # Разрешить выполнение кода
 )
 
-# Принудительное включение Docker
-agent = create_smart_agent(
-    project_dir=Path("my_project"),
-    use_docker=True  # Требует Docker, иначе fallback
-)
+# Минимальная конфигурация
+agent = create_smart_agent(project_dir=Path("my_project"))
 
 # Принудительное отключение Docker
 agent = create_smart_agent(
     project_dir=Path("my_project"),
-    use_docker=False  # Всегда fallback режим
+    use_docker=False,  # Всегда fallback режим
+    use_llm=False      # Отключить LLM интеграцию
 )
 ```
 
@@ -239,6 +250,74 @@ else:
     tools.append(FallbackTool())
 ```
 
+## Оптимизация конфигурации (2026-01-22)
+
+### Параметры производительности
+
+Последние обновления включают оптимизацию для работы с современными LLM:
+
+| Параметр | Новое значение | Предыдущее | Эффект |
+|----------|----------------|------------|--------|
+| `max_iter` | 25 | 15 | Лучше справляется со сложными задачами |
+| `memory` | 100 | 50 | Увеличивает контекст для длинных сессий |
+| `max_experience_tasks` | 200 | 100 | Больше опыта для обучения |
+| `verbose` | Оптимизирован | - | Можно отключать в production |
+
+### LLM стратегия best_of_two
+
+Обновлена стратегия выбора моделей:
+
+```yaml
+# config/llm_settings.yaml
+llm:
+  strategy: best_of_two
+  model_roles:
+    primary:
+    - microsoft/wizardlm-2-8x22b  # Мощная модель для сложных задач
+    duplicate: []
+    reserve:
+    - microsoft/phi-3-mini-128k-instruct  # Быстрая модель среднего уровня
+    fallback:
+    - meta-llama/llama-3.2-3b-instruct   # Стабильная модель для fallback
+    - meta-llama/llama-3.2-1b-instruct   # Легкая модель для простых задач
+  parallel:
+    enabled: true
+    models:
+    - microsoft/wizardlm-2-8x22b
+    - microsoft/phi-3-mini-128k-instruct
+    evaluator_model: microsoft/wizardlm-2-8x22b
+    selection_criteria:
+    - quality
+    - relevance
+    - completeness
+    - efficiency
+```
+
+## Улучшения инструментов
+
+### ContextAnalyzerTool
+
+Добавлена поддержка Unicode и улучшенный поиск:
+
+```python
+# Новая функция нормализации Unicode текста
+def normalize_unicode_text(text: str) -> str:
+    """
+    Нормализует Unicode текст для улучшения поиска и сравнения.
+    - Приводит к нижнему регистру
+    - Удаляет диакритические знаки
+    - Нормализует Unicode (NFD)
+    """
+    normalized = unicodedata.normalize('NFD', text)
+    normalized = ''.join(char for char in normalized if unicodedata.category(char) != 'Mn')
+    return normalized.lower()
+```
+
+**Преимущества:**
+- Лучший поиск по не-ASCII тексту
+- Case-insensitive поиск
+- Поддержка различных языков и кодировок
+
 ## LLM интеграция
 
 Smart Agent поддерживает многоуровневый fallback механизм для работы с языковыми моделями:
@@ -326,11 +405,21 @@ SmartAgent LLM Flow:
 #### Тесты с LLM
 
 ```bash
-# Тест создания агента с LLM
-pytest test/test_smart_agent.py::test_smart_agent_creation -v
+# Все Smart Agent тесты (рекомендуется запускать отдельно от unified runner)
+pytest test/test_smart_agent*.py -v
 
-# Тест graceful degradation без API ключей
-pytest test/test_smart_agent.py::test_smart_agent_graceful_degradation -v
+# Интеграционные тесты структуры и методов
+pytest test/test_smart_agent_integration.py -v
+
+# Дымовые тесты базовой функциональности
+pytest test/test_smart_agent_smoke.py -v
+
+# Статические тесты импортов и классов
+pytest test/test_smart_agent_static.py -v
+
+# Основные тесты Smart Agent с новыми параметрами
+pytest test/test_smart_agent.py::test_smart_agent_creation -v
+pytest test/test_smart_agent.py::test_smart_agent_with_custom_params -v
 ```
 
 #### Моки для тестирования
@@ -350,13 +439,22 @@ with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai') as mock_llm:
     # Агент будет использовать LLM
 ```
 
+### Новые провайдеры LLM
+
+Добавлена поддержка дополнительных провайдеров:
+
+- **Anthropic Claude-3.5-sonnet**: Высококачественные ответы для сложных задач
+- **OpenAI GPT-4o/GPT-4o-mini**: Быстрые и точные модели
+- **Microsoft WizardLM-2-8x22b**: Мощная модель для параллельной обработки
+- **Microsoft Phi-3-mini-128k**: Быстрая модель среднего уровня
+
 ### Производительность и выбор режима
 
-| Режим | Производительность | Качество ответов | Зависимости |
-|-------|-------------------|------------------|-------------|
-| OpenRouter | Высокая | Максимальное | OPENROUTER_API_KEY |
-| LLMManager | Средняя | Высокое | API ключи в конфиге |
-| Tool-only | Максимальная | Среднее (инструменты) | Нет внешних зависимостей |
+| Режим | Производительность | Качество ответов | Зависимости | Новые возможности |
+|-------|-------------------|------------------|-------------|-------------------|
+| OpenRouter + Новые модели | Высокая | Максимальное | OPENROUTER_API_KEY | WizardLM, Claude-3.5, GPT-4o |
+| LLMManager с best_of_two | Средняя | Высокое + Стабильность | API ключи в конфиге | Параллельная оценка, критерии качества |
+| Tool-only с Unicode | Максимальная | Среднее (улучшенные инструменты) | Нет внешних зависимостей | Unicode поиск, больше опыта |
 
 ### Советы по LLM интеграции
 

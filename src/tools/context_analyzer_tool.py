@@ -6,11 +6,37 @@ import os
 import re
 import json
 import logging
+import unicodedata
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Set
 from crewai.tools.base_tool import BaseTool
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_unicode_text(text: str) -> str:
+    """
+    Нормализует Unicode текст для улучшения поиска и сравнения.
+
+    Args:
+        text: Исходный текст
+
+    Returns:
+        Нормализованный текст
+    """
+    if not text:
+        return text
+
+    # Нормализуем Unicode (NFD - canonical decomposition)
+    normalized = unicodedata.normalize('NFD', text)
+
+    # Удаляем диакритические знаки (combining characters)
+    normalized = ''.join(char for char in normalized if unicodedata.category(char) != 'Mn')
+
+    # Приводим к нижнему регистру
+    normalized = normalized.lower()
+
+    return normalized
 
 
 class ContextAnalyzerTool(BaseTool):
@@ -263,8 +289,8 @@ class ContextAnalyzerTool(BaseTool):
                 "project_patterns": []
             }
 
-            # Ищем релевантные файлы
-            task_lower = task_description.lower()
+            # Ищем релевантные файлы с улучшенной Unicode обработкой
+            task_normalized = normalize_unicode_text(task_description)
 
             # Поиск в документации
             if self.docs_dir.exists():
@@ -274,12 +300,19 @@ class ContextAnalyzerTool(BaseTool):
                             continue
 
                         with open(doc_file, 'r', encoding='utf-8') as f:
-                            content = f.read().lower()
+                            content = f.read()
 
-                        if any(keyword in content for keyword in task_lower.split()):
+                        content_normalized = normalize_unicode_text(content)
+
+                        # Ищем ключевые слова с учетом Unicode нормализации
+                        if any(normalize_unicode_text(keyword) in content_normalized
+                               for keyword in task_description.split()):
                             rel_path = doc_file.relative_to(self.project_dir)
                             context_info["documentation"].append(str(rel_path))
 
+                    except UnicodeDecodeError:
+                        # Пропускаем файлы с некорректной кодировкой
+                        continue
                     except Exception as e:
                         continue
 
@@ -292,12 +325,19 @@ class ContextAnalyzerTool(BaseTool):
                             continue
 
                         with open(src_file, 'r', encoding='utf-8') as f:
-                            content = f.read().lower()
+                            content = f.read()
 
-                        if any(keyword in content for keyword in task_lower.split()):
+                        content_normalized = normalize_unicode_text(content)
+
+                        # Ищем ключевые слова с учетом Unicode нормализации
+                        if any(normalize_unicode_text(keyword) in content_normalized
+                               for keyword in task_description.split()):
                             rel_path = src_file.relative_to(self.project_dir)
                             context_info["relevant_files"].append(str(rel_path))
 
+                    except UnicodeDecodeError:
+                        # Пропускаем файлы с некорректной кодировкой
+                        continue
                     except Exception as e:
                         continue
 
@@ -415,7 +455,7 @@ class ContextAnalyzerTool(BaseTool):
             Список связанных файлов
         """
         try:
-            query_lower = query.lower()
+            query_normalized = normalize_unicode_text(query)
             related_files = []
 
             # Ищем в документации
@@ -426,15 +466,20 @@ class ContextAnalyzerTool(BaseTool):
                             continue
 
                         with open(doc_file, 'r', encoding='utf-8') as f:
-                            content = f.read().lower()
+                            content = f.read()
 
-                        if query_lower in content:
+                        content_normalized = normalize_unicode_text(content)
+
+                        if query_normalized in content_normalized:
                             related_files.append({
                                 "path": str(doc_file.relative_to(self.project_dir)),
                                 "type": "documentation",
-                                "matches": content.count(query_lower)
+                                "matches": content_normalized.count(query_normalized)
                             })
 
+                    except UnicodeDecodeError:
+                        # Пропускаем файлы с некорректной кодировкой
+                        continue
                     except Exception as e:
                         continue
 
@@ -447,15 +492,20 @@ class ContextAnalyzerTool(BaseTool):
                             continue
 
                         with open(src_file, 'r', encoding='utf-8') as f:
-                            content = f.read().lower()
+                            content = f.read()
 
-                        if query_lower in content:
+                        content_normalized = normalize_unicode_text(content)
+
+                        if query_normalized in content_normalized:
                             related_files.append({
                                 "path": str(src_file.relative_to(self.project_dir)),
                                 "type": "code",
-                                "matches": content.count(query_lower)
+                                "matches": content_normalized.count(query_normalized)
                             })
 
+                    except UnicodeDecodeError:
+                        # Пропускаем файлы с некорректной кодировкой
+                        continue
                     except Exception as e:
                         continue
 

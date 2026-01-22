@@ -1,246 +1,251 @@
 """
-Статические тесты для Smart Agent и его инструментов
+Статические тесты для Smart Agent - проверка типов, атрибутов, интерфейсов
 """
 
 import pytest
-import sys
+import tempfile
 import os
 from pathlib import Path
+from typing import Optional, List
 from unittest.mock import Mock, patch, MagicMock
 
 
-class TestSmartAgentImports:
-    """Тесты импортов Smart Agent"""
+@pytest.fixture
+def dummy_openai_key():
+    """Фикстура для установки dummy OPENAI_API_KEY"""
+    original_key = os.environ.get('OPENAI_API_KEY')
+    os.environ['OPENAI_API_KEY'] = 'dummy-key-for-testing'
 
-    def test_smart_agent_import(self):
-        """Тест импорта SmartAgent"""
-        try:
-            from src.agents.smart_agent import create_smart_agent
-            assert create_smart_agent is not None
-        except ImportError as e:
-            pytest.fail(f"Не удалось импортировать SmartAgent: {e}")
+    yield
 
-    def test_learning_tool_import(self):
-        """Тест импорта LearningTool"""
-        try:
-            from src.tools.learning_tool import LearningTool
-            assert LearningTool is not None
-        except ImportError as e:
-            pytest.fail(f"Не удалось импортировать LearningTool: {e}")
-
-    def test_context_analyzer_import(self):
-        """Тест импорта ContextAnalyzerTool"""
-        try:
-            from src.tools.context_analyzer_tool import ContextAnalyzerTool
-            assert ContextAnalyzerTool is not None
-        except ImportError as e:
-            pytest.fail(f"Не удалось импортировать ContextAnalyzerTool: {e}")
-
-    def test_docker_checker_import(self):
-        """Тест импорта DockerChecker"""
-        try:
-            from src.tools.docker_utils import DockerChecker
-            assert DockerChecker is not None
-        except ImportError as e:
-            pytest.fail(f"Не удалось импортировать DockerChecker: {e}")
+    # Восстанавливаем оригинальный ключ
+    if original_key is not None:
+        os.environ['OPENAI_API_KEY'] = original_key
+    elif 'OPENAI_API_KEY' in os.environ:
+        del os.environ['OPENAI_API_KEY']
 
 
-class TestSmartAgentStructure:
-    """Тесты структуры классов Smart Agent"""
+class TestSmartAgentStatic:
+    """Статические тесты Smart Agent"""
 
-    def test_learning_tool_class_structure(self):
-        """Тест структуры класса LearningTool"""
+    def test_create_smart_agent_function_signature(self):
+        """Проверка сигнатуры функции create_smart_agent"""
+        from src.agents.smart_agent import create_smart_agent
+        import inspect
+
+        # Проверяем сигнатуру функции
+        sig = inspect.signature(create_smart_agent)
+        expected_params = [
+            'project_dir', 'docs_dir', 'experience_dir', 'role', 'goal',
+            'backstory', 'allow_code_execution', 'use_docker', 'verbose',
+            'use_llm', 'llm_config_path', 'max_experience_tasks'
+        ]
+
+        actual_params = list(sig.parameters.keys())
+        assert actual_params == expected_params
+
+        # Проверяем типы параметров
+        params = sig.parameters
+
+        # Обязательные параметры
+        assert params['project_dir'].default == inspect.Parameter.empty
+        assert params['project_dir'].annotation == Path
+
+        # Опциональные параметры
+        assert params['docs_dir'].annotation == Optional[Path]
+        assert params['experience_dir'].annotation == str
+        assert params['role'].annotation == str
+        assert params['goal'].annotation == str
+        assert params['backstory'].annotation == Optional[str]
+        assert params['allow_code_execution'].annotation == bool
+        assert params['use_docker'].annotation == bool
+        assert params['verbose'].annotation == bool
+        assert params['use_llm'].annotation == bool
+        assert params['llm_config_path'].annotation == str
+        assert params['max_experience_tasks'].annotation == int
+
+    def test_create_smart_agent_return_type(self, dummy_openai_key):
+        """Проверка типа возвращаемого значения create_smart_agent"""
+        from src.agents.smart_agent import create_smart_agent
+        from crewai import Agent
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir)
+
+            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+                with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
+                    with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
+                        agent = create_smart_agent(project_dir=project_dir, use_llm=False)
+
+                    assert agent is not None
+                    assert isinstance(agent, Agent)
+
+    def test_smart_agent_attributes(self, dummy_openai_key):
+        """Проверка атрибутов созданного Smart Agent"""
+        from src.agents.smart_agent import create_smart_agent
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir)
+
+            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+                with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
+                    with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
+                        agent = create_smart_agent(
+                            project_dir=project_dir,
+                            role="Test Smart Agent",
+                            goal="Test goal",
+                            use_llm=False
+                        )
+
+                    # Проверяем основные атрибуты агента
+                    assert hasattr(agent, 'role')
+                    assert hasattr(agent, 'goal')
+                    assert hasattr(agent, 'backstory')
+                    assert hasattr(agent, 'tools')
+                    assert hasattr(agent, 'verbose')
+
+                    # Проверяем значения атрибутов
+                    assert agent.role == "Test Smart Agent"
+                    assert agent.goal == "Test goal"
+                    assert agent.verbose == True  # default value
+
+    def test_smart_agent_tools_structure(self, dummy_openai_key):
+        """Проверка структуры инструментов Smart Agent"""
+        from src.agents.smart_agent import create_smart_agent
         from src.tools.learning_tool import LearningTool
-
-        # Создаем экземпляр для проверки атрибутов
-        tool = LearningTool()
-
-        # Проверяем наличие основных атрибутов
-        assert hasattr(tool, 'name')
-        assert hasattr(tool, 'description')
-        assert hasattr(tool, 'experience_dir')
-        assert hasattr(tool, 'max_experience_tasks')
-
-        # Проверяем значения по умолчанию
-        assert tool.name == "LearningTool"
-        # Проверяем что description содержит информацию об инструменте
-        assert len(tool.description) > 0
-
-    def test_context_analyzer_tool_class_structure(self):
-        """Тест структуры класса ContextAnalyzerTool"""
         from src.tools.context_analyzer_tool import ContextAnalyzerTool
 
-        # Создаем экземпляр для проверки атрибутов
-        tool = ContextAnalyzerTool()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir)
 
-        # Проверяем наличие основных атрибутов
-        assert hasattr(tool, 'name')
-        assert hasattr(tool, 'description')
-        assert hasattr(tool, 'project_dir')
-        assert hasattr(tool, 'docs_dir')
+            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+                with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
+                    with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
+                        agent = create_smart_agent(project_dir=project_dir, use_llm=False)
 
-        # Проверяем значения по умолчанию
-        assert tool.name == "ContextAnalyzerTool"
-        # Проверяем что description содержит информацию об инструменте
-        assert len(tool.description) > 0
+                    # Проверяем что у агента есть инструменты
+                    assert hasattr(agent, 'tools')
+                    assert agent.tools is not None
+                    assert len(agent.tools) >= 2  # минимум LearningTool и ContextAnalyzerTool
 
-    def test_docker_checker_class_structure(self):
-        """Тест структуры класса DockerChecker"""
-        from src.tools.docker_utils import DockerChecker
+                    # Проверяем типы инструментов
+                    tool_classes = [tool.__class__ for tool in agent.tools]
+                    assert LearningTool in tool_classes
+                    assert ContextAnalyzerTool in tool_classes
 
-        # Проверяем наличие основных методов
-        assert hasattr(DockerChecker, 'is_docker_available')
-        assert hasattr(DockerChecker, 'get_docker_version')
-        assert hasattr(DockerChecker, 'check_docker_permissions')
-        assert hasattr(DockerChecker, 'get_running_containers')
-        assert hasattr(DockerChecker, 'is_container_running')
+    def test_smart_agent_backstory_generation(self, dummy_openai_key):
+        """Проверка генерации backstory для Smart Agent"""
+        from src.agents.smart_agent import create_smart_agent
 
-        # Проверяем что методы callable
-        assert callable(DockerChecker.is_docker_available)
-        assert callable(DockerChecker.get_docker_version)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir)
 
+            with patch('src.tools.docker_utils.is_docker_available', return_value=True):
+                with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', True):
+                    with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=Mock()):
+                        agent = create_smart_agent(project_dir=project_dir)
 
-class TestSmartAgentInitialization:
-    """Тесты инициализации компонентов Smart Agent"""
+                    assert agent.backstory is not None
+                    assert "smart agent" in agent.backstory.lower()
+                    assert "learning" in agent.backstory.lower()
+                    assert "context" in agent.backstory.lower()
 
-    def test_learning_tool_initialization(self, tmp_path):
-        """Тест инициализации LearningTool"""
+    def test_smart_agent_configuration_parameters(self, dummy_openai_key):
+        """Проверка применения конфигурационных параметров"""
+        from src.agents.smart_agent import create_smart_agent
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir)
+
+            test_params = {
+                'role': 'Custom Smart Agent',
+                'goal': 'Custom test goal',
+                'verbose': False,
+                'allow_code_execution': False,
+                'use_docker': False,
+                'use_llm': False,
+                'max_experience_tasks': 500
+            }
+
+            agent = create_smart_agent(project_dir=project_dir, **test_params)
+
+            # Проверяем применение параметров
+            assert agent.role == test_params['role']
+            assert agent.goal == test_params['goal']
+            assert agent.verbose == test_params['verbose']
+
+    def test_smart_agent_tools_initialization(self, dummy_openai_key):
+        """Проверка корректной инициализации инструментов"""
+        from src.agents.smart_agent import create_smart_agent
         from src.tools.learning_tool import LearningTool
-
-        experience_dir = tmp_path / "experience"
-        tool = LearningTool(experience_dir=str(experience_dir), max_experience_tasks=50)
-
-        assert tool.experience_dir == experience_dir
-        assert tool.max_experience_tasks == 50
-        assert tool.experience_file == experience_dir / "experience.json"
-
-        # Проверяем создание директории
-        assert experience_dir.exists()
-        assert tool.experience_file.exists()
-
-    def test_context_analyzer_tool_initialization(self, tmp_path):
-        """Тест инициализации ContextAnalyzerTool"""
         from src.tools.context_analyzer_tool import ContextAnalyzerTool
 
-        project_dir = tmp_path / "project"
-        docs_dir = project_dir / "docs"
-        project_dir.mkdir()
-        docs_dir.mkdir()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir)
+            experience_dir = "custom_experience"
 
-        tool = ContextAnalyzerTool(
-            project_dir=str(project_dir),
-            docs_dir=str(docs_dir),
-            max_file_size=500000
-        )
+            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+                with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
+                    agent = create_smart_agent(
+                        project_dir=project_dir,
+                        experience_dir=experience_dir,
+                        use_llm=False
+                    )
 
-        assert str(tool.project_dir) == str(project_dir)
-        assert str(tool.docs_dir) == str(docs_dir)
-        assert tool.max_file_size == 500000
+                    # Находим инструменты по типам
+                    learning_tools = [t for t in agent.tools if isinstance(t, LearningTool)]
+                    context_tools = [t for t in agent.tools if isinstance(t, ContextAnalyzerTool)]
 
-    def test_docker_manager_initialization(self):
-        """Тест инициализации DockerManager"""
-        from src.tools.docker_utils import DockerManager
+                    assert len(learning_tools) == 1
+                    assert len(context_tools) == 1
 
-        manager = DockerManager(
-            image_name="test-image:latest",
-            container_name="test-container"
-        )
+                    # Проверяем конфигурацию LearningTool
+                    learning_tool = learning_tools[0]
+                    assert learning_tool.experience_dir.name == experience_dir
 
-        assert manager.image_name == "test-image:latest"
-        assert manager.container_name == "test-container"
-
-
-class TestSmartAgentMethodsExistence:
-    """Тесты наличия методов в классах"""
-
-    def test_learning_tool_methods(self):
-        """Тест наличия методов LearningTool"""
-        from src.tools.learning_tool import LearningTool
-
-        tool = LearningTool()
-
-        # Проверяем наличие основных методов
-        assert hasattr(tool, '_run')
-        assert hasattr(tool, 'save_task_experience')
-        assert hasattr(tool, 'find_similar_tasks')
-        assert hasattr(tool, 'get_recommendations')
-        assert hasattr(tool, 'get_statistics')
-
-    def test_context_analyzer_tool_methods(self):
-        """Тест наличия методов ContextAnalyzerTool"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-
-        tool = ContextAnalyzerTool()
-
-        # Проверяем наличие основных методов
-        assert hasattr(tool, '_run')
-        assert hasattr(tool, 'analyze_project_structure')
-        assert hasattr(tool, 'find_file_dependencies')
-        assert hasattr(tool, 'get_task_context')
-        assert hasattr(tool, 'analyze_component')
-        assert hasattr(tool, 'find_related_files')
-
-    def test_docker_manager_methods(self):
-        """Тест наличия методов DockerManager"""
-        from src.tools.docker_utils import DockerManager
-
-        manager = DockerManager()
-
-        # Проверяем наличие основных методов
-        assert hasattr(manager, 'start_container')
-        assert hasattr(manager, 'stop_container')
-        assert hasattr(manager, 'execute_command')
+                    # Проверяем конфигурацию ContextAnalyzerTool
+                    context_tool = context_tools[0]
+                    assert str(context_tool.project_dir) == str(project_dir)
 
 
 class TestSmartAgentConstants:
-    """Тесты констант и настроек по умолчанию"""
+    """Тесты констант и конфигураций Smart Agent"""
 
     def test_default_values(self):
-        """Тест значений по умолчанию"""
-        from src.tools.learning_tool import LearningTool
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-        from src.tools.docker_utils import DockerManager
+        """Проверка значений по умолчанию"""
+        from src.agents.smart_agent import create_smart_agent
 
-        # LearningTool
-        tool = LearningTool()
-        assert tool.experience_dir == Path("smart_experience")
-        assert tool.max_experience_tasks == 1000
+        # Проверяем значения по умолчанию через сигнатуру
+        import inspect
+        sig = inspect.signature(create_smart_agent)
 
-        # ContextAnalyzerTool
-        tool = ContextAnalyzerTool()
-        assert tool.project_dir == Path(".")
-        assert tool.docs_dir == tool.project_dir / "docs"
-        assert tool.max_file_size == 1000000
-        assert ".py" in tool.supported_extensions
-        assert ".md" in tool.supported_extensions
+        assert sig.parameters['role'].default == "Smart Project Executor Agent"
+        assert sig.parameters['experience_dir'].default == "smart_experience"
+        assert sig.parameters['verbose'].default == True
+        assert sig.parameters['allow_code_execution'].default == True
+        assert sig.parameters['use_docker'].default == True
+        assert sig.parameters['use_llm'].default == True
+        assert sig.parameters['max_experience_tasks'].default == 1000
 
-        # DockerManager
-        manager = DockerManager()
-        assert manager.image_name == "cursor-agent:latest"
-        assert manager.container_name == "cursor-agent-life"
+    def test_backstory_components(self, dummy_openai_key):
+        """Проверка компонентов backstory"""
+        from src.agents.smart_agent import create_smart_agent
 
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir)
 
-class TestSmartAgentErrorHandling:
-    """Тесты обработки ошибок"""
+            # Тест с Docker и LLM
+            with patch('src.tools.docker_utils.is_docker_available', return_value=True):
+                with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', True):
+                    with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=Mock()):
+                        agent_with_both = create_smart_agent(project_dir=project_dir)
+                        assert "with code execution" in agent_with_both.backstory
+                        assert "with LLM support" in agent_with_both.backstory
 
-    def test_learning_tool_with_invalid_path(self):
-        """Тест LearningTool с некорректным путем"""
-        from src.tools.learning_tool import LearningTool
-
-        # Создаем инструмент с путем к несуществующей директории
-        tool = LearningTool(experience_dir="/nonexistent/path")
-
-        # Проверяем что директория будет создана
-        assert tool.experience_dir.exists()
-        assert tool.experience_file.exists()
-
-    def test_context_analyzer_tool_with_invalid_path(self):
-        """Тест ContextAnalyzerTool с некорректным путем"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-
-        # Создаем инструмент с путем к несуществующей директории
-        tool = ContextAnalyzerTool(project_dir="/nonexistent/project")
-
-        # Проверяем основные атрибуты
-        assert str(tool.project_dir) == "/nonexistent/project"
-        assert str(tool.docs_dir) == "/nonexistent/project/docs"
+            # Тест без Docker и LLM
+            with patch('src.tools.docker_utils.is_docker_available', return_value=False):
+                with patch('src.agents.smart_agent.LLM_WRAPPER_AVAILABLE', False):
+                    with patch('src.agents.smart_agent.create_llm_for_crewai', return_value=None):
+                        agent_without_both = create_smart_agent(project_dir=project_dir, use_llm=False)
+                        assert "without code execution" in agent_without_both.backstory
+                        assert "in tool-only mode" in agent_without_both.backstory

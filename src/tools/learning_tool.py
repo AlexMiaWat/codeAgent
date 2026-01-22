@@ -5,12 +5,38 @@ LearningTool - инструмент для обучения на предыду�
 import os
 import json
 import logging
+import unicodedata
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from crewai.tools.base_tool import BaseTool
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_unicode_text(text: str) -> str:
+    """
+    Нормализует Unicode текст для улучшения поиска и сравнения.
+
+    Args:
+        text: Исходный текст
+
+    Returns:
+        Нормализованный текст
+    """
+    if not text:
+        return text
+
+    # Нормализуем Unicode (NFD - canonical decomposition)
+    normalized = unicodedata.normalize('NFD', text)
+
+    # Удаляем диакритические знаки (combining characters)
+    normalized = ''.join(char for char in normalized if unicodedata.category(char) != 'Mn')
+
+    # Приводим к нижнему регистру
+    normalized = normalized.lower()
+
+    return normalized
 
 
 class LearningTool(BaseTool):
@@ -183,12 +209,12 @@ class LearningTool(BaseTool):
             Список похожих задач
         """
         data = self._load_experience()
-        query_lower = query.lower()
+        query_normalized = normalize_unicode_text(query)
 
         similar_tasks = []
         for task in data["tasks"]:
-            description_lower = task["description"].lower()
-            if query_lower in description_lower:
+            description_normalized = normalize_unicode_text(task["description"])
+            if query_normalized in description_normalized:
                 similar_tasks.append(task)
 
         # Ограничиваем количество результатов
@@ -222,10 +248,11 @@ class LearningTool(BaseTool):
         """
         data = self._load_experience()
 
-        # Ищем похожие успешные задачи
+        # Ищем похожие успешные задачи с улучшенной Unicode обработкой
+        current_task_normalized = normalize_unicode_text(current_task)
         successful_similar = [
             task for task in data["tasks"]
-            if task["success"] and current_task.lower() in task["description"].lower()
+            if task["success"] and current_task_normalized in normalize_unicode_text(task["description"])
         ]
 
         if not successful_similar:

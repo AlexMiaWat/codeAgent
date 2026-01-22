@@ -10,22 +10,23 @@ llm:
     reserve:
     - kwaipilot/kat-coder-pro:free
     fallback:
-    - meta-llama/llama-3.2-1b-instruct
-    - kwaipilot/kat-coder-pro:free
+    - undi95/remm-slerp-l2-13b
+    - microsoft/wizardlm-2-8x22b
   parallel:
     enabled: true
     models:
-    - meta-llama/llama-3.2-1b-instruct
+    - microsoft/wizardlm-2-8x22b
     - microsoft/phi-3-mini-128k-instruct
-    evaluator_model: meta-llama/llama-3.2-3b-instruct
+    evaluator_model: microsoft/wizardlm-2-8x22b
     selection_criteria:
+    - quality
     - relevance
     - completeness
-    - quality
-  _last_updated: '2026-01-22T20:37:57.992471'
+    - efficiency
+  _last_updated: '2026-01-22T21:05:01.819254'
   _update_source: auto_test_results
   _stats:
-    total_tested: 7
+    total_tested: 4
     working_count: 0
     fastest_model: null
 providers:
