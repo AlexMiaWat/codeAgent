@@ -1,8 +1,13 @@
-# Поддержка Docker в Smart Agent
+# Smart Agent: Docker и LLM интеграция
 
 ## Обзор
 
-Smart Agent поддерживает опциональное использование Docker для безопасного выполнения кода. Если Docker недоступен, агент автоматически переключается в fallback режим без выполнения кода.
+Smart Agent поддерживает два уровня гибкости:
+
+1. **Docker поддержка**: Опциональное использование Docker для безопасного выполнения кода
+2. **LLM интеграция**: Многоуровневый fallback механизм для работы с языковыми моделями
+
+Если Docker или LLM недоступны, агент автоматически переключается в соответствующие fallback режимы, сохраняя функциональность через инструменты обучения и анализа.
 
 ## Режимы работы
 
@@ -233,3 +238,150 @@ if docker_available:
 else:
     tools.append(FallbackTool())
 ```
+
+## LLM интеграция
+
+Smart Agent поддерживает многоуровневый fallback механизм для работы с языковыми моделями:
+
+### Уровни LLM интеграции
+
+#### 1. Продвинутые модели через OpenRouter
+
+**Требования:**
+- Наличие `OPENROUTER_API_KEY` в переменных окружения
+- Конфигурация в `config/llm_settings.yaml`
+
+**Возможности:**
+- Доступ к продвинутым моделям (Grok, Claude, GPT-4 и др.)
+- Высокое качество ответов для сложных задач
+
+#### 2. LLMManager с автоматическим fallback
+
+**Требования:**
+- Конфигурация моделей в `config/llm_settings.yaml`
+- Доступ к API ключам (OpenAI, OpenRouter, etc.)
+
+**Возможности:**
+- Автоматический выбор самой быстрой модели
+- Fallback на резервные модели при ошибках
+- Поддержка ролей моделей (primary, duplicate, reserve, fallback)
+
+#### 3. Graceful degradation (tool-only режим)
+
+**Когда активируется:**
+- Отсутствие API ключей для внешних сервисов
+- Ошибки подключения к LLM сервисам
+- Явное отключение LLM через конфигурацию
+
+**Возможности:**
+- Работа только с инструментами (без LLM)
+- LearningTool для обучения на опыте
+- ContextAnalyzerTool для анализа проекта
+- Docker-based code execution (если доступен)
+
+### Конфигурация LLM
+
+#### Параметры create_smart_agent()
+
+```python
+from src.agents import create_smart_agent
+from pathlib import Path
+
+# Полный режим с LLM (рекомендуется)
+agent = create_smart_agent(
+    project_dir=Path("my_project"),
+    use_llm_manager=True,  # Использовать LLMManager
+    llm_config_path="config/llm_settings.yaml"
+)
+
+# Tool-only режим (без LLM)
+agent = create_smart_agent(
+    project_dir=Path("my_project"),
+    use_llm_manager=False  # Отключить LLM, работать только с инструментами
+)
+```
+
+#### Переменные окружения
+
+- `OPENROUTER_API_KEY` - Ключ для доступа к OpenRouter API
+- `OPENAI_API_KEY` - Ключ для доступа к OpenAI API
+- Другие ключи согласно конфигурации в `llm_settings.yaml`
+
+### Архитектура LLM интеграции
+
+```
+SmartAgent LLM Flow:
+1. Попытка использовать OpenRouter (если есть OPENROUTER_API_KEY)
+   ├── Успех: Продвинутые модели через OpenRouter
+   └── Неудача: Переход к уровню 2
+2. Попытка использовать LLMManager (если use_llm_manager=True)
+   ├── Успех: Автоматический выбор модели с fallback
+   └── Неудача: Переход к уровню 3
+3. Graceful degradation: Tool-only режим
+   └── Работа с LearningTool + ContextAnalyzerTool + Docker (опционально)
+```
+
+### Тестирование LLM интеграции
+
+#### Тесты с LLM
+
+```bash
+# Тест создания агента с LLM
+pytest test/test_smart_agent.py::test_smart_agent_creation -v
+
+# Тест graceful degradation без API ключей
+pytest test/test_smart_agent.py::test_smart_agent_graceful_degradation -v
+```
+
+#### Моки для тестирования
+
+```python
+from unittest.mock import patch
+
+# Мокаем отсутствие API ключей
+with patch.dict(os.environ, {}, clear=True):
+    agent = create_smart_agent(project_dir=Path("."), use_llm_manager=True)
+    # Агент будет в tool-only режиме
+
+# Мокаем успешное подключение к LLM
+with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai') as mock_llm:
+    mock_llm.return_value = MockLLMWrapper()
+    agent = create_smart_agent(project_dir=Path("."), use_llm_manager=True)
+    # Агент будет использовать LLM
+```
+
+### Производительность и выбор режима
+
+| Режим | Производительность | Качество ответов | Зависимости |
+|-------|-------------------|------------------|-------------|
+| OpenRouter | Высокая | Максимальное | OPENROUTER_API_KEY |
+| LLMManager | Средняя | Высокое | API ключи в конфиге |
+| Tool-only | Максимальная | Среднее (инструменты) | Нет внешних зависимостей |
+
+### Советы по LLM интеграции
+
+1. **Для production**: Используйте OpenRouter для максимального качества
+2. **Для разработки**: LLMManager с fallback обеспечивает надежность
+3. **Для CI/CD**: Tool-only режим гарантирует стабильность без внешних зависимостей
+4. **Для анализа кода**: Все режимы полностью функциональны
+
+### Troubleshooting LLM
+
+#### Агент не использует LLM
+
+1. Проверьте наличие API ключей: `echo $OPENROUTER_API_KEY`
+2. Проверьте конфигурацию: `cat config/llm_settings.yaml`
+3. Проверьте логи на ошибки подключения
+4. Убедитесь, что `use_llm_manager=True`
+
+#### Низкое качество ответов
+
+1. Проверьте доступность моделей в OpenRouter
+2. Обновите конфигурацию моделей в `llm_settings.yaml`
+3. Проверьте логи на fallback между моделями
+
+#### Tool-only режим не активируется
+
+1. Убедитесь, что нет API ключей в окружении
+2. Проверьте логи на graceful degradation
+3. Убедитесь, что инструменты работают корректно

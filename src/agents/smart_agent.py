@@ -64,41 +64,28 @@ def create_smart_agent(
 
     # Определяем, использовать ли Docker для code execution
     docker_available = False
-    docker_error_msg = ""
 
     if allow_code_execution:
         try:
             if use_docker is None:  # Автоопределение
                 docker_available = DockerChecker.is_docker_available()
-                status_msg = 'available' if docker_available else 'not available'
-                logger.info(f"Docker auto-detection: {status_msg}")
-
-                if not docker_available:
-                    docker_version = DockerChecker.get_docker_version()
-                    if docker_version:
-                        logger.info(f"Docker installed (version: {docker_version}) but daemon not accessible")
-                    else:
-                        logger.info("Docker not installed or not in PATH")
+                logger.info(f"Docker auto-detection: {'available' if docker_available else 'not available'}")
 
             elif use_docker:  # Принудительное использование
                 docker_available = DockerChecker.is_docker_available()
                 if not docker_available:
-                    docker_error_msg = "Docker forced but not available - falling back to no code execution"
-                    logger.warning(docker_error_msg)
-                    # Проверяем права доступа
-                    perms_ok, perms_msg = DockerChecker.check_docker_permissions()
-                    if not perms_ok:
-                        logger.warning(f"Docker permissions issue: {perms_msg}")
+                    logger.warning("Docker forced but not available - falling back to no code execution")
                 else:
                     logger.info("Docker forced and available")
-            else:  # Отключено
-                docker_available = False
-                logger.info("Docker disabled by configuration")
+
+            # else: use_docker is False - Docker отключен, docker_available остается False
 
         except Exception as e:
             docker_available = False
-            docker_error_msg = f"Docker check failed: {str(e)}"
-            logger.error(docker_error_msg)
+            logger.error(f"Docker check failed: {str(e)}")
+
+    else:
+        logger.info("Code execution disabled - Docker check skipped")
 
     # Добавляем стандартные инструменты
     if allow_code_execution:
@@ -115,8 +102,7 @@ def create_smart_agent(
                 logger.error(f"CodeInterpreterTool initialization failed: {e}")
                 logger.info("Falling back to no code execution mode")
         else:
-            fallback_reason = docker_error_msg or "Docker not available"
-            logger.info(f"CodeInterpreterTool skipped - {fallback_reason} - operating in fallback mode")
+            logger.info("CodeInterpreterTool skipped - Docker not available - operating in fallback mode")
             # В fallback режиме полагаемся на LearningTool и ContextAnalyzerTool
 
     # Добавляем smart инструменты
@@ -161,7 +147,10 @@ You are operating {code_execution_status}.
 {execution_note}
 """
 
-    # Пытаемся использовать продвинутые модели через OpenRouter
+    # Настройка LLM с многоуровневым fallback
+    llm_available = False
+
+    # Уровень 1: Продвинутые модели через OpenRouter (если есть API ключ)
     if os.getenv('OPENROUTER_API_KEY'):
         try:
             from crewai.llm import LLM
@@ -169,19 +158,18 @@ You are operating {code_execution_status}.
             from pathlib import Path
 
             # Читаем конфигурацию для выбора продвинутой модели
-            llm_config_path = Path(llm_config_path)
+            llm_config_path_obj = Path(llm_config_path)
             model_name = "grok"  # По умолчанию используем grok для smart агента
 
-            if llm_config_path.exists():
+            if llm_config_path_obj.exists():
                 try:
-                    with open(llm_config_path, 'r', encoding='utf-8') as f:
+                    with open(llm_config_path_obj, 'r', encoding='utf-8') as f:
                         llm_config = yaml.safe_load(f) or {}
 
                     # Для smart агента используем более продвинутые модели
                     smart_config = llm_config.get('smart_agent', {})
                     model_name = smart_config.get('model', 'grok')
 
-                    logger.info(f"Using advanced model for smart agent: {model_name}")
                 except Exception as e:
                     logger.warning(f"Failed to load smart agent model config: {e}")
 
@@ -191,34 +179,63 @@ You are operating {code_execution_status}.
                 api_key=os.getenv('OPENROUTER_API_KEY'),
                 base_url="https://openrouter.ai/api/v1"
             )
+            llm_available = True
+            logger.info(f"Using advanced model: {model_name} via OpenRouter")
+
         except Exception as e:
-            logger.warning(f"Failed to create advanced LLM for smart agent: {e}")
-            # Fallback: используем CrewAILLMWrapper с автоматическим fallback
-            try:
-                from ..llm.crewai_llm_wrapper import create_llm_for_crewai
-                llm_kwargs['llm'] = create_llm_for_crewai(use_fastest=True)
-                logger.info("Using CrewAILLMWrapper with automatic fallback mechanism")
-            except Exception as fallback_error:
-                logger.error(f"Failed to create CrewAILLMWrapper fallback: {fallback_error}")
-                # Последний fallback - устанавливаем фиктивный OPENAI_API_KEY для предотвращения краха
-                if not os.getenv('OPENAI_API_KEY'):
-                    os.environ['OPENAI_API_KEY'] = 'sk-dummy'
-                    logger.warning("Using dummy OpenAI key as last resort (agent may not work properly)")
+            logger.warning(f"Failed to create advanced LLM via OpenRouter: {e}")
+
+    # Уровень 2: CrewAILLMWrapper с автоматическим fallback через LLMManager
+    if not llm_available and use_llm_manager:
+        try:
+            from ..llm.crewai_llm_wrapper import create_llm_for_crewai
+            llm_kwargs['llm'] = create_llm_for_crewai(
+                config_path=llm_config_path,
+                use_fastest=True,
+                use_parallel=False
+            )
+            llm_available = True
+            logger.info("Using LLMManager with multi-model fallback support")
+
+        except Exception as e:
+            logger.error(f"Failed to create LLMManager fallback: {e}")
+
+    # Уровень 3: Graceful degradation - работа без LLM
+    if not llm_available:
+        logger.warning("No LLM available - Smart Agent will operate in tool-only mode")
+        logger.info("Available capabilities: LearningTool, ContextAnalyzerTool, and Docker-based code execution (if available)")
+        # Для graceful degradation не передаем llm параметр вообще
+        llm_kwargs.clear()
 
     # Создаем агента с расширенными возможностями
-    agent = Agent(
-        role=role,
-        goal=goal,
-        backstory=backstory,
-        allow_code_execution=allow_code_execution and docker_available,  # Обновляем на основе доступности Docker
-        verbose=verbose,
-        tools=tools,
-        **llm_kwargs,
-        # Для smart агента можно увеличить лимиты
-        max_iter=50,  # Больше итераций для сложных задач
-        memory=True,   # Включаем память для лучшего обучения
-        # max_rpm=30,    # Можно настроить ограничения RPM
-    )
+    if llm_kwargs:
+        # Создаем агента с LLM
+        agent = Agent(
+            role=role,
+            goal=goal,
+            backstory=backstory,
+            allow_code_execution=allow_code_execution and docker_available,
+            verbose=verbose,
+            tools=tools,
+            **llm_kwargs,
+            # Для smart агента можно увеличить лимиты
+            max_iter=50,  # Больше итераций для сложных задач
+            memory=True,   # Включаем память для лучшего обучения
+        )
+    else:
+        # Graceful degradation: создаем агента без LLM
+        logger.warning("Creating Smart Agent in tool-only mode (no LLM available)")
+        agent = Agent(
+            role=role,
+            goal=f"{goal} (Tool-only mode - enhanced intelligence through learning)",
+            backstory=f"{backstory}\n\nOPERATING IN TOOL-ONLY MODE: No language model available. Using LearningTool and ContextAnalyzerTool for intelligent task execution based on experience and project analysis.",
+            allow_code_execution=allow_code_execution and docker_available,
+            verbose=verbose,
+            tools=tools,
+            # Для tool-only режима настраиваем параметры
+            max_iter=30,  # Среднее количество итераций
+            memory=False,  # Отключаем память CrewAI без LLM
+        )
 
     # Логируем итоговый статус
     tool_names = [tool.__class__.__name__ if hasattr(tool, '__class__') else str(type(tool)) for tool in tools]

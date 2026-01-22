@@ -1,0 +1,115 @@
+{
+  "version": "1.0",
+  "tasks": [
+    {
+      "task_id": "test_task_001",
+      "description": "Тестовая задача для проверки обучения",
+      "success": true,
+      "execution_time": 5.5,
+      "timestamp": "2026-01-22T20:11:02.595459",
+      "notes": "Тестовое выполнение",
+      "patterns": [
+        "test",
+        "learning"
+      ]
+    },
+    {
+      "task_id": "test_task_001",
+      "description": "Тестовая задача для проверки обучения",
+      "success": true,
+      "execution_time": 5.5,
+      "timestamp": "2026-01-22T20:11:16.111860",
+      "notes": "Тестовое выполнение",
+      "patterns": [
+        "test",
+        "learning"
+      ]
+    },
+    {
+      "task_id": "test_task_001",
+      "description": "Тестовая задача для проверки обучения",
+      "success": true,
+      "execution_time": 5.5,
+      "timestamp": "2026-01-22T20:11:34.661941",
+      "notes": "Тестовое выполнение",
+      "patterns": [
+        "test",
+        "learning"
+      ]
+    },
+    {
+      "task_id": "test_task_001",
+      "description": "Тестовая задача для проверки обучения",
+      "success": true,
+      "execution_time": 5.5,
+      "timestamp": "2026-01-22T20:11:48.146645",
+      "notes": "Тестовое выполнение",
+      "patterns": [
+        "test",
+        "learning"
+      ]
+    },
+    {
+      "task_id": "test_task_001",
+      "description": "Тестовая задача для проверки обучения",
+      "success": true,
+      "execution_time": 5.5,
+      "timestamp": "2026-01-22T20:12:06.305722",
+      "notes": "Тестовое выполнение",
+      "patterns": [
+        "test",
+        "learning"
+      ]
+    },
+    {
+      "task_id": "test_task_001",
+      "description": "Тестовая задача для проверки обучения",
+      "success": true,
+      "execution_time": 5.5,
+      "timestamp": "2026-01-22T20:12:20.076658",
+      "notes": "Тестовое выполнение",
+      "patterns": [
+        "test",
+        "learning"
+      ]
+    },
+    {
+      "task_id": "test_task_001",
+      "description": "Тестовая задача для проверки обучения",
+      "success": true,
+      "execution_time": 5.5,
+      "timestamp": "2026-01-22T20:13:12.727540",
+      "notes": "Тестовое выполнение",
+      "patterns": [
+        "test",
+        "learning"
+      ]
+    }
+  ],
+  "patterns": {
+    "test": [
+      "test_task_001",
+      "test_task_001",
+      "test_task_001",
+      "test_task_001",
+      "test_task_001",
+      "test_task_001",
+      "test_task_001"
+    ],
+    "learning": [
+      "test_task_001",
+      "test_task_001",
+      "test_task_001",
+      "test_task_001",
+      "test_task_001",
+      "test_task_001",
+      "test_task_001"
+    ]
+  },
+  "statistics": {
+    "total_tasks": 7,
+    "successful_tasks": 7,
+    "failed_tasks": 0,
+    "average_execution_time": 5.5
+  }
+}

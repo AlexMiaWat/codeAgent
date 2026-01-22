@@ -201,8 +201,9 @@ class LearningTool(BaseTool):
         for i, task in enumerate(similar_tasks, 1):
             result += f"{i}. **{task['description']}**\n"
             result += f"   Статус: {'✅ Успешно' if task['success'] else '❌ Неудачно'}\n"
-            if task.get('execution_time'):
-                result += f"   Время выполнения: {task['execution_time']:.1f} сек\n"
+            execution_time = task.get('execution_time')
+            if execution_time is not None:
+                result += f"   Время выполнения: {execution_time:.1f} сек\n"
             if task.get('notes'):
                 result += f"   Заметки: {task['notes']}\n"
             result += "\n"

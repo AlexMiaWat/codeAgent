@@ -120,10 +120,12 @@ $RECYCLE.BIN/
 .env.smart_agent
 smart_experience/.env*
 
-# Smart agent temporary files
+# Smart agent temporary files and generated data
 smart_experience/temp/
 smart_experience/cache/
 smart_experience/logs/
+smart_experience/experience.json
+smart_experience/*.log
 
 # API keys and credentials
 *.key

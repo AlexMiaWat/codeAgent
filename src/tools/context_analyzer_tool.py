@@ -108,11 +108,15 @@ class ContextAnalyzerTool(BaseTool):
                         except PermissionError:
                             continue
 
-            # Анализируем типы файлов
-            for ext in self.supported_extensions:
-                files = list(self.project_dir.rglob(f"*{ext}"))
-                if files:
-                    structure["file_types"][ext] = len(files)
+            # Анализируем типы файлов (оптимизированный один проход)
+            file_counts = {}
+            for file_path in self.project_dir.rglob("*"):
+                if file_path.is_file():
+                    ext = file_path.suffix.lower()
+                    if ext in self.supported_extensions:
+                        file_counts[ext] = file_counts.get(ext, 0) + 1
+
+            structure["file_types"] = file_counts
 
             # Определяем основные компоненты
             main_dirs = ["src", "docs", "test", "config", "scripts"]

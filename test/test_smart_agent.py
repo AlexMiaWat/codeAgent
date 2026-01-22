@@ -8,8 +8,8 @@ import sys
 import os
 from pathlib import Path
 
-# Добавляем src в путь для импорта
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+# Добавляем корневую директорию в путь для импорта
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 def test_learning_tool():
     """Тест LearningTool"""
@@ -138,6 +138,63 @@ def test_smart_agent_creation():
         print(f"❌ Ошибка создания Smart Agent: {e}")
         return False
 
+def test_smart_agent_graceful_degradation():
+    """Тест graceful degradation - агент должен работать без API ключей"""
+    print("\n🛡️  Тестирование graceful degradation (работа без API ключей)...")
+
+    try:
+        from src.agents import create_smart_agent
+        import os
+
+        # Сохраняем оригинальные значения API ключей
+        original_openai = os.environ.get('OPENAI_API_KEY')
+        original_openrouter = os.environ.get('OPENROUTER_API_KEY')
+
+        try:
+            # Убираем API ключи для теста graceful degradation
+            if 'OPENAI_API_KEY' in os.environ:
+                del os.environ['OPENAI_API_KEY']
+            if 'OPENROUTER_API_KEY' in os.environ:
+                del os.environ['OPENROUTER_API_KEY']
+
+            # Устанавливаем минимальный dummy ключ для CrewAI (требуется для импорта)
+            os.environ['OPENAI_API_KEY'] = 'dummy-key-for-testing'
+
+            # Создаем агента без API ключей (он будет работать в tool-only режиме)
+            agent = create_smart_agent(
+                project_dir=Path("."),
+                experience_dir="test_smart_experience",
+                use_docker=False,
+                verbose=False  # Отключаем verbose для чистоты теста
+            )
+
+            # Проверяем, что агент создан несмотря на отсутствие API ключей
+            assert agent is not None
+            assert agent.role == "Smart Project Executor Agent"
+            assert len(agent.tools) >= 2  # Должен иметь инструменты
+
+            # Проверяем, что инструменты работают
+            tool_names = [tool.name for tool in agent.tools]
+            assert "LearningTool" in tool_names
+            assert "ContextAnalyzerTool" in tool_names
+
+            print("✅ Smart Agent работает в режиме graceful degradation")
+            print(f"   Агент создан без API ключей: {len(agent.tools)} инструментов")
+            print("   Режим: tool-only (без LLM)")
+
+            return True
+
+        finally:
+            # Восстанавливаем оригинальные значения
+            if original_openai:
+                os.environ['OPENAI_API_KEY'] = original_openai
+            if original_openrouter:
+                os.environ['OPENROUTER_API_KEY'] = original_openrouter
+
+    except Exception as e:
+        print(f"❌ Ошибка graceful degradation: {e}")
+        return False
+
 def main():
     """Основная функция тестирования"""
     print("🚀 Начало тестирования Smart Agent интеграции\n")
@@ -148,6 +205,7 @@ def main():
     results.append(("LearningTool", test_learning_tool()))
     results.append(("ContextAnalyzerTool", test_context_analyzer_tool()))
     results.append(("Smart Agent Creation", test_smart_agent_creation()))
+    results.append(("Smart Agent Graceful Degradation", test_smart_agent_graceful_degradation()))
 
     # Итоги тестирования
     print("\n" + "="*50)
