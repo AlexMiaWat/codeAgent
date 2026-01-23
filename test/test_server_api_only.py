@@ -261,7 +261,7 @@ def main():
                                 if any(kw in line.lower() for kw in ['http сервер', 'запущен', 'порт 3456', 'доступен', 'error', 'fail']):
                                     if 'error' in line.lower() or 'fail' in line.lower():
                                         print(f"[STDOUT] {line.strip()}")
-                    except:
+                    except Exception:
                         pass
                 
                 def read_stderr():
@@ -272,7 +272,7 @@ def main():
                                 # Выводим ошибки
                                 if any(kw in line.lower() for kw in ['error', 'fail', 'exception', 'traceback']):
                                     print(f"[STDERR] {line.strip()}")
-                    except:
+                    except Exception:
                         pass
                 
                 stdout_thread = threading.Thread(target=read_stdout, daemon=True)
@@ -307,10 +307,10 @@ def main():
                     try:
                         server_process.terminate()
                         server_process.wait(timeout=5)
-                    except:
+                    except Exception:
                         try:
                             server_process.kill()
-                        except:
+                        except Exception:
                             pass
                     return 1
             except Exception as e:
@@ -364,7 +364,7 @@ def main():
             except Exception:
                 try:
                     server_process.kill()
-                except:
+                except Exception:
                     pass
             print("[INFO] Сервер остановлен")
         except Exception as e:

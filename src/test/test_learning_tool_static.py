@@ -96,7 +96,7 @@ class TestLearningToolStatic:
         params = sig.parameters
         assert params['task_id'].annotation is str
         assert params['task_description'].annotation is str
-        assert params['success'].annotation == bool
+        assert params['success'].annotation is bool
         assert params['execution_time'].annotation == Optional[float]
         assert params['notes'].annotation is str
         assert params['patterns'].annotation == List[str]
@@ -176,7 +176,7 @@ class TestLearningToolStatic:
         # Проверяем типы и значения по умолчанию
         params = sig.parameters
         assert params['query'].annotation is str
-        assert params['limit'].annotation == int
+        assert params['limit'].annotation is int
         assert params['limit'].default == 5
 
     def test_find_similar_tasks_return_type(self):

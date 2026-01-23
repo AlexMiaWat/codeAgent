@@ -324,7 +324,7 @@ def auto_start_server(request):
             server_started = False
         else:
             server_started = tester.start_server(timeout=30)
-    except:
+    except Exception:
         server_started = tester.start_server(timeout=30)
 
     if not server_started and requires_server:

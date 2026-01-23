@@ -293,7 +293,6 @@ def test_concurrent_performance():
     print("\n🔄 Тестирование параллельной производительности...")
 
     try:
-        import threading
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         from src.tools.learning_tool import LearningTool

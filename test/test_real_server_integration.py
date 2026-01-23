@@ -90,7 +90,7 @@ class ServerTester:
                                 print("[INFO] Сервер уже запущен и отвечает на запросы")
                                 print("[INFO] Используем существующий сервер")
                                 return True
-                        except:
+                        except Exception:
                             print("[WARN] Порт занят, но сервер не отвечает. Попытка запустить новый процесс...")
             except Exception as e:
                 print(f"[DEBUG] Ошибка при проверке порта: {e}")
@@ -162,7 +162,7 @@ class ServerTester:
                     if remaining_stderr:
                         print("[ERROR] Остаток stderr:")
                         print(remaining_stderr[:500])
-                except:
+                except Exception:
                     pass
                 return False
             
@@ -181,7 +181,7 @@ class ServerTester:
                         if remaining_stderr:
                             print("[ERROR] Остаток stderr:")
                             print(remaining_stderr[:500])
-                    except:
+                    except Exception:
                         pass
                     return False
                 

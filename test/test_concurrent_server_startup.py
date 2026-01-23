@@ -362,7 +362,7 @@ class TestConcurrentServerStartup:
                     print(f"  Ошибка при завершении процесса {result['pid']}: {e}")
                     try:
                         kill_process(result['pid'])
-                    except:
+                    except Exception:
                         pass
         
         # Выводим результаты

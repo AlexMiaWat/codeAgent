@@ -168,7 +168,7 @@ if output_path.exists():
     checks = {
         "Есть заголовки": any(line.startswith('#') for line in lines),
         "Упоминается Life": any('life' in line.lower() for line in lines),
-        "Есть структура": len([l for l in lines if l.startswith('#')]) >= 3,
+        "Есть структура": len([line for line in lines if line.startswith('#')]) >= 3,
         "Достаточно информации": len(content) > 500,
         "Контрольная фраза": "Документация создана!" in content or "документация" in content.lower()
     }

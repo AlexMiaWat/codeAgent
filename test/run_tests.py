@@ -280,7 +280,7 @@ class TestRunner:
             import requests
             response = requests.get("http://127.0.0.1:3456/health", timeout=2)
             return response.status_code == 200
-        except:
+        except Exception:
             return False
     
     def check_docker_container_status(self, container_name: str = "cursor-agent-life") -> Dict[str, Any]:

@@ -401,9 +401,8 @@ def main():
     print("Тестирование производительности и стабильности под нагрузкой\n")
 
     # Проверяем наличие psutil
-    try:
-        import psutil
-    except ImportError:
+    import importlib.util
+    if not importlib.util.find_spec("psutil"):
         print("❌ Требуется установка psutil: pip install psutil")
         return 1
 

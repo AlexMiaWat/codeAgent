@@ -57,12 +57,12 @@ class TestSmartAgentStatic:
         assert params['role'].annotation is str
         assert params['goal'].annotation is str
         assert params['backstory'].annotation == Optional[str]
-        assert params['allow_code_execution'].annotation == bool
-        assert params['use_docker'].annotation == bool
-        assert params['verbose'].annotation == bool
-        assert params['use_llm'].annotation == bool
+        assert params['allow_code_execution'].annotation is bool
+        assert params['use_docker'].annotation is bool
+        assert params['verbose'].annotation is bool
+        assert params['use_llm'].annotation is bool
         assert params['llm_config_path'].annotation is str
-        assert params['max_experience_tasks'].annotation == int
+        assert params['max_experience_tasks'].annotation is int
 
     def test_create_smart_agent_return_type(self, dummy_openai_key):
         """Проверка типа возвращаемого значения create_smart_agent"""
