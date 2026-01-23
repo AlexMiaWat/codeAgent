@@ -14,17 +14,17 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple, Union
 from datetime import datetime
 
-from crewai import Task, Crew
+from crewai import Task, Crew  # type: ignore[import-untyped]
 
 try:
-    from flask import Flask, jsonify
+    from flask import Flask, jsonify  # type: ignore[import-untyped]
     FLASK_AVAILABLE = True
 except ImportError:
     FLASK_AVAILABLE = False
 
 try:
-    from watchdog.observers import Observer
-    from watchdog.events import FileSystemEventHandler, FileModifiedEvent
+    from watchdog.observers import Observer  # type: ignore[import-untyped]
+    from watchdog.events import FileSystemEventHandler, FileModifiedEvent  # type: ignore[import-untyped]
     WATCHDOG_AVAILABLE = True
 except ImportError:
     WATCHDOG_AVAILABLE = False
@@ -39,6 +39,11 @@ from .task_logger import TaskLogger, ServerLogger, TaskPhase, Colors
 from .session_tracker import SessionTracker
 from .checkpoint_manager import CheckpointManager
 from .git_utils import auto_push_after_commit
+
+
+class SecurityError(Exception):
+    """Исключение для нарушений безопасности"""
+    pass
 
 
 def setup_asyncio_exception_handling():
@@ -121,9 +126,9 @@ def patch_asyncio_for_cleanup():
             raise
 
     # Применяем патчи
-    asyncio.base_events.BaseEventLoop.call_soon = safe_call_soon
-    asyncio.base_events.BaseEventLoop.call_at = safe_call_at
-    asyncio.base_events.BaseEventLoop.call_later = safe_call_later
+    asyncio.base_events.BaseEventLoop.call_soon = safe_call_soon  # type: ignore[assignment]
+    asyncio.base_events.BaseEventLoop.call_at = safe_call_at  # type: ignore[assignment]
+    asyncio.base_events.BaseEventLoop.call_later = safe_call_later  # type: ignore[assignment]
 
     logging.getLogger(__name__).debug("Applied asyncio cleanup patches")
 
@@ -343,7 +348,86 @@ class CodeAgentServer:
         
         # Синхронизируем TODO задачи с checkpoint (помечаем выполненные задачи)
         self._sync_todos_with_checkpoint()
-        
+
+    def _validate_path_within_project(self, path: Union[str, Path], operation: str = "access") -> Path:
+        """
+        Валидация пути - проверка, что путь находится внутри директории проекта
+
+        Args:
+            path: Путь для валидации
+            operation: Описание операции для логирования
+
+        Returns:
+            Path: Нормализованный путь
+
+        Raises:
+            SecurityError: Если путь находится вне директории проекта
+        """
+        if isinstance(path, str):
+            path = Path(path)
+
+        # Нормализуем путь (разрешаем .. и .)
+        resolved_path = path.resolve()
+
+        # Проверяем, что путь находится внутри project_dir
+        try:
+            resolved_path.relative_to(self.project_dir.resolve())
+        except ValueError:
+            logger.error(f"🚨 БЕЗОПАСНОСТЬ: Попытка {operation} файла вне директории проекта!")
+            logger.error(f"   Директория проекта: {self.project_dir}")
+            logger.error(f"   Запрашиваемый путь: {resolved_path}")
+            raise SecurityError(f"Доступ к файлу вне директории проекта запрещен: {resolved_path}")
+
+        return resolved_path
+
+    def _validate_instruction_security(self, instruction: str) -> bool:
+        """
+        Проверяет инструкцию на наличие потенциально опасных путей
+
+        Args:
+            instruction: Текст инструкции для проверки
+
+        Returns:
+            True если найдены подозрительные пути, False если безопасно
+        """
+        import re
+
+        # Паттерны подозрительных путей
+        suspicious_patterns = [
+            # Абсолютные пути Windows
+            r'[A-Za-z]:[\\/]',
+            # Абсолютные пути Unix/Linux
+            r'/(?!/)',  # / в начале строки, но не //
+            # Пути с .. (попытка выхода из директории)
+            r'\.\./',
+            # Пути к другим потенциальным проектам (hardcoded примеры)
+            r'D:/Space/[a-zA-Z]',
+            r'/home/[^/]+/',
+            r'/Users/[^/]+/',
+            # Пути к системным директориям
+            r'/etc/',
+            r'/var/',
+            r'/usr/',
+            r'C:/Windows/',
+            r'C:/Program Files/',
+        ]
+
+        for pattern in suspicious_patterns:
+            if re.search(pattern, instruction):
+                logger.warning(f"🚨 Найден подозрительный путь в инструкции: {pattern}")
+                logger.warning(f"   Инструкция: {instruction[:300]}{'...' if len(instruction) > 300 else ''}")
+                return True
+
+        # Проверяем на наличие слишком длинных путей (могут быть абсолютными)
+        path_pattern = r'[a-zA-Z0-9_][a-zA-Z0-9_/\-\\\.]*'
+        paths = re.findall(path_pattern, instruction)
+        for path in paths:
+            if len(path) > 100:  # Слишком длинный путь подозрителен
+                logger.warning(f"🚨 Найден слишком длинный путь в инструкции: {path[:100]}...")
+                return True
+
+        return False
+
         # Логируем инициализацию
         self.server_logger.log_initialization({
             'project_dir': str(self.project_dir),
@@ -897,6 +981,16 @@ class CodeAgentServer:
         logger.debug(f"📝 Текст инструкции: {instruction[:200]}{'...' if len(instruction) > 200 else ''}")
         logger.debug(f"⏱️ Таймаут: {timeout} сек, рабочая директория: {self.project_dir}")
 
+        # ВАЛИДАЦИЯ БЕЗОПАСНОСТИ: проверяем инструкцию на наличие подозрительных путей
+        if self._validate_instruction_security(instruction):
+            logger.warning("🚨 Инструкция содержит подозрительные пути, отклонена из соображений безопасности")
+            return {
+                "task_id": task_id,
+                "success": False,
+                "error": "Инструкция отклонена из соображений безопасности",
+                "cli_available": True
+            }
+
         if not self.cursor_cli:
             logger.error("❌ Cursor CLI объект не инициализирован")
             return {
@@ -968,22 +1062,80 @@ class CodeAgentServer:
     ) -> dict:
         """
         Выполнить инструкцию через Cursor с обработкой повторяющихся ошибок
-        
+
         Args:
             instruction: Текст инструкции
             task_id: ID задачи
             timeout: Таймаут выполнения
             task_logger: Логгер задачи
             instruction_num: Номер инструкции
-            
+
         Returns:
             Словарь с результатом выполнения
         """
-        return self.execute_cursor_instruction(
-            instruction=instruction,
-            task_id=task_id,
-            timeout=timeout
-        )
+        max_retries = 2
+        retry_delay = 5  # секунды
+
+        for attempt in range(max_retries + 1):
+            try:
+                logger.info(f"🔄 Попытка {attempt + 1}/{max_retries + 1} выполнения инструкции {instruction_num} для задачи {task_id}")
+
+                result = self.execute_cursor_instruction(
+                    instruction=instruction,
+                    task_id=task_id,
+                    timeout=timeout
+                )
+
+                if result.get("success"):
+                    logger.info(f"✅ Инструкция {instruction_num} выполнена успешно на попытке {attempt + 1}")
+                    return result
+
+                # Анализируем ошибку для принятия решения о повторной попытке
+                error_message = result.get('error_message', '')
+                stderr = result.get('stderr', '')
+
+                # Проверяем типы ошибок, при которых стоит повторить
+                should_retry = False
+                if "timeout" in error_message.lower() or "timeout" in stderr.lower():
+                    logger.warning(f"⏰ Таймаут при выполнении инструкции {instruction_num}, повторяем...")
+                    should_retry = True
+                elif "connection" in error_message.lower() or "network" in error_message.lower():
+                    logger.warning(f"🌐 Сетевая ошибка при выполнении инструкции {instruction_num}, повторяем...")
+                    should_retry = True
+                elif "cli not available" in error_message.lower():
+                    logger.warning(f"🔌 Cursor CLI недоступен при выполнении инструкции {instruction_num}, повторяем...")
+                    should_retry = True
+
+                if should_retry and attempt < max_retries:
+                    logger.info(f"⏳ Ждем {retry_delay} сек перед повторной попыткой...")
+                    time.sleep(retry_delay)
+                    continue
+
+                # Если не стоит повторять или исчерпаны попытки
+                logger.error(f"❌ Инструкция {instruction_num} завершилась с ошибкой после {attempt + 1} попыток")
+                return result
+
+            except Exception as e:
+                logger.error(f"💥 Неожиданная ошибка при выполнении инструкции {instruction_num} на попытке {attempt + 1}: {e}")
+                if attempt < max_retries:
+                    logger.info(f"⏳ Ждем {retry_delay} сек перед повторной попыткой...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    return {
+                        "task_id": task_id,
+                        "success": False,
+                        "error": f"Неожиданная ошибка: {str(e)}",
+                        "cli_available": False
+                    }
+
+        # Это не должно достигаться, но на всякий случай
+        return {
+            "task_id": task_id,
+            "success": False,
+            "error": "Исчерпаны все попытки выполнения инструкции",
+            "cli_available": False
+        }
 
     async def _safe_close_llm_manager(self, llm_manager):
         """
@@ -1678,11 +1830,30 @@ class CodeAgentServer:
         # Подстановка task_id и date в путь
         wait_for_file = wait_for_file.replace('{task_id}', task_id)
         wait_for_file = wait_for_file.replace('{date}', datetime.now().strftime('%Y%m%d'))
-        
+
         file_path = self.project_dir / wait_for_file
-        
+
+        # ВАЛИДАЦИЯ БЕЗОПАСНОСТИ: проверяем, что путь находится внутри project_dir
+        try:
+            file_path = self._validate_path_within_project(file_path, f"ожидание файла результата для задачи {task_id}")
+        except SecurityError as e:
+            logger.error(str(e))
+            return {
+                "success": False,
+                "file_path": str(file_path),
+                "content": None,
+                "wait_time": 0,
+                "error": "Нарушение безопасности: попытка доступа к файлу вне директории проекта"
+            }
+
+        # Автоматически создаем директорию для файла результата
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        logger.debug(f"Создана директория для файла результата: {file_path.parent}")
+
         # ДОПОЛНИТЕЛЬНО: Проверяем также cursor_results/ на случай, если файл создан через файловый интерфейс
         cursor_results_dir = self.project_dir / "cursor_results"
+        cursor_results_dir.mkdir(parents=True, exist_ok=True)
+        logger.debug(f"Создана директория для файлового интерфейса: {cursor_results_dir}")
         cursor_result_patterns = [
             f"result_{task_id}.txt",
             f"result_{task_id}.md",
@@ -2751,6 +2922,16 @@ class CodeAgentServer:
             # Подставляем переменные в wait_for_file
             wait_for_file = wait_for_file.replace('{task_id}', task_id).replace('{timestamp}', timestamp)
 
+            # ВАЛИДАЦИЯ БЕЗОПАСНОСТИ: проверяем путь к ожидаемому файлу
+            wait_file_path = self.project_dir / wait_for_file
+            try:
+                wait_file_path = self._validate_path_within_project(wait_file_path, f"ожидание файла для свободной инструкции задачи {task_id}")
+                wait_for_file = str(wait_file_path.relative_to(self.project_dir))
+            except SecurityError as e:
+                logger.error(str(e))
+                logger.error(f"🚨 Свободная инструкция отклонена из-за нарушения безопасности")
+                return False
+
             logger.info(Colors.colorize(
                 f"📝 Текст инструкции: {instruction_text[:100]}{'...' if len(instruction_text) > 100 else ''}",
                 Colors.BRIGHT_CYAN
@@ -2914,6 +3095,11 @@ class CodeAgentServer:
         Returns:
             True если задача выполнена успешно
         """
+        # Отладочный вывод для Colors
+        logger.info(f"DEBUG _execute_task: Colors = {Colors}, type = {type(Colors)}")
+        if hasattr(Colors, '__module__'):
+            logger.info(f"DEBUG _execute_task: Colors module = {Colors.__module__}")
+
         # Анализируем комментарий задачи на предмет незавершенного выполнения
         completion_info = self._analyze_task_completion_comment(todo_item)
         if completion_info["has_partial_completion"]:
@@ -2932,7 +3118,9 @@ class CodeAgentServer:
                 return True
 
             # Если decision == "continue_task", продолжаем выполнение
-            logger.info(Colors.colorize(f"🤖 По решению LLM Manager продолжаем выполнение задачи '{todo_item.text[:50]}...'"), Colors.BRIGHT_MAGENTA)
+            logger.info(f"DEBUG: Colors type: {type(Colors)}")
+            # Временное решение проблемы с Colors
+            logger.info(f"🤖 По решению LLM Manager продолжаем выполнение задачи '{todo_item.text[:50]}...'")
 
         # Проверяем полезность задачи - является ли она реальной задачей или мусором
         logger.info(f"Проверка полезности задачи: '{todo_item.text[:60]}...'")
@@ -5028,6 +5216,22 @@ class CodeAgentServer:
                 self.reload_cooldown = 10  # Минимальный интервал между перезапусками (секунды) - увеличено для защиты от ложных срабатываний
                 self.file_hashes = {}  # Кэш хешей файлов для проверки реальных изменений
                 self.pending_changes = set()  # Множество файлов с изменениями в процессе обработки
+                self.ignored_patterns = [
+                    # Игнорируемые директории и паттерны
+                    '__pycache__',
+                    '.pyc',
+                    '/test/',
+                    '\\test\\',
+                    'test_cursor_cli',
+                    'test_',
+                    '/examples/',
+                    '/venv/',
+                    '/env/',
+                    '/.venv/',
+                    '\\venv\\',
+                    '\\env\\',
+                    '\\.venv\\'
+                ]
 
             def _initialize_file_hashes(self, watch_dirs: List[str]):
                 """Инициализировать хэши всех .py файлов в отслеживаемых директориях"""
@@ -5510,6 +5714,11 @@ class CodeAgentServer:
             f"Code Agent Server запущен. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             level=1
         )
+
+        # Асинхронная загрузка задач TodoManager
+        logger.info("Загружаем задачи из TODO файлов...")
+        await self.todo_manager.ensure_loaded()
+        logger.info(f"Загружено {len(self.todo_manager.get_pending_tasks())} задач для выполнения")
 
         # Получаем начальную итерацию из checkpoint (для восстановления)
         iteration = self.checkpoint_manager.get_iteration_count()
