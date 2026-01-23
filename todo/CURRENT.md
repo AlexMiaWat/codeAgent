@@ -4,8 +4,8 @@
 - [x] Реализовать интерфейсы для всех компонентов (IServer, IAgent, ITaskManager) <!-- Выполнено успешно (8/8 инструкций) - 2026-01-23 15:18:39 -->
 - [x] **Реализация Quality Gates framework** - см. docs/planning/roadmap.md (раздел качества) <!-- Выполнено успешно (8/8 инструкций) - 2026-01-23 16:00:35 -->
 - [x] Создать типизированную систему задач: `TaskType(code, docs, refactor, test, release, devops)` <!-- Выполнено успешно (7/8 инструкций) - 2026-01-23 16:53:52 -->
-- [x] **Многоуровневая верификация результатов** - см. docs/planning/conceptual_improvements.md <!-- Выполняется - 2026-01-23 18:29:31 -->
-- [ ] **Архитектурная переработка LLM Manager** - см. docs/planning/implementation_roadmap.md
+- [x] **Многоуровневая верификация результатов** - см. docs/planning/conceptual_improvements.md <!-- Выполнено успешно (8/8 инструкций) - 2026-01-23 18:30:27 -->
+- [x] **Архитектурная переработка LLM Manager** - см. docs/planning/implementation_roadmap.md <!-- Выполняется - 2026-01-23 19:28:32 -->
 - [ ] **Интеллектуальная LLM интеграция** - см. docs/planning/task_2_20260123_083422.md
 - [ ] **Интеграция enterprise-grade MCP серверов** - см. docs/planning/task_3_20260123_083422.md
 - [ ] Интегрировать Docker MCP с security scanning и vulnerability assessment

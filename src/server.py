@@ -125,25 +125,56 @@ class CodeAgentServer:
     # Константы для работы с файлами
     DEFAULT_MAX_FILE_SIZE = 1_000_000  # Максимальный размер файла по умолчанию (1 MB)
     
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(
+        self,
+        config_path: Optional[str] = None,
+        project_dir: Optional[str] = None,
+        docs_dir: Optional[str] = None,
+        status_file: Optional[str] = None,
+        agent_config: Optional[Dict[str, Any]] = None,
+        server_config: Optional[Dict[str, Any]] = None,
+        llm_config: Optional[Dict[str, Any]] = None,
+        override_config: Optional[Dict[str, Any]] = None
+    ):
         """
         Инициализация сервера агента
-        
+
         Args:
             config_path: Путь к файлу конфигурации
+            project_dir: Директория проекта (переопределяет конфиг)
+            docs_dir: Директория документации (переопределяет конфиг)
+            status_file: Файл статуса проекта (переопределяет конфиг)
+            agent_config: Конфигурация агента (переопределяет конфиг)
+            server_config: Конфигурация сервера (переопределяет конфиг)
+            llm_config: Конфигурация LLM (переопределяет конфиг)
+            override_config: Полный конфиг для переопределения (высший приоритет)
         """
-        # Загрузка конфигурации
+        # Загрузка базовой конфигурации
         self.config = ConfigLoader(config_path or "config/config.yaml")
-        
-        # Получение путей
-        self.project_dir = self.config.get_project_dir()
-        self.docs_dir = self.config.get_docs_dir()
-        self.status_file = self.config.get_status_file()
+
+        # Переопределение конфигурации через параметры
+        if override_config:
+            # Полное переопределение конфигурации
+            self.config.config.update(override_config)
+        else:
+            # Частичное переопределение отдельных секций
+            if agent_config:
+                self.config.config.setdefault('agent', {}).update(agent_config)
+            if server_config:
+                self.config.config.setdefault('server', {}).update(server_config)
+            if llm_config:
+                self.config.config.setdefault('llm', {}).update(llm_config)
+
+        # Получение путей (с возможным переопределением через параметры)
+        self.project_dir = Path(project_dir) if project_dir else self.config.get_project_dir()
+        self.docs_dir = Path(docs_dir) if docs_dir else self.config.get_docs_dir()
+        self.status_file = status_file or self.config.get_status_file()
         
         # Валидация конфигурации
         self._validate_config()
 
         # Инициализация DI контейнера для dependency injection
+        # Используем переопределенные пути
         self.di_container = create_default_container(self.project_dir, self.config.config, self.status_file)
 
         # Получение менеджеров из DI контейнера
@@ -302,6 +333,25 @@ class CodeAgentServer:
             revision_executor = self._execute_revision
             todo_generator = self._generate_new_todo_list
 
+            # Создаем LLMManager если доступен
+            llm_manager = None
+            if LLM_AVAILABLE:
+                try:
+                    # Пытаемся инициализировать новый модульный LLMManager
+                    from src.llm.manager import LLMManager as NewLLMManager
+                    llm_manager = NewLLMManager(config_path="config/llm_settings.yaml")
+                    logger.info("Новый модульный LLMManager успешно инициализирован для ServerCore")
+                except Exception as e:
+                    logger.warning(f"Не удалось инициализировать новый LLMManager: {e}, пробуем fallback на LegacyLLMManager")
+                    try:
+                        # Fallback на старый LLMManager для совместимости
+                        from src.llm.llm_manager import LLMManager as LegacyLLMManager
+                        llm_manager = LegacyLLMManager(config_path="config/llm_settings.yaml")
+                        logger.info("Legacy LLMManager успешно инициализирован для ServerCore (fallback)")
+                    except Exception as e2:
+                        logger.warning(f"Не удалось инициализировать даже Legacy LLMManager: {e2}")
+                        llm_manager = None
+
             # Создаем ServerCore с использованием DI контейнера
             self.server_core = ServerCore(
                 todo_manager=self.di_container.resolve(ITodoManager),
@@ -314,9 +364,13 @@ class CodeAgentServer:
                 config=self.config.config,
                 project_dir=self.project_dir,
                 verification_manager=self.di_container.resolve(IMultiLevelVerificationManager),
+                llm_manager=llm_manager,
                 auto_todo_enabled=self.auto_todo_enabled,
                 task_delay=self.task_delay
             )
+
+            # Сохраняем ссылку на LLMManager для управления жизненным циклом
+            self.llm_manager = llm_manager
 
             logger.info("ServerCore успешно инициализирован")
 
@@ -1408,15 +1462,20 @@ class CodeAgentServer:
     def _check_task_usefulness(self, todo_item: TodoItem) -> Tuple[float, Optional[str]]:
         """
         Проверка полезности задачи - является ли она реальной задачей или мусором в тексте туду
-        
+
         Args:
             todo_item: Элемент todo-листа для проверки
-            
+
         Returns:
             Кортеж (процент полезности 0-100, комментарий если есть)
         """
+        # Используем LLMManager через ServerCore
+        llm_manager = self.server_core.get_llm_manager()
+        if not llm_manager:
+            logger.warning("LLMManager не доступен в ServerCore, пропускаем проверку полезности")
+            return 75.0, "LLMManager недоступен, считаем технической задачей (75%)"
+
         try:
-            from src.llm.llm_manager import LLMManager
             import asyncio
             import json
             import re
@@ -1449,51 +1508,7 @@ class CodeAgentServer:
                         return obj
                 return None
             
-            # Инициализируем LLMManager (логи инициализации моделей будут подавлены)
-            # Используем временное изменение уровня логирования для LLMManager
-            llm_logger = logging.getLogger('src.llm.llm_manager')
-            original_level = llm_logger.level
-            llm_logger.setLevel(logging.WARNING)  # Подавляем INFO логи инициализации
-            
-            # Временно убираем префиксы (asctime, name, levelname) для блока LLM Manager
-            # Применяем простой форматтер ко всем handlers root logger
-            # Все дочерние логгеры (src.server, src.llm.llm_manager) используют propagate=True
-            # и передают записи в root logger, поэтому изменение root logger достаточно
-            root_logger = logging.getLogger()
-            original_formatters = []
-            simple_format = logging.Formatter('%(message)s')
-            
-            # Сохраняем и изменяем форматеры для всех handlers root logger
-            # Важно: обрабатываем handlers даже если у них нет форматера (устанавливаем новый)
-            for handler in root_logger.handlers[:]:  # Копируем список
-                original_formatter = handler.formatter
-                original_formatters.append((handler, original_formatter))
-                # Устанавливаем простой форматтер (даже если был None)
-                handler.setFormatter(simple_format)
-            
-            # Функция для восстановления форматеров (вызывается перед return)
-            def restore_formatters():
-                llm_logger.setLevel(original_level)
-                # Восстанавливаем оригинальные форматеры (включая None, если его не было)
-                for handler, original_formatter in original_formatters:
-                    handler.setFormatter(original_formatter)
-            
-            try:
-                llm_manager = LLMManager(config_path="config/llm_settings.yaml")
-                
-                # Выводим компактную информацию о LLM Manager (без префиксов)
-                logger.info(Colors.colorize(
-                    "┌─ LLM Manager ─────────────────────────────────────────────",
-                    Colors.BRIGHT_CYAN
-                ))
-                logger.info(Colors.colorize(
-                    "│ Инициализирован для проверки полезности задачи",
-                    Colors.BRIGHT_CYAN
-                ))
-            except Exception:
-                # Восстанавливаем форматеры при ошибке инициализации
-                restore_formatters()
-                raise
+            # LLMManager уже получен через ServerCore
             
             # Формируем промпт для проверки полезности
             # Загружаем документацию проекта для контекста
@@ -1573,12 +1588,11 @@ class CodeAgentServer:
                     logger.warning(
                         f"│ ❌ Не удалось выполнить проверку полезности для задачи: {response.error}"
                     )
-                    logger.info(Colors.colorize(
-                        "└───────────────────────────────────────────────────────────",
-                        Colors.BRIGHT_CYAN
-                    ))
-                    restore_formatters()
-                    return 50.0, "Ошибка проверки, считаем средней полезности"  # По умолчанию средняя полезность
+                logger.info(Colors.colorize(
+                    "└───────────────────────────────────────────────────────────",
+                    Colors.BRIGHT_CYAN
+                ))
+                return 50.0, "Ошибка проверки, считаем средней полезности"  # По умолчанию средняя полезность
             
             if not content:
                 logger.warning(
@@ -1588,7 +1602,6 @@ class CodeAgentServer:
                     "└───────────────────────────────────────────────────────────",
                     Colors.BRIGHT_CYAN
                 ))
-                restore_formatters()
                 return 50.0, "Пустой ответ LLM, считаем средней полезности"
             
             # Логируем ответ LLM компактно, но с сохранением текста от LLM
@@ -1675,7 +1688,6 @@ class CodeAgentServer:
                     "└───────────────────────────────────────────────────────────",
                     Colors.BRIGHT_CYAN
                 ))
-                restore_formatters()
                 # ВАЖНО: Для технических задач используем 75% по умолчанию, а не 50%
                 # Это предотвращает ложное отбрасывание валидных задач
                 return 75.0, "Не удалось определить полезность из ответа LLM, считаем технической задачей (75%)"
@@ -1689,7 +1701,6 @@ class CodeAgentServer:
                     "└───────────────────────────────────────────────────────────",
                     Colors.BRIGHT_CYAN
                 ))
-                restore_formatters()
                 return 75.0, "Неверный формат ответа LLM, считаем технической задачей (75%)"
             
             try:
@@ -1815,8 +1826,7 @@ class CodeAgentServer:
                     "└───────────────────────────────────────────────────────────",
                     Colors.BRIGHT_CYAN
                 ))
-                restore_formatters()
-                
+
                 logger.debug(f"Успешно распарсен JSON: usefulness={usefulness}%, comment={comment}")
                 return usefulness, comment
             except (ValueError, TypeError, AttributeError) as e:
@@ -1827,14 +1837,10 @@ class CodeAgentServer:
                     "└───────────────────────────────────────────────────────────",
                     Colors.BRIGHT_CYAN
                 ))
-                restore_formatters()
                 return 75.0, f"Ошибка обработки ответа, считаем технической задачей (75%): {str(e)[:100]}"
             
         except ImportError:
             logger.warning("LLMManager не доступен, пропускаем проверку полезности")
-            # Форматеры не были изменены при ImportError, но на всякий случай проверим
-            if 'restore_formatters' in locals():
-                restore_formatters()
             return 75.0, "LLMManager недоступен, считаем технической задачей (75%)"
         except Exception as e:
             logger.error(
@@ -1844,9 +1850,6 @@ class CodeAgentServer:
                 "└───────────────────────────────────────────────────────────",
                 Colors.BRIGHT_CYAN
             ))
-            # Восстанавливаем форматеры при исключении
-            if 'restore_formatters' in locals():
-                restore_formatters()
             # ВАЖНО: При ошибке считаем задачу технической (75%), а не мусором (50%)
             # Это предотвращает ложное отбрасывание валидных задач при сбоях LLM
             return 75.0, f"Ошибка проверки, считаем технической задачей (75%): {str(e)[:100]}"
@@ -1876,26 +1879,30 @@ class CodeAgentServer:
             logger.warning(f"Не удалось прочитать план для задачи {task_id}: {e}")
             return True, None  # Если не можем прочитать план, считаем что соответствует
         
-        # Используем LLMManager через OpenRouter для проверки соответствия
+        # Используем LLMManager через ServerCore для проверки соответствия
+        llm_manager = self.server_core.get_llm_manager()
+        if not llm_manager:
+            logger.warning("LLMManager не доступен в ServerCore, пропускаем проверку соответствия")
+            return True, "LLMManager недоступен"
+
         try:
-            from src.llm.llm_manager import LLMManager
             import asyncio
             import json
             import re
-            
+
             def _extract_json_object(text: str) -> Optional[dict]:
                 """
                 Надежно извлекает JSON-объект из ответа LLM (может быть внутри markdown/текста).
                 """
                 if not text:
                     return None
-                
+
                 t = text.strip()
                 if t.startswith("```"):
                     t = re.sub(r"^```(?:json)?\s*", "", t, flags=re.IGNORECASE)
                     t = re.sub(r"\s*```$", "", t)
                     t = t.strip()
-                
+
                 decoder = json.JSONDecoder()
                 for i, ch in enumerate(t):
                     if ch not in "{[":
@@ -1907,9 +1914,6 @@ class CodeAgentServer:
                     if isinstance(obj, dict):
                         return obj
                 return None
-            
-            # Инициализируем LLMManager
-            llm_manager = LLMManager(config_path="config/llm_settings.yaml")
             
             # Формируем промпт для проверки
             check_prompt = f"""Проверь, соответствует ли пункт туду пунктам плана.
@@ -4384,14 +4388,26 @@ class CodeAgentServer:
         """Запуск сервера агента в бесконечном цикле"""
         logger.info("Запуск Code Agent Server")
         logger.info("Инициализация завершена, начинаем запуск HTTP сервера...")
-        
+
         # Запускаем HTTP сервер
         self._setup_http_server()
         logger.info("HTTP сервер настроен, продолжаем запуск...")
-        
+
         # Запускаем file watcher для автоперезапуска
         self._setup_file_watcher()
-        
+
+        # Инициализируем новый LLMManager если он доступен
+        if hasattr(self, 'llm_manager') and self.llm_manager is not None:
+            try:
+                # Проверяем, есть ли метод initialize (новая архитектура)
+                if hasattr(self.llm_manager, 'initialize'):
+                    await self.llm_manager.initialize()
+                    logger.info("LLMManager успешно инициализирован (новая архитектура)")
+                else:
+                    logger.info("LLMManager инициализирован (старая архитектура или Legacy)")
+            except Exception as e:
+                logger.warning(f"Ошибка при инициализации LLMManager: {e}")
+
         # Проверяем статус компонентов системы
         self._log_system_status()
 
@@ -4679,7 +4695,19 @@ class CodeAgentServer:
             raise
         finally:
             self._is_running = False
-            
+
+            # Останавливаем LLMManager если он доступен
+            if hasattr(self, 'llm_manager') and self.llm_manager is not None:
+                try:
+                    # Проверяем, есть ли метод shutdown (новая архитектура)
+                    if hasattr(self.llm_manager, 'shutdown'):
+                        await self.llm_manager.shutdown()
+                        logger.info("LLMManager успешно остановлен (новая архитектура)")
+                    else:
+                        logger.info("LLMManager остановлен (старая архитектура или Legacy)")
+                except Exception as e:
+                    logger.warning(f"Ошибка при остановке LLMManager: {e}")
+
             # Останавливаем file watcher
             if self.file_observer:
                 try:
@@ -4688,7 +4716,7 @@ class CodeAgentServer:
                     logger.info("File watcher остановлен")
                 except Exception as e:
                     logger.warning(f"Ошибка при остановке file watcher: {e}")
-            
+
             # Останавливаем HTTP сервер явно
             if self.http_server:
                 try:

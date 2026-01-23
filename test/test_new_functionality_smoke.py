@@ -201,7 +201,7 @@ class TestContextAnalyzerUnicodeSmoke:
 class TestSmartAgentDockerSmoke:
     """Smoke tests for Smart Agent Docker support"""
 
-    def test_smart_agent_creation_smoke(self):
+    def test_smart_agent_creation_smoke(self, mock_openai_api_key):
         """Test Smart Agent can be created"""
         with tempfile.TemporaryDirectory() as temp_dir:
             agent = create_smart_agent(project_dir=Path(temp_dir), use_llm=False)
@@ -210,7 +210,7 @@ class TestSmartAgentDockerSmoke:
             assert hasattr(agent, 'goal')
             assert hasattr(agent, 'tools')
 
-    def test_smart_agent_tools_initialization(self):
+    def test_smart_agent_tools_initialization(self, mock_openai_api_key):
         """Test Smart Agent tools are initialized"""
         with tempfile.TemporaryDirectory() as temp_dir:
             agent = create_smart_agent(project_dir=Path(temp_dir), use_llm=False)

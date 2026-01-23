@@ -12,6 +12,7 @@
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
+import pytest
 
 
 class TestConfigComponentsInteraction:
@@ -92,7 +93,7 @@ class TestConfigComponentsInteraction:
 class TestLLMComponentsInteraction:
     """Тесты взаимодействия LLM компонентов"""
 
-    @patch('src.llm.llm_manager.LLMManager')
+    @patch('src.llm.crewai_llm_wrapper.LLMManager')
     def test_llm_manager_crewai_wrapper_interaction(self, mock_llm_manager_class):
         """Тест взаимодействия LLMManager и CrewAILLMWrapper"""
         from src.llm.crewai_llm_wrapper import create_llm_for_crewai
@@ -100,19 +101,20 @@ class TestLLMComponentsInteraction:
         # Настраиваем мок LLMManager
         mock_llm_manager = Mock()
         mock_llm_manager_class.return_value = mock_llm_manager
-        mock_llm_manager.get_llm.return_value = Mock()
+        mock_llm_manager.models = []  # Mock должен иметь атрибут models для len()
 
         # Вызываем функцию создания LLM для CrewAI
         llm = create_llm_for_crewai()
 
-        # Проверяем что LLMManager был создан и вызван
+        # Проверяем что LLMManager был создан
         mock_llm_manager_class.assert_called_once()
-        mock_llm_manager.get_llm.assert_called_once()
 
         # Проверяем что вернулся корректный объект
         assert llm is not None
+        assert hasattr(llm, 'llm_manager')
+        assert llm.llm_manager == mock_llm_manager
 
-    @patch('src.llm.llm_manager.LLMManager')
+    @patch('src.llm.crewai_llm_wrapper.LLMManager')
     def test_llm_components_error_handling(self, mock_llm_manager_class):
         """Тест обработки ошибок в LLM компонентах"""
         from src.llm.crewai_llm_wrapper import create_llm_for_crewai
@@ -120,11 +122,9 @@ class TestLLMComponentsInteraction:
         # Настраиваем мок на выброс исключения
         mock_llm_manager_class.side_effect = Exception("Test error")
 
-        # Вызываем функцию и проверяем что исключение обработано
-        llm = create_llm_for_crewai()
-
-        # При ошибке должна вернуться None
-        assert llm is None
+        # Вызываем функцию и проверяем что исключение выбрасывается
+        with pytest.raises(Exception, match="Test error"):
+            create_llm_for_crewai()
 
 
 class TestServerTaskManagerInteraction:

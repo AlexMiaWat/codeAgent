@@ -383,11 +383,17 @@ test_task_1769173243_*/
 test_full_task_1769173243_*/
 docs/results/test_full_task_1769173243_*/
 
-# Task 1769179415 specific artifacts (current testing task)
+# Task 1769179415 specific artifacts (previous testing task)
 task_1769179415_*/
 test_task_1769179415_*/
 test_full_task_1769179415_*/
 docs/results/test_full_task_1769179415_*/
+
+# Task 1769182234 specific artifacts (current testing task)
+task_1769182234_*/
+test_task_1769182234_*/
+test_full_task_1769182234_*/
+docs/results/test_full_task_1769182234_*/
 
 # ===================================
 # End of additional ignores

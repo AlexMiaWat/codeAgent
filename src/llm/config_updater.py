@@ -11,7 +11,7 @@ from datetime import datetime
 
 from .model_discovery import ModelDiscovery
 from .llm_test_runner import LLMTestRunner
-from .llm_manager import LLMManager
+from .manager import LLMManager
 
 logger = logging.getLogger(__name__)
 

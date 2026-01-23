@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from src.core.server_core import ServerCore, QualityGateException
 from src.core.di_container import DIContainer
+from src.core.interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger
 from src.quality import QualityGateManager
 from src.quality.models.quality_result import QualityStatus, QualityGateResult, QualityResult, QualityCheckType
 from src.todo_manager import TodoItem
@@ -44,11 +45,12 @@ class TestServerCoreDIIntegration:
         revision_executor = AsyncMock(return_value=True)
         todo_generator = AsyncMock(return_value=True)
 
-        # Регистрируем в DI контейнере
-        container.register_instance(type(todo_manager), todo_manager)
-        container.register_instance(type(checkpoint_manager), checkpoint_manager)
-        container.register_instance(type(status_manager), status_manager)
-        container.register_instance(type(server_logger), server_logger)
+        # Регистрируем в DI контейнере под правильными интерфейсами
+        container.register_instance(ITodoManager, todo_manager)
+        container.register_instance(ICheckpointManager, checkpoint_manager)
+        container.register_instance(IStatusManager, status_manager)
+        container.register_instance(ILogger, server_logger)
+        # Регистрируем исполнители как callable объекты
         container.register_instance(type(task_executor), task_executor)
         container.register_instance(type(revision_executor), revision_executor)
         container.register_instance(type(todo_generator), todo_generator)
@@ -58,10 +60,10 @@ class TestServerCoreDIIntegration:
     def test_di_container_basic_registration(self, di_container):
         """Тест базовой регистрации компонентов в DI контейнере"""
         # Проверяем что компоненты зарегистрированы
-        assert di_container.is_registered(MagicMock)  # Все моки наследуются от MagicMock
-
-        registered = di_container.get_registered_services()
-        assert len(registered) == 7  # 7 компонентов
+        assert di_container.is_registered(ITodoManager)
+        assert di_container.is_registered(IStatusManager)
+        assert di_container.is_registered(ICheckpointManager)
+        assert di_container.is_registered(ILogger)
 
     @pytest.mark.asyncio
     async def test_servercore_di_integration_basic(self, di_container):

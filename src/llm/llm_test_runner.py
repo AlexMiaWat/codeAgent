@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 
-from .llm_manager import LLMManager, ModelConfig, ModelResponse
+from .manager import LLMManager
+from .types import ModelConfig, ModelResponse
 
 logger = logging.getLogger(__name__)
 

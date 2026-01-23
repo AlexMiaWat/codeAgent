@@ -8,7 +8,7 @@
 import logging
 from typing import Optional, Any, Dict, List
 
-from .llm_manager import LLMManager
+from .manager import LLMManager
 
 logger = logging.getLogger(__name__)
 

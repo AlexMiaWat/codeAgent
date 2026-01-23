@@ -1,123 +1,140 @@
-# Интеграция LLM провайдеров в Code Agent
+# Интеграция модульной архитектуры LLM в Code Agent
 
 ## Обзор
 
-Code Agent использует систему управления несколькими LLM моделями (`LLMManager`) для автоматического выбора оптимальных моделей, обработки ошибок и повышения надежности работы агента.
+Code Agent теперь использует полностью переработанную модульную архитектуру LLM, состоящую из 7 специализированных компонентов. Новая система обеспечивает повышенную надежность, производительность и расширяемость по сравнению с предыдущим монолитным подходом.
 
-## Архитектура
+## Модульная архитектура компонентов
 
-### Компоненты
+### Ядро системы
 
-1. **LLMManager** (`src/llm/llm_manager.py`)
-   - Управление несколькими моделями от разных провайдеров
-   - Автоматический выбор самой быстрой модели
-   - Fallback на резервные модели при ошибках
-   - Параллельное выполнение через две модели с выбором лучшего ответа
+1. **LLMManager** (`src/llm/manager.py`) - Фасад системы
+   - Единый интерфейс для всех операций
+   - Управление жизненным циклом компонентов
+   - Dependency injection всех зависимостей
 
-2. **LLMTestRunner** (`src/llm/llm_test_runner.py`)
-   - Тестирование доступности моделей
-   - Измерение времени отклика
-   - Экспорт результатов тестирования
+2. **ModelRegistry** (`src/llm/registry.py`) - Реестр моделей
+   - Управление конфигурацией моделей по ролям
+   - Сбор статистики производительности
+   - Автоматический выбор оптимальных моделей
 
-3. **CrewAILLMWrapper** (`src/llm/crewai_llm_wrapper.py`)
-   - Обертка для использования LLMManager в CrewAI
-   - Прозрачная интеграция с агентами CrewAI
+3. **ClientManager** (`src/llm/client.py`) - Управление API клиентами
+   - Абстракция над разными провайдерами
+   - Управление соединениями и аутентификацией
+   - Обработка сетевых ошибок
 
-## Конфигурация
+4. **StrategyManager** (`src/llm/strategy.py`) - Стратегии генерации
+   - Single Model: Быстрая генерация
+   - Parallel Generation: Качество через параллельность
+   - Fallback Chains: Надежность через резервирование
 
-### Файл `config/llm_settings.yaml` (актуальная конфигурация 2026-01-22)
+### Специализированные компоненты
+
+5. **ResponseEvaluator** (`src/llm/evaluator.py`) - Оценка ответов
+   - Сравнение нескольких ответов
+   - Выбор лучшего по критериям качества
+   - Автоматическая оценка через модель-оценщик
+
+6. **JsonValidator** (`src/llm/validator.py`) - Валидация JSON
+   - Извлечение JSON из ответов
+   - Валидация структуры и схемы
+   - Исправление malformed ответов
+
+7. **HealthMonitor** (`src/llm/monitor.py`) - Мониторинг здоровья
+   - Фоновые проверки доступности моделей
+   - Автоматическое отключение проблемных моделей
+   - Попытки восстановления после сбоев
+
+8. **ConfigLoader** (`src/llm/config_loader.py`) - Загрузка конфигурации
+   - Загрузка и парсинг YAML конфигураций
+   - Подстановка переменных окружения
+   - Валидация структуры конфигурации
+
+## Конфигурация модульной архитектуры
+
+### Структура конфигурации (`config/llm_settings.yaml`)
 
 ```yaml
+# Новая модульная конфигурация LLM (2026-01-23)
 llm:
+  # Общие настройки системы
   default_provider: openrouter
-  default_model: meta-llama/llama-3.2-1b-instruct
-  timeout: 200
-  retry_attempts: 1
-  strategy: best_of_two
+  request_timeout: 200
+  max_retries: 3
 
-  # Роли моделей (обновлено)
-  model_roles:
-    primary: []  # Автоматический выбор
-    duplicate: []  # Автоматический выбор
+  # Настройки компонентов
+  components:
+    health_monitor:
+      enabled: true
+      check_interval: 300  # секунд между проверками
+      failure_threshold: 3  # отключение после N сбоев
+
+    parallel_generation:
+      enabled: true
+      evaluator_model: meta-llama/llama-3.2-3b-instruct
+
+  # Модели по ролям (новая структура)
+  models:
+    primary:
+      - name: meta-llama/llama-3.2-1b-instruct
+        provider: openrouter
+        max_tokens: 4096
+        context_window: 131072
+        temperature: 0.7
+        enabled: true
+
+      - name: microsoft/wizardlm-2-8x22b
+        provider: openrouter
+        max_tokens: 4096
+        context_window: 65536
+        temperature: 0.7
+        enabled: true
+
+    duplicate:
+      - name: google/gemma-2-27b-it
+        provider: openrouter
+        max_tokens: 2048
+        context_window: 8192
+        temperature: 0.8
+        enabled: true
+
     reserve:
-      - kwaipilot/kat-coder-pro:free
+      - name: mistralai/mistral-small-24b-instruct-2501
+        provider: openrouter
+        max_tokens: 4096
+        context_window: 32768
+        temperature: 0.6
+        enabled: true
+
     fallback:
-      - undi95/remm-slerp-l2-13b
-      - microsoft/wizardlm-2-8x22b
+      - name: meta-llama/llama-3.2-3b-instruct
+        provider: openrouter
+        max_tokens: 4096
+        context_window: 131072
+        temperature: 0.7
+        enabled: true
 
-  # Параллельная обработка (новое)
-  parallel:
-    enabled: true
-    models:
-      - microsoft/wizardlm-2-8x22b
-      - microsoft/phi-3-mini-128k-instruct
-    evaluator_model: microsoft/wizardlm-2-8x22b
-    selection_criteria:
-      - quality
-      - relevance
-      - completeness
-      - efficiency
+      - name: kwaipilot/kat-coder-pro:free
+        provider: openrouter
+        max_tokens: 4096
+        context_window: 128000
+        temperature: 0.7
+        enabled: true
 
-  _last_updated: '2026-01-22T21:05:01.819254'
-  _update_source: auto_test_results
+  # Настройки провайдеров
+  providers:
+    openrouter:
+      base_url: "https://openrouter.ai/api/v1"
+      timeout: 200
+      # API ключ из переменных окружения
 
-providers:
-  openrouter:
-    base_url: https://openrouter.ai/api/v1
-    models:
-      # Новые провайдеры (2026-01-22)
-      anthropic:
-        - name: anthropic/claude-3.5-sonnet
-          max_tokens: 4096
-          context_window: 200000
-          temperature: 0.7
-      openai:
-        - name: openai/gpt-4o
-          max_tokens: 4096
-          context_window: 128000
-          temperature: 0.7
-        - name: openai/gpt-4o-mini
-          max_tokens: 4096
-          context_window: 128000
-          temperature: 0.7
-      microsoft:
-        - name: microsoft/wizardlm-2-8x22b
-          max_tokens: 4096
-          context_window: 65536
-          temperature: 0.7
-        - name: microsoft/phi-3-mini-128k-instruct
-          max_tokens: 4096
-          context_window: 128000
-          temperature: 0.7
-      meta-llama:
-        - name: meta-llama/llama-3.2-1b-instruct
-          max_tokens: 4096
-          context_window: 131072
-          temperature: 0.7
-        - name: meta-llama/llama-3.2-3b-instruct
-          max_tokens: 4096
-          context_window: 131072
-          temperature: 0.7
-      google:
-        - name: google/gemma-2-27b-it
-          max_tokens: 2048
-          context_window: 8192
-          temperature: 0.7
-      mistralai:
-        - name: mistralai/mistral-small-24b-instruct-2501
-          max_tokens: 4096
-          context_window: 32768
-          temperature: 0.7
-      kwaipilot:
-        - name: kwaipilot/kat-coder-pro:free
-          max_tokens: 4096
-          context_window: 128000
-          temperature: 0.7
-      undi95:
-        - name: undi95/remm-slerp-l2-13b
-          max_tokens: 1536
-          context_window: 6144
-          temperature: 0.7
+  # Стратегии генерации
+  strategies:
+    default: single_fastest  # single_fastest, parallel_quality, fallback_chain
+    json_mode: parallel_with_validation  # специальная стратегия для JSON
+
+  # Устаревшие настройки (для совместимости)
+  _legacy_config_support: true
 ```
 
 ### Переменные окружения
@@ -130,83 +147,143 @@ OPENROUTER_API_KEY=sk-or-v1-...
 
 ### 1. Single Model (по умолчанию)
 
-Используется одна модель с автоматическим fallback:
+### Использование в Code Agent
+
+#### Базовая генерация через фасад LLMManager
 
 ```python
-from src.llm.llm_manager import LLMManager
+from src.llm.manager import LLMManager
 
-mgr = LLMManager()
-response = await mgr.generate_response(
-    prompt="Привет",
-    use_fastest=True,
-    use_parallel=False
+# Создание менеджера (автоматическая инициализация всех компонентов)
+llm_manager = LLMManager()
+
+# Генерация ответа (автоматический выбор оптимальной стратегии)
+response = await llm_manager.generate_response(
+    prompt="Объясни что такое нейронная сеть",
+    use_parallel=True,  # Качество важнее скорости
+    use_fastest=False
 )
+
+print(f"Ответ от {response.model_name}: {response.content}")
 ```
 
-**Поведение:**
-- Выбирается самая быстрая primary модель
-- При ошибке автоматически переключается на следующую модель из fallback списка
-- Продолжает до успешного ответа или исчерпания всех моделей
-
-### 2. Parallel (Best of Two) - Оптимизированная стратегия
-
-Используются две модели параллельно с интеллектуальным выбором лучшего ответа:
+#### Генерация с типизированными запросами
 
 ```python
-# Автоматически используется best_of_two стратегия
-response = await mgr.generate_response(
-    prompt="Анализируй этот код",
-    strategy="best_of_two"  # Новая стратегия
+from src.llm.types import GenerationRequest
+
+# Типизированный запрос для JSON ответов
+request = GenerationRequest(
+    prompt="Оцени задачу и верни JSON: {'score': 0-10, 'reason': 'пояснение'}",
+    response_format={"type": "json_object"},  # Гарантированный JSON
+    use_parallel=True  # Параллельная генерация для качества
 )
+
+response = await llm_manager.generate_response(request)
+
+# JsonValidator гарантирует валидный JSON
+result = response.content  # Уже извлечен и провалидирован
+print(f"Оценка: {result['score']}, Причина: {result['reason']}")
 ```
 
-**Поведение best_of_two:**
-- Выбираются две оптимальные модели из parallel.models
-- Модели WizardLM-2-8x22b и Phi-3-mini-128k-instruct работают параллельно
-- Оценка качества через evaluator_model (WizardLM-2-8x22b)
-- Критерии оценки: quality, relevance, completeness, efficiency
-- Выбирается ответ с наивысшей комплексной оценкой
+#### Ручное управление компонентами
 
-**Преимущества новой стратегии:**
-- **Качество**: Двойная проверка повышает качество ответов
-- **Надежность**: Fallback при ошибках одной из моделей
-- **Производительность**: Параллельное выполнение не увеличивает общее время
-- **Интеллект**: Оценщик учитывает контекст и сложность задачи
+```python
+# Прямой доступ к компонентам для специфических задач
+registry = llm_manager.registry
+client = llm_manager.client
+evaluator = llm_manager.evaluator
 
-### 3. Fallback Chain
+# Получение статистики моделей
+models = registry.get_models_by_role(ModelRole.PRIMARY)
+stats = {model.name: registry.get_model_stats(model.name) for model in models}
 
-Автоматический переход на резервные модели:
-
-```
-Primary → Duplicate → Reserve → Fallback
+# Проверка здоровья всех моделей
+health = await llm_manager.check_health()
+healthy_models = [name for name, status in health.items() if status == "healthy"]
 ```
 
-Каждая категория моделей используется при ошибке предыдущей.
+### Стратегии отказоустойчивости
+
+#### Fallback цепочки в модульной архитектуре
+
+```
+User Request
+    ↓
+StrategyManager._generate_single()
+    ↓
+ModelRegistry.get_models_by_role(PRIMARY)
+    ↓
+Попытка PRIMARY моделей по очереди
+    ↓ (если все упали)
+Попытка DUPLICATE моделей
+    ↓ (если все упали)
+Попытка RESERVE моделей
+    ↓ (если все упали)
+Попытка FALLBACK моделей
+    ↓
+HealthMonitor.update_health_status()
+    ↓
+RuntimeError или результат
+```
+
+**Многоуровневая защита:**
+1. **Сетевая**: `ClientManager` обрабатывает таймауты
+2. **API**: Автоматическое переключение провайдеров
+3. **Модельная**: Fallback цепочки по ролям
+4. **Валидационная**: `JsonValidator` обеспечивает корректные ответы
 
 ## Интеграция с CrewAI
 
-### Автоматическая интеграция
+### Автоматическая интеграция через CrewAILLMWrapper
 
-LLMManager автоматически интегрируется в агентов CrewAI через `CrewAILLMWrapper`:
-
-```python
-from src.agents.executor_agent import create_executor_agent
-
-agent = create_executor_agent(
-    project_dir=Path("project"),
-    use_llm_manager=True,  # Включить LLMManager
-    use_parallel=False      # Использовать параллельный режим
-)
-```
-
-### Ручная интеграция
+Новая модульная архитектура полностью совместима с CrewAI через обновленный `CrewAILLMWrapper`:
 
 ```python
 from src.llm.crewai_llm_wrapper import create_llm_for_crewai
 from crewai import Agent
 
-custom_llm = create_llm_for_crewai(
+# Создание LLM для CrewAI с новой архитектурой
+llm = create_llm_for_crewai(
     config_path="config/llm_settings.yaml",
+    use_parallel=True,  # Использовать параллельную генерацию
+    strategy="best_of_two"  # или другая стратегия
+)
+
+# Использование в агенте CrewAI
+agent = Agent(
+    role="Code Analyzer",
+    goal="Анализировать код и предлагать улучшения",
+    backstory="Экспертный анализатор кода с использованием мощных LLM",
+    llm=llm,
+    verbose=True
+)
+```
+
+### Интеграция с агентами Code Agent
+
+```python
+from src.agents.smart_agent import SmartAgent
+
+# Smart Agent автоматически использует новую LLM архитектуру
+agent = SmartAgent(
+    project_dir=Path("project"),
+    config_path="config/config.yaml"
+)
+
+# Внутри Smart Agent:
+# - LearningTool для обучения на опыте
+# - ContextAnalyzerTool для анализа проекта
+# - LLMManager для генерации через новую архитектуру
+# - Docker/CodeInterpreterTool при наличии Docker
+```
+
+### Преимущества интеграции
+
+- **Прозрачность**: CrewAI агенты работают без изменений API
+- **Расширенные возможности**: Доступ ко всем стратегиям модульной архитектуры
+- **Мониторинг**: Автоматический health monitoring и статистика
+- **Отказоустойчивость**: Fallback цепочки на уровне агентов
     use_fastest=True,
     use_parallel=False
 )

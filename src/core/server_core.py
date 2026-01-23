@@ -27,6 +27,14 @@ from ..core.types import TaskType
 from ..verification.verification_manager import MultiLevelVerificationManager
 from ..verification.interfaces import IMultiLevelVerificationManager
 
+# Новая архитектура LLM
+try:
+    from ..llm.manager import LLMManager
+    LLM_AVAILABLE = True
+except ImportError:
+    LLM_AVAILABLE = False
+    LLMManager = None
+
 if TYPE_CHECKING:
     from ..todo_manager import TodoItem
 
@@ -121,6 +129,7 @@ class ServerCore:
         project_dir: Path,
         quality_gate_manager: Optional[QualityGateManager] = None,
         verification_manager: Optional[IMultiLevelVerificationManager] = None,
+        llm_manager: Optional[LLMManager] = None,
         auto_todo_enabled: bool = True,
         task_delay: int = 5
     ):
@@ -139,6 +148,7 @@ class ServerCore:
             project_dir: Директория проекта
             quality_gate_manager: Менеджер quality gates
             verification_manager: Менеджер многоуровневой верификации
+            llm_manager: Менеджер LLM для новой архитектуры (опционально)
             auto_todo_enabled: Включена ли автоматическая генерация TODO
             task_delay: Задержка между задачами в секундах
         """
@@ -153,6 +163,7 @@ class ServerCore:
         self.config = config
         self.quality_gate_manager = quality_gate_manager or QualityGateManager(self.config.get('quality_gates', {}))
         self.verification_manager = verification_manager or MultiLevelVerificationManager(self.config.get('verification', {}))
+        self.llm_manager = llm_manager
         self.auto_todo_enabled = auto_todo_enabled
         self.task_delay = task_delay
 
@@ -621,6 +632,24 @@ class ServerCore:
             self.verification_manager.level_configs = config.get('levels', self.verification_manager.level_configs)
             self.verification_manager.overall_threshold = config.get('overall_threshold', self.verification_manager.overall_threshold)
         logger.info("Multi-level verification configured")
+
+    def get_llm_manager(self) -> Optional[LLMManager]:
+        """
+        Получить менеджер LLM
+
+        Returns:
+            LLMManager instance или None если недоступен
+        """
+        return self.llm_manager
+
+    def is_llm_available(self) -> bool:
+        """
+        Проверить доступность LLM Manager
+
+        Returns:
+            True если LLM Manager доступен
+        """
+        return self.llm_manager is not None and LLM_AVAILABLE
 
     def _is_quality_gates_enabled(self) -> bool:
         """

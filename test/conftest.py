@@ -86,6 +86,56 @@ def ensure_project_dir_env(monkeypatch, tmp_path):
 
 
 @pytest.fixture
+def mock_api_keys(monkeypatch):
+    """
+    Фикстура для установки mock API ключей для всех провайдеров
+
+    Устанавливает dummy ключи для тестирования различных LLM провайдеров.
+    """
+    # Сохраняем оригинальные значения
+    original_keys = {}
+    api_keys_to_mock = [
+        'OPENAI_API_KEY',
+        'ANTHROPIC_API_KEY',
+        'OPENROUTER_API_KEY',
+        'GOOGLE_API_KEY',
+        'GROQ_API_KEY',
+        'TOGETHER_API_KEY'
+    ]
+
+    for key in api_keys_to_mock:
+        original_keys[key] = os.environ.get(key)
+        monkeypatch.setenv(key, f'dummy-{key.lower()}-for-testing')
+
+    yield
+
+    # Восстанавливаем оригинальные значения
+    for key, original_value in original_keys.items():
+        if original_value is not None:
+            os.environ[key] = original_value
+        elif key in os.environ:
+            del os.environ[key]
+
+
+@pytest.fixture
+def mock_openai_api_key(monkeypatch):
+    """
+    Фикстура для установки mock OPENAI_API_KEY для тестов
+
+    Это необходимо, потому что CrewAI автоматически пытается создать LLM из переменных окружения,
+    даже когда LLM не используется в тесте.
+    """
+    original_key = os.environ.get('OPENAI_API_KEY')
+    monkeypatch.setenv('OPENAI_API_KEY', 'dummy-key-for-testing')
+    yield
+    # Восстанавливаем оригинальное значение
+    if original_key is not None:
+        os.environ['OPENAI_API_KEY'] = original_key
+    elif 'OPENAI_API_KEY' in os.environ:
+        del os.environ['OPENAI_API_KEY']
+
+
+@pytest.fixture
 def project_env_with_env_file(monkeypatch):
     """
     Фикстура для создания словаря окружения с PROJECT_DIR из .env файла
