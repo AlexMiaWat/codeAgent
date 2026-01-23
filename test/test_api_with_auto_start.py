@@ -10,11 +10,11 @@ import sys
 import time
 from pathlib import Path
 
+from test.test_real_server_integration import ServerTester
+
 # Добавляем путь к проекту
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from test.test_real_server_integration import ServerTester
 
 BASE_URL = "http://127.0.0.1:3456"
 

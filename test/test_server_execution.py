@@ -9,13 +9,13 @@ import logging
 from pathlib import Path
 import subprocess
 
+from src.cursor_cli_interface import create_cursor_cli_interface
+from src.config_loader import ConfigLoader
+
 # Добавляем путь к src
 # Добавляем корень проекта в путь
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.cursor_cli_interface import create_cursor_cli_interface
-from src.config_loader import ConfigLoader
 
 # Настройка логирования
 logging.basicConfig(

@@ -13,11 +13,11 @@ import shutil
 import os
 from pathlib import Path
 
+from src.cursor_cli_interface import create_cursor_cli_interface
+
 # Добавляем корень проекта в путь
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.cursor_cli_interface import create_cursor_cli_interface
 
 
 def test_agent_installation():

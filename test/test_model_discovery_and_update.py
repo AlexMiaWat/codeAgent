@@ -12,12 +12,12 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
+from src.llm.model_discovery import ModelDiscovery
+from src.llm.config_updater import ConfigUpdater
+
 # Добавляем корень проекта в путь
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.llm.model_discovery import ModelDiscovery
-from src.llm.config_updater import ConfigUpdater
 
 
 async def test_model_discovery():

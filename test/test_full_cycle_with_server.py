@@ -14,14 +14,14 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
-# Добавляем корень проекта в путь
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 from src.config_loader import ConfigLoader
 from src.todo_manager import TodoManager, TodoItem
 from src.cursor_file_interface import CursorFileInterface
 from src.status_manager import StatusManager
+
+# Добавляем корень проекта в путь
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 # Настройка логирования
 logging.basicConfig(

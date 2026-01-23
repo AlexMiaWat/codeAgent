@@ -9,15 +9,15 @@
 """
 
 import sys
+import logging
 from pathlib import Path
+
+from src.cursor_cli_interface import create_cursor_cli_interface
+from src.prompt_formatter import PromptFormatter
 
 # Добавляем корень проекта в путь
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.cursor_cli_interface import create_cursor_cli_interface
-from src.prompt_formatter import PromptFormatter
-import logging
 
 logging.basicConfig(
     level=logging.INFO,

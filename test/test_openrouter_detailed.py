@@ -12,14 +12,14 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
+from src.llm.llm_manager import LLMManager
+from src.llm.llm_test_runner import LLMTestRunner
+
 # Загружаем переменные окружения (с перезаписью для обновления ключа)
 load_dotenv(override=True)
 
 # Добавляем текущую директорию в путь
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from src.llm.llm_manager import LLMManager
-from src.llm.llm_test_runner import LLMTestRunner
 
 
 async def test_llm_manager_init():

@@ -5,16 +5,16 @@ import sys
 import time
 from pathlib import Path
 
-# Добавляем корень проекта в путь
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 from src.hybrid_cursor_interface import (
     TaskComplexity,
     create_hybrid_cursor_interface
 )
 from src.prompt_formatter import PromptFormatter
 from src.config_loader import ConfigLoader
+
+# Добавляем корень проекта в путь
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 print()
 print("=" * 70)

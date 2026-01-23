@@ -21,10 +21,6 @@ import tempfile
 from pathlib import Path
 from typing import List, Tuple
 
-# Добавляем путь к проекту
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 # Используем абсолютные импорты через src
 from src.config_loader import ConfigLoader
 from src.config_validator import ConfigValidator
@@ -32,6 +28,10 @@ from src.todo_manager import TodoManager
 from src.status_manager import StatusManager
 from src.security_utils import sanitize_for_logging
 from src.server import CodeAgentServer
+
+# Добавляем путь к проекту
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 # Настройка логирования
 logging.basicConfig(

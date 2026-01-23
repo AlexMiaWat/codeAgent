@@ -4,15 +4,16 @@
 import sys
 from pathlib import Path
 
-# Добавляем корень проекта в путь
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 from src.hybrid_cursor_interface import (
     TaskComplexity,
     create_hybrid_cursor_interface
 )
 from src.config_loader import ConfigLoader
+from src.prompt_formatter import PromptFormatter
+
+# Добавляем корень проекта в путь
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 print()
 print("=" * 70)
@@ -68,8 +69,6 @@ print()
 # Тест 3: Создание инструкции с гарантией выполнения
 print("Тест 3: Форматирование инструкции")
 print("-" * 70)
-
-from src.prompt_formatter import PromptFormatter
 
 instruction = PromptFormatter.format_task_with_execution_guarantee(
     task_name="Создание тестового файла",

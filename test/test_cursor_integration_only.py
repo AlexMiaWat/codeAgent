@@ -17,14 +17,14 @@ import time
 from pathlib import Path
 from datetime import datetime
 
-# Добавляем корень проекта в путь
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 from src.config_loader import ConfigLoader
 from src.todo_manager import TodoManager
 from src.cursor_file_interface import CursorFileInterface
 from src.cursor_cli_interface import create_cursor_cli_interface
+
+# Добавляем корень проекта в путь
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 
 def test_config_loading():

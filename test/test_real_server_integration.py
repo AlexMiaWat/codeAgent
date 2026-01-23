@@ -21,11 +21,11 @@ from pathlib import Path
 from typing import Optional
 import threading
 
+from src.config_loader import ConfigLoader
+
 # Добавляем путь к проекту
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.config_loader import ConfigLoader
 
 # Настройка логирования
 logging.basicConfig(

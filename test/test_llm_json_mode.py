@@ -17,11 +17,11 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
 
+from src.llm.llm_manager import LLMManager, ModelResponse
+
 # Добавляем корень проекта в путь
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.llm.llm_manager import LLMManager, ModelResponse
 
 
 def extract_json_object(text: str) -> Optional[dict]:

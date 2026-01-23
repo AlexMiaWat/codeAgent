@@ -9,12 +9,12 @@ import time
 from pathlib import Path
 from datetime import datetime
 
+from src.config_loader import ConfigLoader
+from src.cursor_file_interface import CursorFileInterface
+
 # Добавляем корень проекта в путь
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.config_loader import ConfigLoader
-from src.cursor_file_interface import CursorFileInterface
 
 
 def main():
