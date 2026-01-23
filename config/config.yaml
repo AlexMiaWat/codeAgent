@@ -779,6 +779,35 @@ instructions:
         Отчет в docs/results/last_result.md
         В конце "Отчет завершен!"
 
+# Настройки Quality Gates framework
+quality_gates:
+  # Включить систему quality gates
+  enabled: true
+
+  # Строгий режим - блокировать выполнение при неудачных проверках
+  strict_mode: false
+
+  # Конфигурация отдельных gates
+  gates:
+    coverage:
+      enabled: true
+      min_coverage: 80.0
+      required_for: ["production", "release"]
+
+    complexity:
+      enabled: true
+      max_complexity: 10
+      fail_on_exceed: true
+
+    security:
+      enabled: true
+      scan_dependencies: true
+      check_vulnerabilities: true
+
+    style:
+      enabled: true
+      tools: ["ruff", "mypy", "bandit"]
+
 # Настройки тестирования
 testing:
   enabled: false

@@ -359,6 +359,8 @@ def create_default_container(project_dir: Path, config: Dict[str, Any], status_f
         from ..status_manager import StatusManager
         from ..checkpoint_manager import CheckpointManager
         from ..task_logger import ServerLogger
+        from ..quality.interfaces import IQualityGateManager
+        from ..quality.quality_gate_manager import QualityGateManager
     except ImportError:
         # Fallback for test environment
         import sys
@@ -374,6 +376,8 @@ def create_default_container(project_dir: Path, config: Dict[str, Any], status_f
         from src.status_manager import StatusManager
         from src.checkpoint_manager import CheckpointManager
         from src.task_logger import ServerLogger
+        from src.quality.interfaces import IQualityGateManager
+        from src.quality.quality_gate_manager import QualityGateManager
 
     container = DIContainer()
 
@@ -428,5 +432,11 @@ def create_default_container(project_dir: Path, config: Dict[str, Any], status_f
             return MockTaskManager(config=config.get('task_manager', {}))
     container.register_factory(ITaskManager, create_task_manager)
 
-    logger.info("Default DI container created with core services including new interfaces")
+    # Register QualityGateManager with factory
+    def create_quality_gate_manager():
+        quality_config = config.get('quality_gates', {})
+        return QualityGateManager(config=quality_config)
+    container.register_factory(IQualityGateManager, create_quality_gate_manager)
+
+    logger.info("Default DI container created with core services including new interfaces and quality gates")
     return container

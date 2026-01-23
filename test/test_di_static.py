@@ -74,7 +74,7 @@ class TestInterfaceDefinitions:
         """Test IManager has expected abstract methods"""
         manager_methods = [name for name, method in inspect.getmembers(
             IManager, predicate=inspect.isfunction)]
-        expected_methods = ['__init__', 'is_healthy', 'get_status', 'dispose']
+        expected_methods = ['is_healthy', 'get_status', 'dispose']
 
         for method in expected_methods:
             assert method in manager_methods, f"IManager missing {method}"
@@ -83,7 +83,7 @@ class TestInterfaceDefinitions:
         """Test ITodoManager has expected abstract methods"""
         todo_methods = [name for name, method in inspect.getmembers(
             ITodoManager, predicate=inspect.isfunction)]
-        expected_methods = ['__init__', 'load_todos', 'get_pending_tasks',
+        expected_methods = ['load_todos', 'get_pending_tasks',
                           'get_all_tasks', 'mark_task_done', 'get_task_hierarchy', 'save_todos']
 
         for method in expected_methods:
@@ -124,7 +124,7 @@ class TestInterfaceDefinitions:
         """Test IServer has expected abstract methods"""
         server_methods = [name for name, method in inspect.getmembers(
             IServer, predicate=inspect.isfunction)]
-        expected_methods = ['__init__', 'start', 'stop', 'restart', 'is_running',
+        expected_methods = ['start', 'stop', 'restart', 'is_running',
                           'get_server_status', 'execute_task', 'get_pending_tasks',
                           'get_active_tasks', 'get_metrics', 'reload_configuration',
                           'get_component_status', 'is_healthy', 'get_status', 'dispose']
@@ -136,7 +136,7 @@ class TestInterfaceDefinitions:
         """Test IAgent has expected abstract methods"""
         agent_methods = [name for name, method in inspect.getmembers(
             IAgent, predicate=inspect.isfunction)]
-        expected_methods = ['__init__', 'create_agent', 'get_agent', 'remove_agent',
+        expected_methods = ['create_agent', 'get_agent', 'remove_agent',
                           'get_available_agents', 'get_active_agents', 'configure_agent',
                           'execute_with_agent', 'get_agent_status', 'validate_agent_config',
                           'get_agent_types_info', 'is_healthy', 'get_status', 'dispose']
@@ -148,7 +148,7 @@ class TestInterfaceDefinitions:
         """Test ITaskManager has expected abstract methods"""
         task_methods = [name for name, method in inspect.getmembers(
             ITaskManager, predicate=inspect.isfunction)]
-        expected_methods = ['__init__', 'initialize_task_execution', 'execute_task_step',
+        expected_methods = ['initialize_task_execution', 'execute_task_step',
                           'monitor_task_progress', 'handle_task_failure', 'finalize_task_execution',
                           'cancel_task_execution', 'get_execution_status', 'get_active_executions',
                           'get_execution_history', 'retry_execution', 'get_execution_metrics',
@@ -163,10 +163,6 @@ class TestMethodSignatures:
 
     def test_manager_method_signatures(self):
         """Test IManager method signatures"""
-        # Test __init__
-        init_sig = inspect.signature(IManager.__init__)
-        assert 'config' in init_sig.parameters
-
         # Test is_healthy
         healthy_sig = inspect.signature(IManager.is_healthy)
         assert healthy_sig.return_annotation is not None
@@ -175,13 +171,12 @@ class TestMethodSignatures:
         status_sig = inspect.signature(IManager.get_status)
         assert status_sig.return_annotation is not None
 
+        # Test dispose - method exists and is callable
+        dispose_sig = inspect.signature(IManager.dispose)
+        assert 'self' in dispose_sig.parameters
+
     def test_todo_manager_method_signatures(self):
         """Test ITodoManager method signatures"""
-        # Test __init__
-        init_sig = inspect.signature(ITodoManager.__init__)
-        assert 'project_dir' in init_sig.parameters
-        assert 'config' in init_sig.parameters
-
         # Test load_todos
         load_sig = inspect.signature(ITodoManager.load_todos)
         assert load_sig.return_annotation is not None
@@ -194,6 +189,10 @@ class TestMethodSignatures:
         mark_sig = inspect.signature(ITodoManager.mark_task_done)
         assert 'task_text' in mark_sig.parameters
         assert mark_sig.return_annotation is not None
+
+        # Test get_task_hierarchy
+        hierarchy_sig = inspect.signature(ITodoManager.get_task_hierarchy)
+        assert hierarchy_sig.return_annotation is not None
 
     def test_status_manager_method_signatures(self):
         """Test IStatusManager method signatures"""

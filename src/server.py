@@ -146,7 +146,7 @@ class CodeAgentServer:
         self._validate_config()
 
         # Инициализация DI контейнера для dependency injection
-        self.di_container = create_default_container(self.project_dir, self.config.config_data, self.status_file)
+        self.di_container = create_default_container(self.project_dir, self.config.config, self.status_file)
 
         # Получение менеджеров из DI контейнера
         from .core.interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger
@@ -244,7 +244,7 @@ class CodeAgentServer:
         # Инициализация менеджера контрольных точек для восстановления после сбоев
         # Checkpoint файлы хранятся в каталоге codeAgent, а не в целевом проекте
         # Инициализация DI контейнера для dependency injection (уже создана выше)
-        self.di_container = create_default_container(self.project_dir, self.config.config_data, self.status_file)
+        self.di_container = create_default_container(self.project_dir, self.config.config, self.status_file)
 
         # Проверяем, нужно ли восстановление после сбоя
         self._check_recovery_needed()
@@ -282,10 +282,10 @@ class CodeAgentServer:
         self.di_container.register_instance(IServer, ServerImpl(self))
 
         # Replace mock implementations with real ones
-        agent_manager = AgentManagerImpl(config=self.config.config_data.get('agent_manager', {}))
+        agent_manager = AgentManagerImpl(config=self.config.config.get('agent_manager', {}))
         self.di_container.register_instance(IAgent, agent_manager)
 
-        task_manager = TaskManagerImpl(config=self.config.config_data.get('task_manager', {}))
+        task_manager = TaskManagerImpl(config=self.config.config.get('task_manager', {}))
         self.di_container.register_instance(ITaskManager, task_manager)
 
         # Создание ServerCore для управления циклом выполнения
@@ -312,7 +312,7 @@ class CodeAgentServer:
                 task_executor=task_executor,
                 revision_executor=revision_executor,
                 todo_generator=todo_generator,
-                config=self.config.config_data,
+                config=self.config.config,
                 project_dir=self.project_dir,
                 auto_todo_enabled=self.auto_todo_enabled,
                 task_delay=self.task_delay

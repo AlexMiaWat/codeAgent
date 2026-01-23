@@ -64,7 +64,7 @@ class ServerImpl(IServer, MetricsManager):
             "running": self.is_running(),
             "project_dir": str(self._server.project_dir),
             "uptime": getattr(self._server, '_uptime', 0),
-            "config": self._server.config.config_data,
+            "config": self._server.config.config,
             "components": {
                 "todo_manager": "active" if hasattr(self._server, 'todo_manager') else "inactive",
                 "checkpoint_manager": "active" if hasattr(self._server, 'checkpoint_manager') else "inactive",
@@ -75,15 +75,16 @@ class ServerImpl(IServer, MetricsManager):
     def execute_task(self, task_id: str) -> bool:
         """Execute a specific task by ID."""
         try:
+            import asyncio
             # Find task by ID and execute it
             pending_tasks = self._server.todo_manager.get_pending_tasks()
             for task in pending_tasks:
                 if task.id == task_id:
                     # Use ServerCore to execute if available
                     if hasattr(self._server, 'server_core'):
-                        return self._server.server_core.execute_single_task(
+                        return asyncio.run(self._server.server_core.execute_single_task(
                             task, 1, len(pending_tasks)
-                        )
+                        ))
                     break
             return False
         except Exception:

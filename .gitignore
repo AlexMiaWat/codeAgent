@@ -371,6 +371,12 @@ quality_gates_backup/
 task_1769168319_*/
 test_task_1769168319_*/
 
+# Task 1769170727 specific artifacts (current testing task)
+task_1769170727_*/
+test_task_1769170727_*/
+test_full_task_1769170727_*/
+docs/results/test_full_task_1769170727_*/
+
 # ===================================
 # End of additional ignores
 # ===================================

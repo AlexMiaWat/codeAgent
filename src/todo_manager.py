@@ -17,16 +17,18 @@ logger = logging.getLogger(__name__)
 class TodoItem:
     """Элемент todo-листа"""
     
-    def __init__(self, text: str, level: int = 0, done: bool = False, parent: Optional['TodoItem'] = None, comment: Optional[str] = None):
+    def __init__(self, text: str, level: int = 0, done: bool = False, parent: Optional['TodoItem'] = None, comment: Optional[str] = None, category: Optional[str] = None, id: Optional[str] = None):
         """
         Инициализация элемента todo
-        
+
         Args:
             text: Текст задачи
             level: Уровень вложенности (0 - корень)
             done: Выполнена ли задача
             parent: Родительский элемент
             comment: Комментарий к задаче (например, причина пропуска или краткое описание выполнения)
+            category: Категория задачи
+            id: Уникальный идентификатор задачи
         """
         self.text = text.strip()
         self.level = level
@@ -34,6 +36,8 @@ class TodoItem:
         self.parent = parent
         self.children: List['TodoItem'] = []
         self.comment = comment
+        self.category = category
+        self.id = id
     
     def __repr__(self) -> str:
         status = "✓" if self.done else "○"

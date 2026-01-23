@@ -42,7 +42,7 @@ codeAgent/
 │   │   ├── interfaces/      # Интерфейсы системы
 │   │   │   ├── __init__.py
 │   │   │   ├── imanager.py         # Базовый интерфейс менеджеров
-│   │   │   ├── itodo_manager.py    # Интерфейс управления задачами
+│   │   │   │   ├── itodo_manager.py    # Интерфейс управления задачами
 │   │   │   ├── istatus_manager.py  # Интерфейс управления статусами
 │   │   │   ├── icheckpoint_manager.py # Интерфейс контрольных точек
 │   │   │   ├── ilogger.py          # Интерфейс логирования
@@ -55,6 +55,29 @@ codeAgent/
 │   │   ├── http_server.py   # HTTP сервер (планируется)
 │   │   ├── metrics_collector.py # Сборщик метрик (планируется)
 │   │   └── error_handler.py  # Обработчик ошибок (планируется)
+│   ├── quality/             # Quality Gates framework
+│   │   ├── __init__.py
+│   │   ├── quality_gate_manager.py # Менеджер quality gates
+│   │   ├── interfaces/      # Интерфейсы quality gates
+│   │   │   ├── __init__.py
+│   │   │   ├── iquality_gate.py    # Интерфейс quality gate
+│   │   │   ├── iquality_checker.py # Интерфейс проверок качества
+│   │   │   ├── iquality_reporter.py # Интерфейс отчетов
+│   │   │   └── iquality_gate_manager.py # Интерфейс менеджера
+│   │   ├── checkers/        # Реализации проверок качества
+│   │   │   ├── __init__.py
+│   │   │   ├── coverage_checker.py # Проверка покрытия тестами
+│   │   │   ├── complexity_checker.py # Анализ сложности кода
+│   │   │   ├── security_checker.py # Проверка безопасности
+│   │   │   └── style_checker.py    # Проверка стиля кода
+│   │   ├── reporters/       # Реализации репортёров
+│   │   │   ├── __init__.py
+│   │   │   ├── console_reporter.py # Вывод в консоль
+│   │   │   └── file_reporter.py    # Сохранение в файл
+│   │   └── models/          # Модели данных quality gates
+│   │       ├── __init__.py
+│   │       ├── quality_result.py   # Результаты проверок
+│   │       └── quality_metrics.py  # Метрики качества
 │   ├── agents/              # Определения агентов CrewAI
 │   │   ├── __init__.py
 │   │   └── executor_agent.py # Агент-исполнитель
@@ -166,6 +189,31 @@ codeAgent/
   - `istatus_manager.py` - Интерфейс управления статусами
   - `icheckpoint_manager.py` - Интерфейс контрольных точек
   - `ilogger.py` - Интерфейс логирования
+
+#### quality/ - Quality Gates Framework
+
+**Система контроля качества кода и выполнения задач:**
+
+- **quality_gate_manager.py** - Центральный менеджер quality gates
+- **interfaces/** - Интерфейсы quality gates framework:
+  - `iquality_gate.py` - Интерфейс quality gate
+  - `iquality_checker.py` - Интерфейс проверок качества
+  - `iquality_reporter.py` - Интерфейс отчетов о качестве
+  - `iquality_gate_manager.py` - Интерфейс менеджера quality gates
+
+- **checkers/** - Реализации конкретных проверок:
+  - `coverage_checker.py` - Проверка покрытия тестами (pytest-cov)
+  - `complexity_checker.py` - Анализ цикломатической сложности (radon)
+  - `security_checker.py` - Проверка безопасности (bandit)
+  - `style_checker.py` - Проверка стиля кода (ruff, mypy)
+
+- **reporters/** - Реализации систем отчетности:
+  - `console_reporter.py` - Вывод результатов в консоль
+  - `file_reporter.py` - Сохранение отчетов в JSON файлы
+
+- **models/** - Модели данных quality gates:
+  - `quality_result.py` - Модели результатов проверок и метрик
+  - `quality_metrics.py` - Специализированные метрики качества
 
 #### Основные модули
 

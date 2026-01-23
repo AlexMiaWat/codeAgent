@@ -13,14 +13,34 @@ ServerCore - базовый компонент для цикла выполне�
 """
 
 import logging
+import time
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Callable, Protocol
 from datetime import datetime
 
 from ..core.interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger
 from ..todo_manager import TodoItem
+from ..quality import QualityGateManager
+from ..quality.models.quality_result import QualityGateResult
 
 logger = logging.getLogger(__name__)
+
+
+class QualityGateException(Exception):
+    """
+    Исключение, выбрасываемое при неудачной проверке Quality Gates
+    """
+
+    def __init__(self, message: str, gate_result: Any = None):
+        """
+        Инициализация исключения
+
+        Args:
+            message: Сообщение об ошибке
+            gate_result: Результат проверки quality gates
+        """
+        super().__init__(message)
+        self.gate_result = gate_result
 
 
 class TaskExecutor(Protocol):
@@ -92,6 +112,7 @@ class ServerCore:
         todo_generator: TodoGenerator,
         config: Dict[str, Any],
         project_dir: Path,
+        quality_gate_manager: Optional[QualityGateManager] = None,
         auto_todo_enabled: bool = True,
         task_delay: int = 5
     ):
@@ -120,6 +141,7 @@ class ServerCore:
         self.revision_executor = revision_executor
         self.todo_generator = todo_generator
         self.config = config
+        self.quality_gate_manager = quality_gate_manager or QualityGateManager()
         self.auto_todo_enabled = auto_todo_enabled
         self.task_delay = task_delay
 
@@ -160,6 +182,8 @@ class ServerCore:
             pending_tasks = self._filter_completed_tasks(pending_tasks)
             return has_more_tasks, pending_tasks
 
+        # Quality gates теперь проверяются индивидуально для каждой задачи в execute_single_task
+
         # Логируем начало итерации
         self.server_logger.log_iteration_start(iteration, len(pending_tasks))
         logger.info(f"Найдено непройденных задач: {len(pending_tasks)}")
@@ -179,6 +203,49 @@ class ServerCore:
             True если выполнение успешно
         """
         self.status_manager.add_separator()
+
+        # Проверка Quality Gates перед выполнением задачи
+        if self.quality_gate_manager and self._is_quality_gates_enabled():
+            try:
+                import asyncio
+                try:
+                    # Check if we're already in an event loop
+                    loop = asyncio.get_running_loop()
+                    # If we are, create a task instead
+                    gate_result = loop.create_task(self.quality_gate_manager.run_all_gates(context={
+                        'task_type': todo_item.category or 'default',
+                        'task_id': todo_item.id,
+                        'project_path': str(self.project_dir)
+                    }))
+                    # For simplicity, we'll run it synchronously in this context
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(asyncio.run, gate_result)
+                        gate_result = future.result()
+                except RuntimeError:
+                    # No running event loop, use asyncio.run
+                    gate_result = asyncio.run(self.quality_gate_manager.run_all_gates(context={
+                        'task_type': todo_item.category or 'default',
+                        'task_id': todo_item.id,
+                        'project_path': str(self.project_dir)
+                    }))
+
+                logger.info(f"Quality gates check completed: {gate_result.overall_status.value}")
+
+                # Проверяем нужно ли блокировать выполнение
+                if self.quality_gate_manager.should_block_execution(gate_result):
+                    error_msg = f"Quality gates failed for task {todo_item.id}: {gate_result.overall_status.value}"
+                    logger.error(error_msg)
+                    raise QualityGateException(error_msg, gate_result)
+
+            except QualityGateException:
+                raise  # Перебрасываем исключение дальше
+            except Exception as e:
+                logger.error(f"Error during quality gates check: {e}")
+                # В случае ошибки проверки качества - продолжаем выполнение (fail-open)
+                logger.warning("Continuing execution despite quality gates error (fail-open policy)")
+
+        # Выполнение задачи
         success = self.task_executor(todo_item, task_number=task_number, total_tasks=total_tasks)
 
         # Применяем задержку между задачами
@@ -188,7 +255,7 @@ class ServerCore:
 
         return success
 
-    def execute_tasks_batch(self, pending_tasks: List[TodoItem], iteration: int) -> bool:
+    async def execute_tasks_batch(self, pending_tasks: List[TodoItem], iteration: int) -> bool:
         """
         Выполнить пакет задач в рамках одной итерации
 
@@ -399,3 +466,38 @@ class ServerCore:
             revision_done: Текущее состояние ревизии
         """
         self._revision_done = revision_done
+
+
+
+    def get_quality_gate_manager(self) -> QualityGateManager:
+        """
+        Получить менеджер quality gates
+
+        Returns:
+            QualityGateManager instance
+        """
+        return self.quality_gate_manager
+
+    def configure_quality_gates(self, config: Dict[str, Any]):
+        """
+        Настроить quality gates
+
+        Args:
+            config: Конфигурация quality gates
+        """
+        self.quality_gate_manager.configure(config)
+        logger.info("Quality gates configured")
+
+    def _is_quality_gates_enabled(self) -> bool:
+        """
+        Проверить, включены ли quality gates
+
+        Returns:
+            True если quality gates включены
+        """
+        if not self.quality_gate_manager:
+            return False
+
+        # Проверяем глобальную настройку enabled
+        quality_config = self.config.get('quality_gates', {})
+        return quality_config.get('enabled', False)
