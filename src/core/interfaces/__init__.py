@@ -10,6 +10,9 @@ from .itodo_manager import ITodoManager
 from .istatus_manager import IStatusManager
 from .icheckpoint_manager import ICheckpointManager
 from .ilogger import ILogger, ITaskLogger
+from .iserver import IServer
+from .iagent import IAgent
+from .itaskmanager import ITaskManager, TaskExecutionState
 
 __all__ = [
     "IManager",
@@ -18,4 +21,8 @@ __all__ = [
     "ICheckpointManager",
     "ILogger",
     "ITaskLogger",
+    "IServer",
+    "IAgent",
+    "ITaskManager",
+    "TaskExecutionState",
 ]

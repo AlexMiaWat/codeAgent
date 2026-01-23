@@ -1,7 +1,7 @@
 - [x] **Декомпозиция монолитного server.py (4500+ строк)** - см. docs/planning/task_1_20260123_083422.md <!-- Выполнено - 2026-01-23 09:25:12 -->
 - [x] Выделить `ServerCore` для базового цикла выполнения <!-- Выполнено успешно (8/8 инструкций) - 2026-01-23 13:28:18 -->
-- [x] **Внедрение dependency injection и SOLID принципов** - см. docs/planning/task_3_20260123_083422.md <!-- Выполняется - 2026-01-23 14:37:25 -->
-- [ ] Реализовать интерфейсы для всех компонентов (IServer, IAgent, ITaskManager)
+- [x] **Внедрение dependency injection и SOLID принципов** - см. docs/planning/task_3_20260123_083422.md <!-- Выполнено успешно (6/8 инструкций) - 2026-01-23 14:38:32 -->
+- [x] Реализовать интерфейсы для всех компонентов (IServer, IAgent, ITaskManager) <!-- Выполняется - 2026-01-23 15:18:11 -->
 - [ ] **Реализация Quality Gates framework** - см. docs/planning/roadmap.md (раздел качества)
 - [ ] Создать типизированную систему задач: `TaskType(code, docs, refactor, test, release, devops)`
 - [ ] **Многоуровневая верификация результатов** - см. docs/planning/conceptual_improvements.md

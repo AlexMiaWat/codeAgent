@@ -328,7 +328,6 @@ class TestSOLIDPrinciples:
             return mock_todo_manager
         server_core = ServerCore(
             todo_manager=mock_todo_manager,
-            todo_manager_factory=mock_factory,
             checkpoint_manager=mock_checkpoint_manager,
             status_manager=mock_status_manager,
             server_logger=mock_logger,
@@ -408,7 +407,6 @@ class TestIntegration:
             return mock_todo
         server_core = ServerCore(
             todo_manager=mock_todo,
-            todo_manager_factory=mock_factory,
             checkpoint_manager=mock_checkpoint,
             status_manager=mock_status,
             server_logger=mock_logger,

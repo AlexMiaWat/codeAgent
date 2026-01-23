@@ -45,7 +45,11 @@ codeAgent/
 │   │   │   ├── itodo_manager.py    # Интерфейс управления задачами
 │   │   │   ├── istatus_manager.py  # Интерфейс управления статусами
 │   │   │   ├── icheckpoint_manager.py # Интерфейс контрольных точек
-│   │   │   └── ilogger.py          # Интерфейс логирования
+│   │   │   ├── ilogger.py          # Интерфейс логирования
+│   │   │   ├── iserver.py          # Интерфейс управления сервером
+│   │   │   ├── iagent.py           # Интерфейс управления агентами
+│   │   │   └── itaskmanager.py     # Интерфейс управления задачами
+│   │   ├── mock_implementations.py # Mock-реализации для тестирования
 │   │   ├── abstract_base.py # Абстрактные базовые классы (планируется)
 │   │   ├── configuration_manager.py # Менеджер конфигурации (планируется)
 │   │   ├── http_server.py   # HTTP сервер (планируется)
@@ -71,7 +75,8 @@ codeAgent/
 │   ├── test_di_integration.py # Тесты интеграции DI компонентов
 │   ├── test_di_smoke.py     # Smoke-тесты DI системы
 │   ├── test_di_solid.py     # Тесты соблюдения SOLID принципов
-│   └── test_di_static.py    # Статические тесты DI конфигурации
+│   ├── test_di_static.py    # Статические тесты DI конфигурации
+│   └── test_interfaces_new.py # Тесты новых интерфейсов
 ├── logs/                    # Логи работы агента
 ├── scripts/                 # Вспомогательные скрипты
 ├── docker/                  # Docker конфигурация

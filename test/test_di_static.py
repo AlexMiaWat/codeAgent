@@ -13,7 +13,8 @@ from typing import get_type_hints, Dict, Any, List, Optional
 
 from src.core.di_container import DIContainer, ServiceLifetime, ServiceDescriptor, DependencyInjectionException
 from src.core.interfaces import (
-    IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger
+    IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger,
+    IServer, IAgent, ITaskManager, TaskExecutionState
 )
 
 
@@ -62,7 +63,8 @@ class TestInterfaceDefinitions:
     def test_interfaces_are_abstract(self):
         """Test that all DI interfaces are abstract base classes"""
         interfaces = [
-            IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger
+            IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger,
+            IServer, IAgent, ITaskManager
         ]
 
         for interface in interfaces:
@@ -117,6 +119,43 @@ class TestInterfaceDefinitions:
 
         for method in expected_methods:
             assert method in logger_methods, f"ILogger missing {method}"
+
+    def test_server_interface_methods(self):
+        """Test IServer has expected abstract methods"""
+        server_methods = [name for name, method in inspect.getmembers(
+            IServer, predicate=inspect.isfunction)]
+        expected_methods = ['__init__', 'start', 'stop', 'restart', 'is_running',
+                          'get_server_status', 'execute_task', 'get_pending_tasks',
+                          'get_active_tasks', 'get_metrics', 'reload_configuration',
+                          'get_component_status', 'is_healthy', 'get_status', 'dispose']
+
+        for method in expected_methods:
+            assert method in server_methods, f"IServer missing {method}"
+
+    def test_agent_interface_methods(self):
+        """Test IAgent has expected abstract methods"""
+        agent_methods = [name for name, method in inspect.getmembers(
+            IAgent, predicate=inspect.isfunction)]
+        expected_methods = ['__init__', 'create_agent', 'get_agent', 'remove_agent',
+                          'get_available_agents', 'get_active_agents', 'configure_agent',
+                          'execute_with_agent', 'get_agent_status', 'validate_agent_config',
+                          'get_agent_types_info', 'is_healthy', 'get_status', 'dispose']
+
+        for method in expected_methods:
+            assert method in agent_methods, f"IAgent missing {method}"
+
+    def test_task_manager_interface_methods(self):
+        """Test ITaskManager has expected abstract methods"""
+        task_methods = [name for name, method in inspect.getmembers(
+            ITaskManager, predicate=inspect.isfunction)]
+        expected_methods = ['__init__', 'initialize_task_execution', 'execute_task_step',
+                          'monitor_task_progress', 'handle_task_failure', 'finalize_task_execution',
+                          'cancel_task_execution', 'get_execution_status', 'get_active_executions',
+                          'get_execution_history', 'retry_execution', 'get_execution_metrics',
+                          'validate_execution_requirements', 'is_healthy', 'get_status', 'dispose']
+
+        for method in expected_methods:
+            assert method in task_methods, f"ITaskManager missing {method}"
 
 
 class TestMethodSignatures:
@@ -200,7 +239,8 @@ class TestInterfaceInheritance:
     def test_interfaces_inherit_from_abc(self):
         """Test that all interfaces inherit from ABC"""
         interfaces = [
-            IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger
+            IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger,
+            IServer, IAgent, ITaskManager
         ]
 
         for interface in interfaces:
@@ -209,7 +249,8 @@ class TestInterfaceInheritance:
     def test_no_circular_inheritance(self):
         """Test that interfaces don't have circular inheritance"""
         interfaces = [
-            IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger
+            IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger,
+            IServer, IAgent, ITaskManager
         ]
 
         for interface in interfaces:
@@ -229,6 +270,12 @@ class TestInterfaceInheritance:
             ICheckpointManager, predicate=inspect.isfunction)])
         logger_methods = set([name for name, _ in inspect.getmembers(
             ILogger, predicate=inspect.isfunction)])
+        server_methods = set([name for name, _ in inspect.getmembers(
+            IServer, predicate=inspect.isfunction)])
+        agent_methods = set([name for name, _ in inspect.getmembers(
+            IAgent, predicate=inspect.isfunction)])
+        task_methods = set([name for name, _ in inspect.getmembers(
+            ITaskManager, predicate=inspect.isfunction)])
 
         # Each interface should have some unique methods
         assert len(manager_methods) > 0
@@ -236,6 +283,9 @@ class TestInterfaceInheritance:
         assert len(status_methods - manager_methods) > 0  # Status has unique methods
         assert len(checkpoint_methods - manager_methods) > 0  # Checkpoint has unique methods
         assert len(logger_methods - manager_methods) > 0  # Logger has unique methods
+        assert len(server_methods - manager_methods) > 0  # Server has unique methods
+        assert len(agent_methods - manager_methods) > 0  # Agent has unique methods
+        assert len(task_methods - manager_methods) > 0  # TaskManager has unique methods
 
 
 class TestAbstractMethods:
@@ -244,7 +294,8 @@ class TestAbstractMethods:
     def test_all_interface_methods_are_abstract(self):
         """Test that all interface methods are abstract"""
         interfaces = [
-            IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger
+            IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger,
+            IServer, IAgent, ITaskManager
         ]
 
         for interface in interfaces:
@@ -256,7 +307,8 @@ class TestAbstractMethods:
     def test_interfaces_cannot_be_instantiated(self):
         """Test that interfaces cannot be instantiated directly"""
         interfaces = [
-            IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger
+            IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger,
+            IServer, IAgent, ITaskManager
         ]
 
         for interface in interfaces:
@@ -303,6 +355,33 @@ class TestDIContainerMethods:
         assert 'instance' in instance_sig.parameters
 
 
+class TestTaskExecutionState:
+    """Test TaskExecutionState enum"""
+
+    def test_task_execution_state_enum_values(self):
+        """Test TaskExecutionState enum has expected values"""
+        assert hasattr(TaskExecutionState, 'PENDING')
+        assert hasattr(TaskExecutionState, 'INITIALIZING')
+        assert hasattr(TaskExecutionState, 'EXECUTING')
+        assert hasattr(TaskExecutionState, 'MONITORING')
+        assert hasattr(TaskExecutionState, 'COMPLETED')
+        assert hasattr(TaskExecutionState, 'FAILED')
+        assert hasattr(TaskExecutionState, 'CANCELLED')
+
+        assert TaskExecutionState.PENDING.value == "pending"
+        assert TaskExecutionState.INITIALIZING.value == "initializing"
+        assert TaskExecutionState.EXECUTING.value == "executing"
+        assert TaskExecutionState.MONITORING.value == "monitoring"
+        assert TaskExecutionState.COMPLETED.value == "completed"
+        assert TaskExecutionState.FAILED.value == "failed"
+        assert TaskExecutionState.CANCELLED.value == "cancelled"
+
+    def test_task_execution_state_is_enum(self):
+        """Test that TaskExecutionState is an Enum"""
+        from enum import Enum
+        assert issubclass(TaskExecutionState, Enum)
+
+
 class TestTypeImports:
     """Test that all required types can be imported"""
 
@@ -323,7 +402,8 @@ class TestTypeImports:
     def test_interface_imports(self):
         """Test that all DI interfaces can be imported"""
         from src.core.interfaces import (
-            IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger
+            IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger,
+            IServer, IAgent, ITaskManager, TaskExecutionState
         )
 
         # Test that interfaces exist
@@ -332,3 +412,7 @@ class TestTypeImports:
         assert IStatusManager
         assert ICheckpointManager
         assert ILogger
+        assert IServer
+        assert IAgent
+        assert ITaskManager
+        assert TaskExecutionState

@@ -220,7 +220,6 @@ class TestServerCoreWithDI:
             from src.core.interfaces import ICheckpointManager, IStatusManager, ILogger
             server_core = ServerCore(
                 todo_manager=mock_todo_manager,
-                todo_manager_factory=lambda: mock_todo_manager,
                 checkpoint_manager=container.resolve(ICheckpointManager),
                 status_manager=container.resolve(IStatusManager),
                 server_logger=container.resolve(ILogger),
@@ -258,7 +257,6 @@ class TestServerCoreWithDI:
             from src.core.interfaces import ICheckpointManager, IStatusManager, ILogger
             server_core = ServerCore(
                 todo_manager=mock_todo_manager,
-                todo_manager_factory=lambda: mock_todo_manager,
                 checkpoint_manager=container.resolve(ICheckpointManager),
                 status_manager=container.resolve(IStatusManager),
                 server_logger=container.resolve(ILogger),

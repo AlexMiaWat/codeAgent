@@ -9,12 +9,13 @@ in the context of the full Code Agent system.
 import pytest
 import tempfile
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Dict, Any, List
 from unittest.mock import Mock, MagicMock, patch
 
 from src.core.di_container import DIContainer, ServiceLifetime, create_default_container, DependencyInjectionException
 from src.core.interfaces import (
-    ITodoManager, IStatusManager, ICheckpointManager, ILogger
+    ITodoManager, IStatusManager, ICheckpointManager, ILogger,
+    IServer, IAgent, ITaskManager
 )
 from src.core.server_core import ServerCore
 
@@ -57,7 +58,6 @@ class TestDIContainerServerCoreIntegration:
 
                 server_core = ServerCore(
                     todo_manager=container.resolve(ITodoManager),
-                    todo_manager_factory=todo_manager_factory,
                     checkpoint_manager=container.resolve(ICheckpointManager),
                     status_manager=container.resolve(IStatusManager),
                     server_logger=container.resolve(ILogger),
@@ -416,7 +416,6 @@ class TestDIMockingIntegration:
 
                 server_core = ServerCore(
                     todo_manager=mock_todo_manager,
-                    todo_manager_factory=mock_factory,
                     checkpoint_manager=mock_checkpoint_manager,
                     status_manager=mock_status_manager,
                     server_logger=mock_logger,
@@ -545,3 +544,174 @@ class TestDIServiceOverrideIntegration:
 
         # Original dependent still has old value (since it was created before override)
         assert dependent1.text == "original"
+
+
+class TestNewInterfacesIntegration:
+    """Integration tests for new interfaces (IServer, IAgent, ITaskManager)"""
+
+    def test_di_container_new_interfaces_registration(self):
+        """Test that DI container registers new interfaces (IServer, IAgent, ITaskManager)"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            config = {
+                "project_dir": str(temp_path),
+                "status_file": "STATUS.md",
+                "checkpoint_file": ".codeagent_checkpoint.json"
+            }
+
+            status_file = temp_path / "STATUS.md"
+            status_file.write_text("")
+            container = create_default_container(temp_path, config, status_file)
+
+            # Test that new interfaces are registered
+            assert container.is_registered(IServer)
+            assert container.is_registered(IAgent)
+            assert container.is_registered(ITaskManager)
+
+            # Test that we can resolve the new services
+            server = container.resolve(IServer)
+            agent_manager = container.resolve(IAgent)
+            task_manager = container.resolve(ITaskManager)
+
+            # Verify they are the correct implementations
+            from src.core.mock_implementations import MockServer
+            from src.core.implementations import AgentManagerImpl, TaskManagerImpl
+            assert isinstance(server, MockServer)  # Server still uses mock in DI container
+            assert isinstance(agent_manager, AgentManagerImpl)
+            assert isinstance(task_manager, TaskManagerImpl)
+
+    def test_new_interfaces_integration_with_server_core(self):
+        """Test that new interfaces work together in the context of ServerCore"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            config = {
+                "project_dir": str(temp_path),
+                "status_file": "STATUS.md",
+                "checkpoint_file": ".codeagent_checkpoint.json",
+                "auto_todo_enabled": True,
+                "task_delay": 1
+            }
+
+            status_file = temp_path / "STATUS.md"
+            status_file.write_text("")
+            container = create_default_container(temp_path, config, status_file)
+
+            # Create mock executors
+            task_executor = Mock()
+            revision_executor = Mock()
+            todo_generator = Mock()
+
+            # Register executors in container
+            container.register_instance(Callable, task_executor)
+            container.register_instance(Callable, revision_executor)
+            container.register_instance(Callable, todo_generator)
+
+            # Create ServerCore with all services
+            server_core = ServerCore(
+                todo_manager=container.resolve(ITodoManager),
+                checkpoint_manager=container.resolve(ICheckpointManager),
+                status_manager=container.resolve(IStatusManager),
+                server_logger=container.resolve(ILogger),
+                task_executor=task_executor,
+                revision_executor=revision_executor,
+                todo_generator=todo_generator,
+                config=config,
+                project_dir=temp_path
+            )
+
+            # Test that ServerCore can access new services through the container
+            server = container.resolve(IServer)
+            agent_manager = container.resolve(IAgent)
+            task_manager = container.resolve(ITaskManager)
+
+            # Test basic functionality of new services
+            assert server.is_healthy()
+            assert agent_manager.is_healthy()
+            assert task_manager.is_healthy()
+
+            # Test server operations
+            assert not server.is_running()
+            assert server.start()
+            assert server.is_running()
+
+            server_status = server.get_server_status()
+            assert server_status["running"] is True
+
+            # Test agent operations
+            agent_id = agent_manager.create_agent("executor")
+            assert agent_id is not None
+            assert agent_manager.get_agent(agent_id) is not None
+
+            # Test task manager operations
+            from unittest.mock import Mock as MockClass
+            mock_task = MockClass()
+            mock_task.text = "Test task"
+            execution_id = task_manager.initialize_task_execution(mock_task)
+            assert execution_id is not None
+
+            # Clean up
+            server.stop()
+
+    def test_new_interfaces_cross_dependencies(self):
+        """Test that new interfaces can depend on each other"""
+        container = DIContainer()
+
+        # Create services that depend on each other
+        class ServerWithAgent(IServer):
+            def __init__(self, project_dir: Path, config: dict, agent_manager: IAgent):
+                self.project_dir = project_dir
+                self.config = config
+                self.agent_manager = agent_manager
+                self._running = False
+
+            def start(self) -> bool:
+                self._running = True
+                # Use agent manager during startup
+                agent_id = self.agent_manager.create_agent("startup")
+                return agent_id is not None
+
+            def stop(self) -> bool:
+                self._running = False
+                return True
+
+            def is_running(self) -> bool:
+                return self._running
+
+            def is_healthy(self) -> bool:
+                return True
+
+            def get_status(self) -> Dict[str, Any]:
+                return {"running": self._running}
+
+            # Implement other required methods minimally
+            def restart(self) -> bool: return True
+            def get_server_status(self) -> Dict[str, Any]: return {}
+            def execute_task(self, task_id: str) -> bool: return True
+            def get_pending_tasks(self) -> List[Dict[str, Any]]: return []
+            def get_active_tasks(self) -> List[Dict[str, Any]]: return []
+            def get_metrics(self) -> Dict[str, Any]: return {}
+            def reload_configuration(self) -> bool: return True
+            def get_component_status(self, component_name: str) -> Dict[str, Any]: return {}
+            def dispose(self) -> None: pass
+
+        # Register agent manager first
+        from src.core.mock_implementations import MockAgentManager
+        container.register_singleton(IAgent, MockAgentManager)
+
+        # Register server with dependency on agent manager
+        def create_server():
+            return ServerWithAgent(Path("/tmp"), {}, container.resolve(IAgent))
+
+        container.register_factory(IServer, create_server)
+
+        # Resolve server - should inject agent manager
+        server = container.resolve(IServer)
+        assert isinstance(server, ServerWithAgent)
+        assert server.agent_manager is not None
+        assert isinstance(server.agent_manager, MockAgentManager)
+
+        # Test that server can use agent manager
+        assert server.start()
+        assert server.is_running()

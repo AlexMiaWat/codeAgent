@@ -21,16 +21,6 @@ class IManager(ABC):
     """
 
     @abstractmethod
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """
-        Initialize the manager with configuration.
-
-        Args:
-            config: Optional configuration dictionary for the manager
-        """
-        pass
-
-    @abstractmethod
     def is_healthy(self) -> bool:
         """
         Check if the manager is in a healthy state and can perform operations.

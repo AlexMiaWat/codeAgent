@@ -353,7 +353,8 @@ def create_default_container(project_dir: Path, config: Dict[str, Any], status_f
     """
     # Import interfaces
     try:
-        from .interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger
+        from .interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger, IServer, IAgent, ITaskManager
+        from .mock_implementations import MockServer, MockAgentManager, MockTaskManager
         from ..todo_manager import TodoManager
         from ..status_manager import StatusManager
         from ..checkpoint_manager import CheckpointManager
@@ -367,7 +368,8 @@ def create_default_container(project_dir: Path, config: Dict[str, Any], status_f
         if str(src_dir) not in sys.path:
             sys.path.insert(0, str(src_dir))
 
-        from src.core.interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger
+        from src.core.interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger, IServer, IAgent, ITaskManager
+        from src.core.mock_implementations import MockServer, MockAgentManager, MockTaskManager
         from src.todo_manager import TodoManager
         from src.status_manager import StatusManager
         from src.checkpoint_manager import CheckpointManager
@@ -398,5 +400,33 @@ def create_default_container(project_dir: Path, config: Dict[str, Any], status_f
         return ServerLogger(config=config.get('logging', {}))
     container.register_factory(ILogger, create_logger)
 
-    logger.info("Default DI container created with core services")
+    # Register new interfaces with real implementations
+    # Note: ServerImpl requires server_instance, so we use MockServer for DI container
+    # Real ServerImpl will be registered later after CodeAgentServer is created
+
+    def create_server():
+        return MockServer(project_dir=project_dir, config=config.get('server', {}))
+    container.register_factory(IServer, create_server)
+
+    def create_agent_manager():
+        try:
+            from .implementations import AgentManagerImpl
+            return AgentManagerImpl(config=config.get('agent_manager', {}))
+        except ImportError:
+            # Fallback to mock if implementations not available
+            from .mock_implementations import MockAgentManager
+            return MockAgentManager(config=config.get('agent_manager', {}))
+    container.register_factory(IAgent, create_agent_manager)
+
+    def create_task_manager():
+        try:
+            from .implementations import TaskManagerImpl
+            return TaskManagerImpl(config=config.get('task_manager', {}))
+        except ImportError:
+            # Fallback to mock if implementations not available
+            from .mock_implementations import MockTaskManager
+            return MockTaskManager(config=config.get('task_manager', {}))
+    container.register_factory(ITaskManager, create_task_manager)
+
+    logger.info("Default DI container created with core services including new interfaces")
     return container

@@ -14,6 +14,7 @@ Version: 1.0.0
 # Core component imports
 from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
 from .di_container import DIContainer, create_default_container, ServiceLifetime
+from .base_classes import BaseManager, ConfigurableManager, MetricsManager
 
 # Interface imports
 from .interfaces import (
@@ -35,6 +36,11 @@ __all__ = [
     "DIContainer",
     "create_default_container",
     "ServiceLifetime",
+
+    # Base classes
+    "BaseManager",
+    "ConfigurableManager",
+    "MetricsManager",
 
     # Interfaces
     "IManager",

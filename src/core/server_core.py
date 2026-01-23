@@ -84,7 +84,6 @@ class ServerCore:
     def __init__(
         self,
         todo_manager: ITodoManager,
-        todo_manager_factory: Callable[[], ITodoManager],  # Фабрика для создания новых экземпляров
         checkpoint_manager: ICheckpointManager,
         status_manager: IStatusManager,
         server_logger: ILogger,
@@ -101,7 +100,6 @@ class ServerCore:
 
         Args:
             todo_manager: Менеджер задач
-            todo_manager_factory: Фабрика для создания новых экземпляров ITodoManager
             checkpoint_manager: Менеджер контрольных точек
             status_manager: Менеджер статусов
             server_logger: Логгер сервера
@@ -114,7 +112,6 @@ class ServerCore:
             task_delay: Задержка между задачами в секундах
         """
         self.todo_manager = todo_manager
-        self.todo_manager_factory = todo_manager_factory  # Сохраняем фабрику
         self.checkpoint_manager = checkpoint_manager
         self.status_manager = status_manager
         self.server_logger = server_logger
@@ -353,8 +350,8 @@ class ServerCore:
         """
         Перезагрузка TODO и проверка на наличие новых задач
         """
-        # Перезагружаем менеджер задач через фабрику
-        self.todo_manager = self.todo_manager_factory()
+        # Перезагружаем задачи через интерфейс
+        self.todo_manager.load_todos()
 
         # Синхронизируем с checkpoint после перезагрузки
         self._sync_todos_with_checkpoint()

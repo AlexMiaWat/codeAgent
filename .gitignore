@@ -350,5 +350,27 @@ optimize_temp/
 revision_temp/
 
 # ===================================
+# Current task specific (interfaces, DI, quality gates)
+# ===================================
+# Interface implementation artifacts
+interface_temp/
+interface_backup/
+*.interface.bak
+
+# DI container artifacts
+di_temp/
+di_backup/
+*.di.bak
+
+# Quality gates artifacts
+quality_gates_temp/
+quality_gates_backup/
+*.quality.bak
+
+# Task 1769168319 specific artifacts
+task_1769168319_*/
+test_task_1769168319_*/
+
+# ===================================
 # End of additional ignores
 # ===================================

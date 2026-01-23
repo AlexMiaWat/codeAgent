@@ -15,8 +15,10 @@ from src.core.di_container import (
     DIContainer, ServiceLifetime, ServiceDescriptor,
     DependencyInjectionException, create_default_container
 )
+from src.core.mock_implementations import MockServer, MockAgentManager, MockTaskManager
 from src.core.interfaces import (
-    IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger
+    IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger,
+    IServer, IAgent, ITaskManager, TaskExecutionState
 )
 
 
@@ -320,6 +322,21 @@ class TestInterfaceComplianceSmoke:
         with pytest.raises(TypeError):
             ILogger()
 
+    def test_server_interface_abstract(self):
+        """Test that IServer cannot be instantiated directly"""
+        with pytest.raises(TypeError):
+            IServer()
+
+    def test_agent_interface_abstract(self):
+        """Test that IAgent cannot be instantiated directly"""
+        with pytest.raises(TypeError):
+            IAgent()
+
+    def test_task_manager_interface_abstract(self):
+        """Test that ITaskManager cannot be instantiated directly"""
+        with pytest.raises(TypeError):
+            ITaskManager()
+
 
 class TestDefaultContainerSmoke:
     """Smoke tests for default container creation"""
@@ -371,6 +388,99 @@ class TestDefaultContainerSmoke:
             except Exception:
                 # Expected if concrete implementations have issues
                 pass
+
+
+class TestMockImplementationsSmoke:
+    """Smoke tests for mock implementations"""
+
+    def test_mock_server_creation(self):
+        """Test MockServer can be created and implements IServer"""
+        from pathlib import Path
+        server = MockServer(Path("/tmp"), {"test": True})
+        assert isinstance(server, IServer)
+        assert server.project_dir == Path("/tmp")
+        assert server.config == {"test": True}
+
+    def test_mock_server_basic_operations(self):
+        """Test basic MockServer operations"""
+        from pathlib import Path
+        server = MockServer(Path("/tmp"))
+
+        # Test lifecycle
+        assert not server.is_running()
+        assert server.start()
+        assert server.is_running()
+        assert server.stop()
+        assert not server.is_running()
+        assert server.restart()
+        assert server.is_running()
+
+        # Test status
+        status = server.get_server_status()
+        assert status["running"] is True
+        assert status["project_dir"] == "/tmp"
+
+    def test_mock_agent_manager_creation(self):
+        """Test MockAgentManager can be created and implements IAgent"""
+        agent_manager = MockAgentManager({"test": True})
+        assert isinstance(agent_manager, IAgent)
+        assert agent_manager.config == {"test": True}
+
+    def test_mock_agent_manager_operations(self):
+        """Test basic MockAgentManager operations"""
+        agent_manager = MockAgentManager()
+
+        # Test agent creation
+        agent_id = agent_manager.create_agent("executor", {"role": "test"})
+        assert agent_id is not None
+        assert agent_id.startswith("mock_agent_")
+
+        # Test agent retrieval
+        agent = agent_manager.get_agent(agent_id)
+        assert agent is not None
+        assert agent["type"] == "executor"
+        assert agent["config"]["role"] == "test"
+
+        # Test active agents
+        active = agent_manager.get_active_agents()
+        assert agent_id in active
+
+        # Test agent removal
+        assert agent_manager.remove_agent(agent_id)
+        assert agent_manager.get_agent(agent_id) is None
+
+    def test_mock_task_manager_creation(self):
+        """Test MockTaskManager can be created and implements ITaskManager"""
+        task_manager = MockTaskManager({"test": True})
+        assert isinstance(task_manager, ITaskManager)
+        assert task_manager.config == {"test": True}
+
+    def test_mock_task_manager_operations(self):
+        """Test basic MockTaskManager operations"""
+        from unittest.mock import Mock
+        task_manager = MockTaskManager()
+
+        # Create mock task
+        mock_task = Mock()
+        mock_task.text = "Test task"
+
+        # Test task execution initialization
+        execution_id = task_manager.initialize_task_execution(mock_task)
+        assert execution_id is not None
+        assert execution_id.startswith("execution_")
+
+        # Test execution status
+        status = task_manager.get_execution_status(execution_id)
+        assert status["state"] == TaskExecutionState.INITIALIZING
+
+        # Test step execution
+        result = task_manager.execute_task_step(execution_id, {"step": 1})
+        assert result["status"] == "executing"
+
+        # Test finalization
+        assert task_manager.finalize_task_execution(execution_id)
+        status = task_manager.get_execution_status(execution_id)
+        assert status["state"] == TaskExecutionState.COMPLETED
 
 
 class TestErrorHandlingSmoke:

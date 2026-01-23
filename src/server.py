@@ -246,11 +246,6 @@ class CodeAgentServer:
         # Инициализация DI контейнера для dependency injection (уже создана выше)
         self.di_container = create_default_container(self.project_dir, self.config.config_data, self.status_file)
 
-        # Создаем фабрику для ITodoManager (для ServerCore)
-        def create_todo_manager():
-            return TodoManager(self.project_dir, config=self.config.config_data.get('todo_manager', {}))
-        self.todo_manager_factory = create_todo_manager
-        
         # Проверяем, нужно ли восстановление после сбоя
         self._check_recovery_needed()
         
@@ -279,6 +274,20 @@ class CodeAgentServer:
             logger.info(f"Автоматическая генерация TODO включена (макс. {self.max_todo_generations} раз за сессию)")
         logger.info("Checkpoint система активирована для защиты от сбоев")
 
+        # Register real implementations in DI container now that server is fully initialized
+        from src.core.implementations import ServerImpl, AgentManagerImpl, TaskManagerImpl
+        from src.core.interfaces import IServer, IAgent, ITaskManager
+
+        # Register ServerImpl
+        self.di_container.register_instance(IServer, ServerImpl(self))
+
+        # Replace mock implementations with real ones
+        agent_manager = AgentManagerImpl(config=self.config.config_data.get('agent_manager', {}))
+        self.di_container.register_instance(IAgent, agent_manager)
+
+        task_manager = TaskManagerImpl(config=self.config.config_data.get('task_manager', {}))
+        self.di_container.register_instance(ITaskManager, task_manager)
+
         # Создание ServerCore для управления циклом выполнения
         self._create_server_core()
 
@@ -297,7 +306,6 @@ class CodeAgentServer:
             # Создаем ServerCore с использованием DI контейнера
             self.server_core = ServerCore(
                 todo_manager=self.di_container.resolve(ITodoManager),
-                todo_manager_factory=self.todo_manager_factory,
                 checkpoint_manager=self.di_container.resolve(ICheckpointManager),
                 status_manager=self.di_container.resolve(IStatusManager),
                 server_logger=self.di_container.resolve(ILogger),

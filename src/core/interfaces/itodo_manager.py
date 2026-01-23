@@ -25,17 +25,6 @@ class ITodoManager(ABC):
     """
 
     @abstractmethod
-    def __init__(self, project_dir: Path, config: Optional[Dict[str, Any]] = None) -> None:
-        """
-        Initialize the todo manager.
-
-        Args:
-            project_dir: Directory containing the project files
-            config: Optional configuration for the manager
-        """
-        pass
-
-    @abstractmethod
     def load_todos(self) -> bool:
         """
         Load todo items from the project directory.
