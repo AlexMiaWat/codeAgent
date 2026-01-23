@@ -15,9 +15,6 @@ from statistics import mean, median, stdev
 import psutil
 import gc
 
-# Добавляем корневую директорию в путь для импорта
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 
 class LoadTestMetrics:
     """Метрики нагрузочного тестирования"""

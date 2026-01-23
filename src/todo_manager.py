@@ -9,6 +9,8 @@ import re
 import logging
 import os
 
+from .core.interfaces import ITodoManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,23 +41,27 @@ class TodoItem:
         return f"{indent}{status} {self.text}"
 
 
-class TodoManager:
+class TodoManager(ITodoManager):
     """Управление todo-листом проекта"""
     
     # Константы
     DEFAULT_MAX_FILE_SIZE = 1_000_000  # Максимальный размер файла todo по умолчанию (1 MB)
     
-    def __init__(self, project_dir: Path, todo_format: str = "txt", max_file_size: Optional[int] = None):
+    def __init__(self, project_dir: Path, config: Optional[Dict[str, Any]] = None):
         """
         Инициализация менеджера todo
-        
+
         Args:
             project_dir: Директория проекта
-            todo_format: Формат файла todo (txt, yaml, md)
+            config: Конфигурация менеджера
         """
         self.project_dir = Path(project_dir)
-        self.todo_format = todo_format
-        self.max_file_size = max_file_size or self.DEFAULT_MAX_FILE_SIZE
+        self.config = config or {}
+
+        # Извлекаем параметры из конфигурации
+        self.todo_format = self.config.get('todo_format', 'txt')
+        self.max_file_size = self.config.get('max_file_size', self.DEFAULT_MAX_FILE_SIZE)
+
         self.todo_file = self._find_todo_file()
         self.items: List[TodoItem] = []
         self._load_todos()
@@ -571,6 +577,73 @@ class TodoManager:
             'total': len(self.items),
             'pending': len(self.get_pending_tasks()),
             'completed': len([i for i in self.items if i.done]),
-            'items': [{'text': item.text, 'level': item.level, 'done': item.done} 
+            'items': [{'text': item.text, 'level': item.level, 'done': item.done}
                      for item in self.items]
         }
+
+    def load_todos(self) -> bool:
+        """
+        Load todo items from the project directory.
+
+        Returns:
+            True if loading was successful, False otherwise
+        """
+        try:
+            self._load_todos()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to load todos: {e}")
+            return False
+
+    def save_todos(self) -> bool:
+        """
+        Save the current todo state to file.
+
+        Returns:
+            True if saving was successful, False otherwise
+        """
+        try:
+            self._save_todos()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save todos: {e}")
+            return False
+
+    def is_healthy(self) -> bool:
+        """
+        Проверить здоровье менеджера задач.
+
+        Returns:
+            True если менеджер в рабочем состоянии
+        """
+        try:
+            # Менеджер считается здоровым, если инициализирован корректно
+            # Наличие файла не обязательно для работоспособности
+            return hasattr(self, 'project_dir') and self.project_dir.exists()
+        except Exception as e:
+            logger.error(f"Health check failed for TodoManager: {e}")
+            return False
+
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Получить статус менеджера задач.
+
+        Returns:
+            Словарь со статусной информацией
+        """
+        return {
+            'healthy': self.is_healthy(),
+            'project_dir': str(self.project_dir),
+            'todo_format': self.todo_format,
+            'items_count': len(getattr(self, 'items', [])),
+            'pending_count': len(self.get_pending_tasks()),
+        }
+
+    def dispose(self) -> None:
+        """
+        Очистить ресурсы менеджера задач.
+        """
+        # Очищаем загруженные элементы
+        if hasattr(self, 'items'):
+            self.items.clear()
+        logger.debug("TodoManager disposed")

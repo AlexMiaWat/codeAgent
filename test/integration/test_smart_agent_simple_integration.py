@@ -9,9 +9,6 @@ import tempfile
 import shutil
 from pathlib import Path
 
-# Добавляем корневую директорию в путь для импорта
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 from src.tools.learning_tool import LearningTool
 from src.tools.context_analyzer_tool import ContextAnalyzerTool
 

@@ -5,10 +5,13 @@
 import logging
 import sys
 import platform
+import os
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
+
+from .core.interfaces import ILogger
 
 # Определяем, нужно ли использовать эмодзи (отключаем на Windows из-за проблем с кодировкой cp1251)
 USE_EMOJI = platform.system() != 'Windows'
@@ -174,6 +177,54 @@ class TaskLogger:
         except Exception:
             # Игнорируем ошибки очистки - это не критично
             pass
+
+    def log_info(self, message: str, extra: Optional[Dict[str, Any]] = None) -> None:
+        """Логировать информационное сообщение"""
+        self.logger.info(message, extra=extra)
+
+    def log_warning(self, message: str, extra: Optional[Dict[str, Any]] = None) -> None:
+        """Логировать предупреждение"""
+        self.logger.warning(message, extra=extra)
+
+    def log_error(self, message: str, exception: Optional[Exception] = None, extra: Optional[Dict[str, Any]] = None) -> None:
+        """Логировать ошибку"""
+        if exception:
+            self.logger.error(message, exc_info=exception, extra=extra)
+        else:
+            self.logger.error(message, extra=extra)
+
+    def log_debug(self, message: str, extra: Optional[Dict[str, Any]] = None) -> None:
+        """Логировать отладочное сообщение"""
+        self.logger.debug(message, extra=extra)
+
+    def create_task_logger(self, task_id: str, task_name: str) -> 'ITaskLogger':
+        """Создать логгер для задачи"""
+        return TaskLogger(task_id, task_name, self.log_dir)
+
+    def close(self) -> None:
+        """Закрыть логгер"""
+        # ServerLogger использует стандартный logging, поэтому просто логируем
+        self.logger.debug("ServerLogger closed")
+
+    def is_healthy(self) -> bool:
+        """Проверить здоровье логгера"""
+        try:
+            return self.log_dir.exists() and self.log_dir.is_dir()
+        except Exception:
+            return False
+
+    def get_status(self) -> Dict[str, Any]:
+        """Получить статус логгера"""
+        return {
+            'healthy': self.is_healthy(),
+            'log_dir': str(self.log_dir),
+            'log_dir_exists': self.log_dir.exists(),
+            'log_dir_writable': self.log_dir.exists() and os.access(self.log_dir, os.W_OK),
+        }
+
+    def dispose(self) -> None:
+        """Очистить ресурсы логгера"""
+        self.close()
     
     def _log_header(self):
         """Записать заголовок лога"""
@@ -529,17 +580,18 @@ ID: {self.task_id}
             self.logger.removeHandler(handler)
 
 
-class ServerLogger:
+class ServerLogger(ILogger):
     """
     Логгер для сервера (общие операции)
     """
     
-    def __init__(self, log_dir: Path = Path("logs")):
+    def __init__(self, log_dir: Path = Path("logs"), config: Optional[Dict[str, Any]] = None):
         """
         Инициализация логгера сервера
-        
+
         Args:
             log_dir: Директория для логов
+            config: Конфигурация логгера
         """
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(exist_ok=True)
@@ -649,3 +701,51 @@ class ServerLogger:
         except Exception:
             # Игнорируем ошибки очистки - это не критично
             pass
+
+    def log_info(self, message: str, extra: Optional[Dict[str, Any]] = None) -> None:
+        """Логировать информационное сообщение"""
+        self.logger.info(message, extra=extra)
+
+    def log_warning(self, message: str, extra: Optional[Dict[str, Any]] = None) -> None:
+        """Логировать предупреждение"""
+        self.logger.warning(message, extra=extra)
+
+    def log_error(self, message: str, exception: Optional[Exception] = None, extra: Optional[Dict[str, Any]] = None) -> None:
+        """Логировать ошибку"""
+        if exception:
+            self.logger.error(message, exc_info=exception, extra=extra)
+        else:
+            self.logger.error(message, extra=extra)
+
+    def log_debug(self, message: str, extra: Optional[Dict[str, Any]] = None) -> None:
+        """Логировать отладочное сообщение"""
+        self.logger.debug(message, extra=extra)
+
+    def create_task_logger(self, task_id: str, task_name: str) -> 'ITaskLogger':
+        """Создать логгер для задачи"""
+        return TaskLogger(task_id, task_name, self.log_dir)
+
+    def close(self) -> None:
+        """Закрыть логгер"""
+        # ServerLogger использует стандартный logging, поэтому просто логируем
+        self.logger.debug("ServerLogger closed")
+
+    def is_healthy(self) -> bool:
+        """Проверить здоровье логгера"""
+        try:
+            return self.log_dir.exists() and self.log_dir.is_dir()
+        except Exception:
+            return False
+
+    def get_status(self) -> Dict[str, Any]:
+        """Получить статус логгера"""
+        return {
+            'healthy': self.is_healthy(),
+            'log_dir': str(self.log_dir),
+            'log_dir_exists': self.log_dir.exists(),
+            'log_dir_writable': self.log_dir.exists() and os.access(self.log_dir, os.W_OK),
+        }
+
+    def dispose(self) -> None:
+        """Очистить ресурсы логгера"""
+        self.close()

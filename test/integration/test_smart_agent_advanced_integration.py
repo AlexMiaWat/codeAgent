@@ -12,9 +12,6 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock
 import asyncio
 
-# Добавляем корневую директорию в путь для импорта
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 import yaml
 
 

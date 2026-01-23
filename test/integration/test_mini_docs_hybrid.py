@@ -12,9 +12,8 @@ from src.hybrid_cursor_interface import (
 from src.prompt_formatter import PromptFormatter
 from src.config_loader import ConfigLoader
 
-# Добавляем корень проекта в путь
+# Корень проекта
 project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
 
 print()
 print("=" * 70)

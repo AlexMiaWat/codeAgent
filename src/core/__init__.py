@@ -13,6 +13,16 @@ Version: 1.0.0
 
 # Core component imports
 from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+from .di_container import DIContainer, create_default_container, ServiceLifetime
+
+# Interface imports
+from .interfaces import (
+    IManager,
+    ITodoManager,
+    IStatusManager,
+    ICheckpointManager,
+    ILogger,
+)
 
 # Version info
 __version__ = "1.0.0"
@@ -22,4 +32,14 @@ __all__ = [
     "TaskExecutor",
     "RevisionExecutor",
     "TodoGenerator",
+    "DIContainer",
+    "create_default_container",
+    "ServiceLifetime",
+
+    # Interfaces
+    "IManager",
+    "ITodoManager",
+    "IStatusManager",
+    "ICheckpointManager",
+    "ILogger",
 ]

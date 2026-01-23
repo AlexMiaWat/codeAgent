@@ -209,6 +209,21 @@ test_results_task_*.md
 docs/results/test_full_task_*.md
 docs/results/test_results_task_*.md
 
+# Test coverage and reports
+.coverage.*
+coverage.xml
+junit.xml
+test-results.xml
+*.cover
+htmlcov/
+
+# Test artifacts and temporary files
+test_artifacts/
+test_reports/
+test_output/
+error_reports/
+*.test.log
+
 # Test output and temporary files
 test/output/
 test/temp/

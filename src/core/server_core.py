@@ -13,13 +13,12 @@ ServerCore - базовый компонент для цикла выполне�
 """
 
 import logging
+from pathlib import Path
 from typing import List, Optional, Dict, Any, Callable, Protocol
 from datetime import datetime
 
-from ..todo_manager import TodoManager, TodoItem
-from ..status_manager import StatusManager
-from ..checkpoint_manager import CheckpointManager
-from ..task_logger import ServerLogger
+from ..core.interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger
+from ..todo_manager import TodoItem
 
 logger = logging.getLogger(__name__)
 
@@ -84,14 +83,16 @@ class ServerCore:
 
     def __init__(
         self,
-        todo_manager: TodoManager,
-        checkpoint_manager: CheckpointManager,
-        status_manager: StatusManager,
-        server_logger: ServerLogger,
+        todo_manager: ITodoManager,
+        todo_manager_factory: Callable[[], ITodoManager],  # Фабрика для создания новых экземпляров
+        checkpoint_manager: ICheckpointManager,
+        status_manager: IStatusManager,
+        server_logger: ILogger,
         task_executor: TaskExecutor,
         revision_executor: RevisionExecutor,
         todo_generator: TodoGenerator,
         config: Dict[str, Any],
+        project_dir: Path,
         auto_todo_enabled: bool = True,
         task_delay: int = 5
     ):
@@ -100,6 +101,7 @@ class ServerCore:
 
         Args:
             todo_manager: Менеджер задач
+            todo_manager_factory: Фабрика для создания новых экземпляров ITodoManager
             checkpoint_manager: Менеджер контрольных точек
             status_manager: Менеджер статусов
             server_logger: Логгер сервера
@@ -107,13 +109,16 @@ class ServerCore:
             revision_executor: Обработчик ревизии проекта
             todo_generator: Обработчик генерации TODO
             config: Конфигурация сервера
+            project_dir: Директория проекта
             auto_todo_enabled: Включена ли автоматическая генерация TODO
             task_delay: Задержка между задачами в секундах
         """
         self.todo_manager = todo_manager
+        self.todo_manager_factory = todo_manager_factory  # Сохраняем фабрику
         self.checkpoint_manager = checkpoint_manager
         self.status_manager = status_manager
         self.server_logger = server_logger
+        self.project_dir = Path(project_dir)
         self.task_executor = task_executor
         self.revision_executor = revision_executor
         self.todo_generator = todo_generator
@@ -277,10 +282,7 @@ class ServerCore:
             all_todo_items = self.todo_manager.get_all_tasks()
 
             # Получаем все завершенные задачи из checkpoint
-            completed_tasks_in_checkpoint = [
-                task for task in self.checkpoint_manager.checkpoint_data.get("tasks", [])
-                if task.get("state") == "completed"
-            ]
+            completed_tasks_in_checkpoint = self.checkpoint_manager.get_completed_tasks()
 
             # Создаем словарь завершенных задач для быстрого поиска
             completed_task_texts = set()
@@ -320,10 +322,7 @@ class ServerCore:
         """
         try:
             # Получаем все завершенные задачи из checkpoint
-            completed_tasks_in_checkpoint = [
-                task for task in self.checkpoint_manager.checkpoint_data.get("tasks", [])
-                if task.get("state") == "completed"
-            ]
+            completed_tasks_in_checkpoint = self.checkpoint_manager.get_completed_tasks()
 
             # Создаем множество текстов завершенных задач для быстрого поиска
             completed_task_texts = set()
@@ -354,9 +353,8 @@ class ServerCore:
         """
         Перезагрузка TODO и проверка на наличие новых задач
         """
-        # Перезагружаем менеджер задач
-        todo_format = self.config.get('project', {}).get('todo_format', 'txt')
-        self.todo_manager = TodoManager(self.todo_manager.project_dir, todo_format=todo_format)
+        # Перезагружаем менеджер задач через фабрику
+        self.todo_manager = self.todo_manager_factory()
 
         # Синхронизируем с checkpoint после перезагрузки
         self._sync_todos_with_checkpoint()

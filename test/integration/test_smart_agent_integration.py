@@ -10,9 +10,6 @@ import shutil
 import time
 from pathlib import Path
 
-# Добавляем корневую директорию в путь для импорта
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 

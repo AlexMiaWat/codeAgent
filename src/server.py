@@ -38,7 +38,7 @@ from .task_logger import TaskLogger, ServerLogger, TaskPhase, Colors
 from .session_tracker import SessionTracker
 from .checkpoint_manager import CheckpointManager
 from .git_utils import auto_push_after_commit
-from .core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+from .core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator, DIContainer, create_default_container
 
 # ServerCore logic is now extracted into separate ServerCore component
 
@@ -144,12 +144,17 @@ class CodeAgentServer:
         
         # Валидация конфигурации
         self._validate_config()
-        
-        # Инициализация менеджеров
-        self.status_manager = StatusManager(self.status_file)
-        todo_format = self.config.get('project.todo_format', 'txt')
-        self.todo_manager = TodoManager(self.project_dir, todo_format=todo_format)
-        
+
+        # Инициализация DI контейнера для dependency injection
+        self.di_container = create_default_container(self.project_dir, self.config.config_data, self.status_file)
+
+        # Получение менеджеров из DI контейнера
+        from .core.interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger
+        self.todo_manager = self.di_container.resolve(ITodoManager)
+        self.status_manager = self.di_container.resolve(IStatusManager)
+        self.checkpoint_manager = self.di_container.resolve(ICheckpointManager)
+        self.server_logger = self.di_container.resolve(ILogger)
+
         # Создание агента
         agent_config = self.config.get('agent', {})
         self.agent = create_executor_agent(
@@ -227,9 +232,6 @@ class CodeAgentServer:
             self.cursor_cli.is_available()
         )
         
-        # Инициализация логгера сервера
-        self.server_logger = ServerLogger()
-        
         # Инициализация трекера сессий для автоматической генерации TODO
         # Session файлы хранятся в каталоге codeAgent, а не в целевом проекте
         auto_todo_config = server_config.get('auto_todo_generation', {})
@@ -241,9 +243,13 @@ class CodeAgentServer:
         
         # Инициализация менеджера контрольных точек для восстановления после сбоев
         # Checkpoint файлы хранятся в каталоге codeAgent, а не в целевом проекте
-        checkpoint_file = server_config.get('checkpoint_file', '.codeagent_checkpoint.json')
-        codeagent_dir = Path(__file__).parent.parent  # Директория codeAgent
-        self.checkpoint_manager = CheckpointManager(codeagent_dir, checkpoint_file)
+        # Инициализация DI контейнера для dependency injection (уже создана выше)
+        self.di_container = create_default_container(self.project_dir, self.config.config_data, self.status_file)
+
+        # Создаем фабрику для ITodoManager (для ServerCore)
+        def create_todo_manager():
+            return TodoManager(self.project_dir, config=self.config.config_data.get('todo_manager', {}))
+        self.todo_manager_factory = create_todo_manager
         
         # Проверяем, нужно ли восстановление после сбоя
         self._check_recovery_needed()
@@ -278,24 +284,28 @@ class CodeAgentServer:
 
     def _create_server_core(self):
         """
-        Создание экземпляра ServerCore для управления циклом выполнения задач
+        Создание экземпляра ServerCore для управления циклом выполнения задач с использованием DI контейнера
         """
         try:
+            from .core.interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger
+
             # Создаем обработчики для ServerCore - передаем callable объекты вместо протоколов
             task_executor = self._execute_task
             revision_executor = self._execute_revision
             todo_generator = self._generate_new_todo_list
 
-            # Создаем ServerCore
+            # Создаем ServerCore с использованием DI контейнера
             self.server_core = ServerCore(
-                todo_manager=self.todo_manager,
-                checkpoint_manager=self.checkpoint_manager,
-                status_manager=self.status_manager,
-                server_logger=self.server_logger,
+                todo_manager=self.di_container.resolve(ITodoManager),
+                todo_manager_factory=self.todo_manager_factory,
+                checkpoint_manager=self.di_container.resolve(ICheckpointManager),
+                status_manager=self.di_container.resolve(IStatusManager),
+                server_logger=self.di_container.resolve(ILogger),
                 task_executor=task_executor,
                 revision_executor=revision_executor,
                 todo_generator=todo_generator,
                 config=self.config.config_data,
+                project_dir=self.project_dir,
                 auto_todo_enabled=self.auto_todo_enabled,
                 task_delay=self.task_delay
             )
@@ -3446,10 +3456,7 @@ class CodeAgentServer:
         logger.info(f"Генерация TODO листа завершена: {todo_file}, задач: {task_count}")
         
         # Перезагружаем TODO менеджер для чтения новых задач
-        self.todo_manager = TodoManager(
-            self.project_dir,
-            todo_format=self.config.get('project.todo_format', 'txt')
-        )
+        self.todo_manager = self.di_container.resolve(ITodoManager)
         
         return True
     
@@ -3663,9 +3670,15 @@ class CodeAgentServer:
         """
         Перезагрузка TODO и проверка на наличие новых задач
         """
-        # Перезагружаем менеджер задач
-        todo_format = self.config.get('project', {}).get('todo_format', 'txt')
-        self.todo_manager = TodoManager(self.todo_manager.project_dir, todo_format=todo_format)
+        # Делегируем вызов ServerCore, который использует фабрику
+        if hasattr(self, 'server_core') and self.server_core:
+            # ServerCore уже имеет свой менеджер, просто перезагрузим его
+            self.server_core._reload_todos_and_check_for_new_tasks()
+            # Синхронизируем наш локальный менеджер
+            self.todo_manager = self.server_core.todo_manager
+        else:
+            # Fallback: получаем новый экземпляр из DI контейнера
+            self.todo_manager = self.di_container.resolve(ITodoManager)
 
         # Синхронизируем с checkpoint после перезагрузки
         self._sync_todos_with_checkpoint()

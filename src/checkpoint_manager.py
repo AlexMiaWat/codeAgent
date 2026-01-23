@@ -9,6 +9,8 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from enum import Enum
 
+from .core.interfaces import ICheckpointManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,7 +23,7 @@ class TaskState(Enum):
     ROLLED_BACK = "rolled_back"   # Откачена
 
 
-class CheckpointManager:
+class CheckpointManager(ICheckpointManager):
     """
     Управление контрольными точками для безопасного восстановления после сбоев
     
@@ -32,13 +34,14 @@ class CheckpointManager:
     - Откат при критических ошибках
     """
     
-    def __init__(self, project_dir: Path, checkpoint_file: str = ".codeagent_checkpoint.json"):
+    def __init__(self, project_dir: Path, checkpoint_file: str = ".codeagent_checkpoint.json", config: Optional[Dict[str, Any]] = None):
         """
         Инициализация менеджера контрольных точек
-        
+
         Args:
             project_dir: Директория проекта
             checkpoint_file: Имя файла для хранения контрольных точек
+            config: Конфигурация менеджера
         """
         self.project_dir = Path(project_dir)
         self.checkpoint_file = self.project_dir / checkpoint_file
@@ -570,3 +573,69 @@ class CheckpointManager:
         }
         
         return stats
+
+    def get_completed_tasks(self) -> List[Dict[str, Any]]:
+        """
+        Получить все завершенные задачи.
+
+        Returns:
+            Список завершенных задач
+        """
+        tasks = self.checkpoint_data.get("tasks", [])
+        return [task for task in tasks if task.get("state") == TaskState.COMPLETED.value]
+
+    def is_healthy(self) -> bool:
+        """
+        Проверить здоровье менеджера контрольных точек.
+
+        Returns:
+            True если менеджер в рабочем состоянии
+        """
+        try:
+            # Проверяем что можем работать с файлами
+            return (self.project_dir.exists() and
+                   self.checkpoint_file.parent.exists() and
+                   isinstance(self.checkpoint_data, dict))
+        except Exception as e:
+            logger.error(f"Health check failed for CheckpointManager: {e}")
+            return False
+
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Получить статус менеджера контрольных точек.
+
+        Returns:
+            Словарь со статусной информацией
+        """
+        try:
+            return {
+                'healthy': self.is_healthy(),
+                'project_dir': str(self.project_dir),
+                'checkpoint_file': str(self.checkpoint_file),
+                'backup_file': str(self.backup_file),
+                'file_exists': self.checkpoint_file.exists(),
+                'backup_exists': self.backup_file.exists(),
+                'iteration_count': self.get_iteration_count(),
+                'session_id': self.checkpoint_data.get("session_id"),
+                'clean_shutdown': self.was_clean_shutdown(),
+            }
+        except Exception as e:
+            logger.error(f"Failed to get status for CheckpointManager: {e}")
+            return {
+                'healthy': False,
+                'error': str(e),
+            }
+
+    def dispose(self) -> None:
+        """
+        Очистить ресурсы менеджера контрольных точек.
+        """
+        # Сохраняем финальное состояние перед очисткой
+        try:
+            self._save_checkpoint(create_backup=True)
+        except Exception as e:
+            logger.warning(f"Failed to save checkpoint on dispose: {e}")
+
+        # Очищаем данные
+        self.checkpoint_data.clear()
+        logger.debug("CheckpointManager disposed")

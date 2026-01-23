@@ -3,25 +3,29 @@
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 import os
 import logging
 
+from .core.interfaces import IStatusManager
+
 logger = logging.getLogger(__name__)
 
 
-class StatusManager:
+class StatusManager(IStatusManager):
     """Управление файлом статусов проекта"""
     
-    def __init__(self, status_file: Path):
+    def __init__(self, status_file: Path, config: Optional[dict] = None):
         """
         Инициализация менеджера статусов
-        
+
         Args:
             status_file: Путь к файлу статусов
+            config: Конфигурация менеджера
         """
         self.status_file = Path(status_file)
+        self.config = config or {}
         self._ensure_file_exists()
     
     def _ensure_file_exists(self) -> None:
@@ -193,3 +197,52 @@ class StatusManager:
         except OSError as e:
             logger.error(f"Ошибка записи в файл {self.status_file}: {e}", exc_info=True)
             raise
+
+    def is_healthy(self) -> bool:
+        """
+        Проверить здоровье менеджера статусов.
+
+        Returns:
+            True если менеджер в рабочем состоянии
+        """
+        try:
+            # Проверяем что можем прочитать файл
+            parent_dir = self.status_file.parent
+            return (parent_dir.exists() and
+                   os.access(parent_dir, os.W_OK) and
+                   (not self.status_file.exists() or self.status_file.stat().st_size >= 0))
+        except Exception as e:
+            logger.error(f"Health check failed for StatusManager: {e}")
+            return False
+
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Получить статус менеджера статусов.
+
+        Returns:
+            Словарь со статусной информацией
+        """
+        try:
+            file_exists = self.status_file.exists()
+            file_size = self.status_file.stat().st_size if file_exists else 0
+            return {
+                'healthy': self.is_healthy(),
+                'status_file': str(self.status_file),
+                'file_exists': file_exists,
+                'file_size': file_size,
+                'readable': file_exists and os.access(self.status_file, os.R_OK),
+                'writable': os.access(self.status_file.parent, os.W_OK),
+            }
+        except Exception as e:
+            logger.error(f"Failed to get status for StatusManager: {e}")
+            return {
+                'healthy': False,
+                'error': str(e),
+            }
+
+    def dispose(self) -> None:
+        """
+        Очистить ресурсы менеджера статусов.
+        """
+        # StatusManager не требует специальной очистки ресурсов
+        logger.debug("StatusManager disposed")
