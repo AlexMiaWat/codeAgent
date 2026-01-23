@@ -52,7 +52,7 @@ instruction_1 = "Что находится в файле README.md?"
 
 print(f"Task ID: {task_id_1}")
 print(f"Инструкция: {instruction_1}")
-print(f"Ожидаемый метод: CLI")
+print("Ожидаемый метод: CLI")
 print()
 
 result_1 = hybrid.execute_task(
@@ -62,7 +62,7 @@ result_1 = hybrid.execute_task(
     timeout=60
 )
 
-print(f"Результат:")
+print("Результат:")
 print(f"  Success: {result_1.success}")
 print(f"  Метод: {result_1.method_used}")
 print(f"  Вывод: {result_1.output[:150] if result_1.output else '(пусто)'}...")
@@ -85,7 +85,7 @@ instruction_2 = f"Создай файл {output_file} с текстом 'Hybrid 
 print(f"Task ID: {task_id_2}")
 print(f"Инструкция: {instruction_2}")
 print(f"Ожидаемый файл: {project_dir / output_file}")
-print(f"Ожидаемый метод: file")
+print("Ожидаемый метод: file")
 print()
 
 # Удаляем файл если существует
@@ -117,7 +117,7 @@ result_2 = hybrid.execute_task(
     timeout=30  # Короткий таймаут для теста
 )
 
-print(f"Результат:")
+print("Результат:")
 print(f"  Success: {result_2.success}")
 print(f"  Метод: {result_2.method_used}")
 print(f"  Side-effects проверены: {result_2.side_effects_verified}")
@@ -133,13 +133,13 @@ if output_path.exists():
     print(f"[OK] Файл создан: {output_path}")
     print(f"  Содержимое: {content[:100]}...")
 else:
-    print(f"[INFO] Файл не создан (ожидаемо для короткого таймаута)")
+    print("[INFO] Файл не создан (ожидаемо для короткого таймаута)")
     
     # Проверяем наличие файла инструкции
     instruction_file = project_dir / "cursor_commands" / f"instruction_{task_id_2}.txt"
     if instruction_file.exists():
         print(f"[OK] Файл инструкции создан: {instruction_file}")
-        print(f"  Выполните инструкцию вручную для завершения теста")
+        print("  Выполните инструкцию вручную для завершения теста")
     else:
         print(f"[INFO] Файл инструкции: {instruction_file}")
 
@@ -162,8 +162,8 @@ print("Тест 2 (сложная задача):")
 if result_2.success:
     print(f"  [OK] Выполнено через {result_2.method_used}")
 elif result_2.method_used == "file":
-    print(f"  [INFO] Файловый интерфейс активирован")
-    print(f"  [INFO] Требуется ручное выполнение или увеличение таймаута")
+    print("  [INFO] Файловый интерфейс активирован")
+    print("  [INFO] Требуется ручное выполнение или увеличение таймаута")
 else:
     print(f"  [FAIL] Ошибка: {result_2.error_message}")
 

@@ -4,9 +4,8 @@
 
 import pytest
 import tempfile
-import os
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from src.tools.context_analyzer_tool import ContextAnalyzerTool, normalize_unicode_text
 
 

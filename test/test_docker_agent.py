@@ -23,7 +23,7 @@ def test_docker_agent():
         if "CURSOR_API_KEY" in env_content:
             cursor_key = [line for line in env_content.split('\n') if 'CURSOR_API_KEY' in line][0]
             key_value = cursor_key.split('=')[1] if '=' in cursor_key else ""
-            print(f"   [OK] CURSOR_API_KEY найден в .env")
+            print("   [OK] CURSOR_API_KEY найден в .env")
             print(f"   [OK] CURSOR_API_KEY: {key_value[:20]}...")
         else:
             print("   [FAIL] CURSOR_API_KEY не найден в .env")

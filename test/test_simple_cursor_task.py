@@ -76,7 +76,7 @@ def test_simple_cursor_task():
 Важно: работай в контексте проекта {project_dir}, используй относительные пути от корня проекта.
 """
         
-        print(f"[OK] Инструкция сформирована")
+        print("[OK] Инструкция сформирована")
         print(f"  Task ID: {task_id}")
         print(f"  Ожидаемый файл: docs/results/cursor_test_{task_id}.md")
         print()
@@ -98,7 +98,7 @@ def test_simple_cursor_task():
             new_chat=True
         )
         
-        print(f"[OK] Файл инструкции создан")
+        print("[OK] Файл инструкции создан")
         print(f"  Путь: {instruction_file}")
         print()
         
@@ -112,9 +112,9 @@ def test_simple_cursor_task():
         print(f"1. Открой Cursor IDE в проекте: {project_dir}")
         print(f"2. Открой файл инструкции: {instruction_file.name}")
         print(f"   (путь: {instruction_file})")
-        print(f"3. Создай новый чат в Cursor (Ctrl+L или кнопка 'New Chat')")
-        print(f"4. Скопируй инструкцию из файла в новый чат")
-        print(f"5. Выполни инструкцию в Cursor")
+        print("3. Создай новый чат в Cursor (Ctrl+L или кнопка 'New Chat')")
+        print("4. Скопируй инструкцию из файла в новый чат")
+        print("5. Выполни инструкцию в Cursor")
         print(f"6. Проверь, что файл создан: docs/results/cursor_test_{task_id}.md")
         print()
         print("После выполнения продолжи тест нажатием Enter...")
@@ -154,7 +154,7 @@ def test_simple_cursor_task():
                 if task_id in content:
                     print(f"[OK] Task ID найден в файле: {task_id}")
                 else:
-                    print(f"[WARNING] Task ID не найден в файле")
+                    print("[WARNING] Task ID не найден в файле")
                 
                 print()
                 
@@ -189,11 +189,11 @@ def test_simple_cursor_task():
             # Проверяем директорию results
             results_dir = project_dir / "docs" / "results"
             if results_dir.exists():
-                print(f"Файлы в docs/results/:")
+                print("Файлы в docs/results/:")
                 for f in sorted(results_dir.glob("*.md")):
                     print(f"  - {f.name}")
             else:
-                print(f"Директория docs/results/ не существует")
+                print("Директория docs/results/ не существует")
             
             print()
             return False

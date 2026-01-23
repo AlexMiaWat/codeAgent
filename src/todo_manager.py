@@ -198,7 +198,7 @@ class TodoManager:
                 )
                 self.items = []
                 return
-        except OSError as e:
+        except OSError:
             logger.error(f"Ошибка проверки размера файла todo: {self.todo_file}", exc_info=True)
             self.items = []
             return
@@ -231,7 +231,7 @@ class TodoManager:
         """Загрузка todo из текстового файла"""
         try:
             content = self.todo_file.read_text(encoding='utf-8')
-        except UnicodeDecodeError as e:
+        except UnicodeDecodeError:
             logger.error(
                 f"Ошибка декодирования файла todo (не UTF-8): {self.todo_file}",
                 exc_info=True,
@@ -240,9 +240,9 @@ class TodoManager:
             # Пробуем другие кодировки
             try:
                 content = self.todo_file.read_text(encoding='cp1251')
-                logger.info(f"Файл успешно прочитан с кодировкой cp1251")
+                logger.info("Файл успешно прочитан с кодировкой cp1251")
             except Exception:
-                logger.error(f"Не удалось прочитать файл с альтернативными кодировками")
+                logger.error("Не удалось прочитать файл с альтернативными кодировками")
                 self.items = []
                 return
         except Exception as e:
@@ -289,7 +289,7 @@ class TodoManager:
         """Загрузка todo из Markdown файла с чекбоксами"""
         try:
             content = self.todo_file.read_text(encoding='utf-8')
-        except UnicodeDecodeError as e:
+        except UnicodeDecodeError:
             logger.error(
                 f"Ошибка декодирования Markdown файла todo (не UTF-8): {self.todo_file}",
                 exc_info=True,
@@ -297,9 +297,9 @@ class TodoManager:
             )
             try:
                 content = self.todo_file.read_text(encoding='cp1251')
-                logger.info(f"Markdown файл успешно прочитан с кодировкой cp1251")
+                logger.info("Markdown файл успешно прочитан с кодировкой cp1251")
             except Exception:
-                logger.error(f"Не удалось прочитать Markdown файл с альтернативными кодировками")
+                logger.error("Не удалось прочитать Markdown файл с альтернативными кодировками")
                 self.items = []
                 return
         except Exception as e:
@@ -348,7 +348,7 @@ class TodoManager:
         """Загрузка todo из YAML файла"""
         try:
             content = self.todo_file.read_text(encoding='utf-8')
-        except UnicodeDecodeError as e:
+        except UnicodeDecodeError:
             logger.error(
                 f"Ошибка декодирования YAML файла todo (не UTF-8): {self.todo_file}",
                 exc_info=True,
@@ -356,9 +356,9 @@ class TodoManager:
             )
             try:
                 content = self.todo_file.read_text(encoding='cp1251')
-                logger.info(f"YAML файл успешно прочитан с кодировкой cp1251")
+                logger.info("YAML файл успешно прочитан с кодировкой cp1251")
             except Exception:
-                logger.error(f"Не удалось прочитать YAML файл с альтернативными кодировками")
+                logger.error("Не удалось прочитать YAML файл с альтернативными кодировками")
                 self.items = []
                 return
         except Exception as e:
@@ -461,7 +461,7 @@ class TodoManager:
         Сохраняет изменения статуса задач обратно в файл todo в соответствующем формате.
         """
         if not self.todo_file or not self.todo_file.exists():
-            logger.debug(f"Файл todo не найден, пропускаем сохранение")
+            logger.debug("Файл todo не найден, пропускаем сохранение")
             return
         
         # Проверка прав доступа на запись

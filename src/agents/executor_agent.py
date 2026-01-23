@@ -3,8 +3,7 @@
 """
 
 from pathlib import Path
-from typing import Optional, List
-from unittest.mock import patch
+from typing import Optional
 from crewai import Agent
 from crewai_tools import CodeInterpreterTool
 

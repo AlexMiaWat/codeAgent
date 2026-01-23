@@ -241,6 +241,10 @@ docs/results/*_test_*.md
 docs/results/*_results*.md
 docs/results/free_instruction_*.md
 
+# Revision reports (generated)
+docs/results/revision_*_revision_*.md
+docs/results/*_revision_*.md
+
 # Benchmark outputs
 benchmark_results/
 benchmark_output/

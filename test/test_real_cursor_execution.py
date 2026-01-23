@@ -77,7 +77,7 @@ def main():
         new_chat=True
     )
     
-    print(f"[OK] Файл инструкции создан")
+    print("[OK] Файл инструкции создан")
     print(f"  Путь: {instruction_file}")
     print()
     
@@ -89,12 +89,12 @@ def main():
     print("Для завершения теста выполни следующие шаги:")
     print()
     print(f"1. Открой Cursor IDE в проекте: {project_dir}")
-    print(f"2. Открой файл инструкции:")
+    print("2. Открой файл инструкции:")
     print(f"   {instruction_file}")
-    print(f"3. Создай новый чат в Cursor (Ctrl+L или кнопка 'New Chat')")
-    print(f"4. Скопируй инструкцию из файла в новый чат Cursor")
-    print(f"5. Выполни инструкцию в Cursor")
-    print(f"6. Проверь, что файл создан:")
+    print("3. Создай новый чат в Cursor (Ctrl+L или кнопка 'New Chat')")
+    print("4. Скопируй инструкцию из файла в новый чат Cursor")
+    print("5. Выполни инструкцию в Cursor")
+    print("6. Проверь, что файл создан:")
     print(f"   docs/results/cursor_execution_test_{task_id}.md")
     print()
     print("После выполнения задачи продолжай с проверкой результата.")

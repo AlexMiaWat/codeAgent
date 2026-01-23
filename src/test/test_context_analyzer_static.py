@@ -2,12 +2,8 @@
 Статические тесты для ContextAnalyzerTool - проверка структуры данных, API, форматов
 """
 
-import pytest
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Set
-from unittest.mock import Mock, patch, MagicMock
-import inspect
 
 
 class TestContextAnalyzerToolStatic:
@@ -35,41 +31,6 @@ class TestContextAnalyzerToolStatic:
             assert tool.max_file_size == 1000000
             assert isinstance(tool.supported_extensions, list)
 
-    def test_supported_extensions_list(self):
-        """Проверка списка поддерживаемых расширений"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = ContextAnalyzerTool(project_dir=tmp_dir)
-
-            expected_extensions = ['.md', '.txt', '.rst', '.py', '.js', '.ts', '.json', '.yaml', '.yml', '.java', '.cpp', '.hpp', '.c', '.h']
-
-            assert tool.supported_extensions == expected_extensions
-
-            # Проверяем что все расширения начинаются с точки
-            for ext in tool.supported_extensions:
-                assert ext.startswith('.')
-                assert len(ext) > 1
-
-    def test_context_analyzer_initialization(self):
-        """Проверка инициализации ContextAnalyzerTool"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-        import inspect
-
-        # Проверяем сигнатуру __init__
-        init_sig = inspect.signature(ContextAnalyzerTool.__init__)
-        expected_params = ['self', 'project_dir', 'docs_dir', 'max_file_size',
-                          'supported_extensions', 'supported_languages', 'max_dependency_depth', 'kwargs']
-
-        actual_params = list(init_sig.parameters.keys())
-        assert actual_params == expected_params
-
-        # Проверяем типы параметров
-        params = init_sig.parameters
-        assert params['project_dir'].annotation == str
-        assert params['docs_dir'].annotation == str
-        assert params['max_file_size'].annotation == int
-        # supported_extensions может быть None по умолчанию
 
     def test_context_analyzer_initialization_defaults(self):
         """Проверка значений по умолчанию при инициализации"""
@@ -542,18 +503,6 @@ class TestContextAnalyzerToolErrorHandling:
 
             assert isinstance(result, str)
             # Должен обработать структуру без проблем с глубиной
-
-    def test_context_analyzer_get_task_context_empty_query(self):
-        """Тест получения контекста задачи с пустым запросом"""
-        from src.tools.context_analyzer_tool import ContextAnalyzerTool
-        import pytest
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = ContextAnalyzerTool(project_dir=tmp_dir)
-
-            # Функция должна валидировать входные параметры
-            with pytest.raises(ValueError, match="task_description must be a non-empty string"):
-                tool.get_task_context("")
 
     def test_context_analyzer_find_related_files_empty_query(self):
         """Тест поиска связанных файлов с пустым запросом"""

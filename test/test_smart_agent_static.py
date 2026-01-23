@@ -6,8 +6,8 @@ import pytest
 import tempfile
 import os
 from pathlib import Path
-from typing import Optional, List
-from unittest.mock import Mock, patch, MagicMock
+from typing import Optional
+from unittest.mock import Mock, patch
 
 
 @pytest.fixture

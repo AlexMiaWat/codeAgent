@@ -5,14 +5,11 @@
 """
 
 import sys
-import os
 import tempfile
 import shutil
-import time
 import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock
-import pytest
 import asyncio
 
 # Добавляем корневую директорию в путь для импорта

@@ -83,7 +83,7 @@ output_path = project_dir / output_file
 output_path.parent.mkdir(parents=True, exist_ok=True)
 
 if output_path.exists():
-    print(f"[INFO] Файл уже существует, удаляем для чистоты теста")
+    print("[INFO] Файл уже существует, удаляем для чистоты теста")
     output_path.unlink()
     print()
 

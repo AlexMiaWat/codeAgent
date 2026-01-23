@@ -5,7 +5,6 @@
 """
 
 import sys
-import os
 from pathlib import Path
 
 # Добавляем корневую директорию в путь для импорта

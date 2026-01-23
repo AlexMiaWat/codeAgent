@@ -14,7 +14,6 @@
 """
 
 import sys
-import os
 import subprocess
 import time
 import argparse
@@ -565,7 +564,7 @@ class TestRunner:
             for category in skipped_categories:
                 cat_name = TEST_CATEGORIES[category]['name']
                 print(f"  {Colors.WARNING}⚠{Colors.ENDC} {cat_name}")
-                print(f"     Запустите сервер: python main.py")
+                print("     Запустите сервер: python main.py")
         
         # Финальный статус
         print()

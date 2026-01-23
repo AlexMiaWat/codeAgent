@@ -10,7 +10,6 @@
 import sys
 import time
 from pathlib import Path
-from datetime import datetime
 
 # Добавляем корень проекта в путь
 project_root = Path(__file__).parent.parent
@@ -36,7 +35,7 @@ def test_feedback_mechanism():
     
     # 2. Создаем файловый интерфейс
     cursor_file = CursorFileInterface(project_dir)
-    print(f"[INFO] Файловый интерфейс создан")
+    print("[INFO] Файловый интерфейс создан")
     print(f"  Commands dir: {cursor_file.commands_dir}")
     print(f"  Results dir: {cursor_file.results_dir}")
     print()
@@ -45,7 +44,7 @@ def test_feedback_mechanism():
     task_id = f"feedback_test_{int(time.time())}"
     instruction = "Тестовая инструкция для проверки обратной связи"
     
-    print(f"[STEP 1] Создание файла инструкции")
+    print("[STEP 1] Создание файла инструкции")
     instruction_file = cursor_file.write_instruction(
         instruction=instruction,
         task_id=task_id,
@@ -56,17 +55,17 @@ def test_feedback_mechanism():
     
     # 4. Проверяем, что файл инструкции создан
     if instruction_file.exists():
-        print(f"[OK] Файл инструкции существует")
+        print("[OK] Файл инструкции существует")
         print(f"  Размер: {instruction_file.stat().st_size} байт")
         print()
     else:
-        print(f"[FAIL] Файл инструкции не существует!")
+        print("[FAIL] Файл инструкции не существует!")
         return False
     
     # 5. Проверяем ожидание файла результата (без таймаута, короткий тест)
-    print(f"[STEP 2] Проверка ожидания файла результата")
+    print("[STEP 2] Проверка ожидания файла результата")
     print(f"  Ожидаемый файл: {cursor_file.results_dir / f'result_{task_id}.txt'}")
-    print(f"  Таймаут: 5s (короткий для теста)")
+    print("  Таймаут: 5s (короткий для теста)")
     print()
     
     print("[INFO] Файл результата НЕ создан автоматически")
@@ -78,7 +77,7 @@ def test_feedback_mechanism():
     print()
     
     # 6. Имитация: создаем тестовый файл результата для проверки механизма
-    print(f"[STEP 3] Имитация: создание тестового файла результата")
+    print("[STEP 3] Имитация: создание тестового файла результата")
     test_result_file = cursor_file.results_dir / f"result_{task_id}.txt"
     test_content = """Результат выполнения тестовой задачи
 
@@ -90,12 +89,12 @@ def test_feedback_mechanism():
     print()
     
     # 7. Проверяем обнаружение файла результата
-    print(f"[STEP 4] Проверка обнаружения файла результата")
+    print("[STEP 4] Проверка обнаружения файла результата")
     
     if cursor_file.check_result_exists(task_id):
-        print(f"  [OK] Файл результата обнаружен!")
+        print("  [OK] Файл результата обнаружен!")
     else:
-        print(f"  [FAIL] Файл результата не обнаружен!")
+        print("  [FAIL] Файл результата не обнаружен!")
         return False
     
     # 8. Читаем содержимое файла
@@ -107,11 +106,11 @@ def test_feedback_mechanism():
         print("  " + "\n  ".join(content.split("\n")[:5]))
         print()
     else:
-        print(f"  [FAIL] Не удалось прочитать файл результата!")
+        print("  [FAIL] Не удалось прочитать файл результата!")
         return False
     
     # 9. Проверяем контрольную фразу
-    print(f"[STEP 5] Проверка контрольной фразы")
+    print("[STEP 5] Проверка контрольной фразы")
     control_phrase = "Отчет завершен!"
     
     if cursor_file.check_control_phrase(content, control_phrase):
@@ -122,7 +121,7 @@ def test_feedback_mechanism():
     print()
     
     # 10. Тестируем wait_for_result с коротким таймаутом (файл уже существует)
-    print(f"[STEP 6] Тест wait_for_result (файл уже существует)")
+    print("[STEP 6] Тест wait_for_result (файл уже существует)")
     wait_result = cursor_file.wait_for_result(
         task_id=task_id,
         timeout=5,
@@ -131,19 +130,19 @@ def test_feedback_mechanism():
     )
     
     if wait_result["success"]:
-        print(f"  [OK] Файл результата найден через wait_for_result")
+        print("  [OK] Файл результата найден через wait_for_result")
         print(f"  Время ожидания: {wait_result['wait_time']:.2f}s")
         print(f"  Путь: {wait_result['file_path']}")
     else:
-        print(f"  [FAIL] Файл результата не найден через wait_for_result")
+        print("  [FAIL] Файл результата не найден через wait_for_result")
         print(f"  Ошибка: {wait_result.get('error')}")
     print()
     
     # 11. Очистка тестового файла
-    print(f"[STEP 7] Очистка тестового файла")
+    print("[STEP 7] Очистка тестового файла")
     if test_result_file.exists():
         test_result_file.unlink()
-        print(f"  [OK] Тестовый файл удален")
+        print("  [OK] Тестовый файл удален")
     print()
     
     print("=" * 70)
@@ -161,7 +160,7 @@ def test_feedback_mechanism():
     print("  2. Сохранить результат в cursor_results/result_{task_id}.txt")
     print("  3. Code Agent автоматически обнаружит файл и проверит контрольную фразу")
     print()
-    print(f"[INFO] Файл инструкции готов для использования:")
+    print("[INFO] Файл инструкции готов для использования:")
     print(f"  {instruction_file}")
     print()
     

@@ -13,7 +13,6 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
-import yaml
 
 # Загружаем переменные окружения (с перезаписью для обновления ключа)
 load_dotenv(override=True)
@@ -64,7 +63,7 @@ async def test_openrouter_api():
         
         if response and response.choices:
             content = response.choices[0].message.content
-            print(f"[OK] API доступен!")
+            print("[OK] API доступен!")
             print(f"  Ответ модели: {content}")
             return True
         else:
@@ -73,7 +72,7 @@ async def test_openrouter_api():
             
     except Exception as e:
         error_msg = str(e)
-        print(f"[FAIL] Ошибка при обращении к API:")
+        print("[FAIL] Ошибка при обращении к API:")
         print(f"  {error_msg}")
         
         if "401" in error_msg or "User not found" in error_msg:

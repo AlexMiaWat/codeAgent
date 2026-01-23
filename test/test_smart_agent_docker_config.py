@@ -5,18 +5,12 @@
 """
 
 import sys
-import os
-import tempfile
-import shutil
 from pathlib import Path
-from unittest.mock import patch, mock_open
 
 # Добавляем корневую директорию в путь для импорта
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import pytest
 import yaml
-from unittest.mock import patch
 
 
 def test_docker_compose_agent_structure():

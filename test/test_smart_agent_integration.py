@@ -2,12 +2,9 @@
 Интеграционные тесты для Smart Agent - проверка взаимодействия компонентов
 """
 
-import pytest
 import tempfile
-import json
 import time
 from pathlib import Path
-from unittest.mock import patch, MagicMock, call
 from src.agents.smart_agent import create_smart_agent
 from src.tools.learning_tool import LearningTool
 from src.tools.context_analyzer_tool import ContextAnalyzerTool

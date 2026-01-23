@@ -2,7 +2,6 @@
 Интеграционный тест checkpoint с сервером
 """
 
-import pytest
 from pathlib import Path
 from src.checkpoint_manager import CheckpointManager
 

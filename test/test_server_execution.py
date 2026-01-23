@@ -5,7 +5,6 @@
 """
 
 import sys
-import os
 import logging
 from pathlib import Path
 import subprocess
@@ -15,7 +14,7 @@ import subprocess
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.cursor_cli_interface import CursorCLIInterface, create_cursor_cli_interface
+from src.cursor_cli_interface import create_cursor_cli_interface
 from src.config_loader import ConfigLoader
 
 # Настройка логирования
@@ -60,7 +59,7 @@ def test_cursor_cli_execution():
             print(f"   [OK] Контейнер запущен: {result.stdout.strip()}")
             container_running = True
         else:
-            print(f"   [INFO] Контейнер не запущен, будет запущен автоматически")
+            print("   [INFO] Контейнер не запущен, будет запущен автоматически")
             container_running = False
     except Exception as e:
         print(f"   [WARN] Ошибка проверки контейнера: {e}")
@@ -80,12 +79,12 @@ def test_cursor_cli_execution():
         )
         
         if cli and cli.is_available():
-            print(f"   [OK] Cursor CLI доступен")
+            print("   [OK] Cursor CLI доступен")
             print(f"   [OK] Команда: {cli.cli_command}")
             
             # Проверяем, используется ли Docker
             if cli.cli_command == "docker-compose-agent":
-                print(f"   [OK] Используется Docker контейнер")
+                print("   [OK] Используется Docker контейнер")
                 
                 # Проверяем статус контейнера после инициализации
                 result = subprocess.run(
@@ -95,14 +94,14 @@ def test_cursor_cli_execution():
                     timeout=10
                 )
                 if result.returncode == 0:
-                    print(f"   [OK] Статус контейнера:")
+                    print("   [OK] Статус контейнера:")
                     for line in result.stdout.strip().split('\n'):
                         if line.strip():
                             print(f"        {line}")
             else:
                 print(f"   [INFO] Используется локальный CLI: {cli.cli_command}")
         else:
-            print(f"   [FAIL] Cursor CLI недоступен")
+            print("   [FAIL] Cursor CLI недоступен")
             return False
     except Exception as e:
         print(f"   [FAIL] Ошибка инициализации CLI: {e}")
@@ -126,19 +125,19 @@ def test_cursor_cli_execution():
         )
         
         if result.get("success"):
-            print(f"   [OK] Инструкция выполнена успешно")
+            print("   [OK] Инструкция выполнена успешно")
             print(f"   [OK] Return code: {result.get('return_code')}")
             
             stdout = result.get('stdout', '')
             if stdout:
-                print(f"   [OK] Вывод (первые 500 символов):")
+                print("   [OK] Вывод (первые 500 символов):")
                 print(f"   {stdout[:500]}")
             
             stderr = result.get('stderr', '')
             if stderr:
                 print(f"   [WARN] Stderr: {stderr[:300]}")
         else:
-            print(f"   [FAIL] Инструкция не выполнена")
+            print("   [FAIL] Инструкция не выполнена")
             print(f"   [FAIL] Error: {result.get('error_message')}")
             print(f"   [FAIL] Return code: {result.get('return_code')}")
             return False
@@ -159,7 +158,7 @@ def test_cursor_cli_execution():
             print(f"   [OK] Размер файла: {len(content)} символов")
             print(f"   [OK] Количество строк: {len(content.splitlines())}")
             
-            print(f"\n   Содержимое файла:")
+            print("\n   Содержимое файла:")
             print("   " + "-" * 70)
             for i, line in enumerate(content.splitlines()[:60], 1):
                 print(f"   {i:3d} | {line}")
@@ -168,7 +167,7 @@ def test_cursor_cli_execution():
             print(f"   [WARN] Ошибка чтения файла: {e}")
     else:
         print(f"   [WARN] Файл результата не найден: {result_file}")
-        print(f"   [INFO] Возможно, требуется больше времени для выполнения")
+        print("   [INFO] Возможно, требуется больше времени для выполнения")
     
     # 6. Финальная проверка контейнера
     print("\n6. Финальная проверка Docker контейнера...")
@@ -181,9 +180,9 @@ def test_cursor_cli_execution():
         )
         if result.returncode == 0:
             if "cursor-agent-life" in result.stdout and "Up" in result.stdout:
-                print(f"   [OK] Контейнер работает и готов к выполнению следующих задач")
+                print("   [OK] Контейнер работает и готов к выполнению следующих задач")
             else:
-                print(f"   [WARN] Контейнер остановлен или не найден")
+                print("   [WARN] Контейнер остановлен или не найден")
     except Exception as e:
         print(f"   [WARN] Ошибка проверки контейнера: {e}")
     

@@ -12,7 +12,6 @@
 import sys
 import time
 import logging
-import subprocess
 from pathlib import Path
 from datetime import datetime
 
@@ -21,8 +20,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.config_loader import ConfigLoader
-from src.cursor_cli_interface import CursorCLIInterface, create_cursor_cli_interface
-from src.cursor_file_interface import CursorFileInterface
+from src.cursor_cli_interface import create_cursor_cli_interface
 
 # Настройка логирования
 logging.basicConfig(
@@ -66,7 +64,7 @@ def test_real_cursor_cli():
             return False
         
         version = cli.check_version()
-        print(f"[OK] Cursor CLI доступен")
+        print("[OK] Cursor CLI доступен")
         print(f"  Версия: {version}")
         print(f"  Команда: {cli.cli_command}")
         
@@ -100,7 +98,7 @@ def test_real_cursor_cli():
                         if state.get("Error"):
                             print(f"  [ERROR] Ошибка: {state.get('Error')}")
                 else:
-                    print(f"  [INFO] Контейнер cursor-agent-life не найден (будет создан автоматически)")
+                    print("  [INFO] Контейнер cursor-agent-life не найден (будет создан автоматически)")
             except Exception as e:
                 print(f"  [WARNING] Не удалось проверить статус контейнера: {e}")
         
@@ -126,7 +124,7 @@ def test_real_cursor_cli():
 Важно: работай в контексте проекта {project_dir}, все пути относительные от корня проекта.
 """
         
-        print(f"[OK] Инструкция сформирована")
+        print("[OK] Инструкция сформирована")
         print(f"  Task ID: {task_id}")
         print(f"  Длина инструкции: {len(instruction)} символов")
         print()
@@ -156,7 +154,7 @@ def test_real_cursor_cli():
             new_chat=True
         )
         
-        print(f"[INFO] Команда выполнена")
+        print("[INFO] Команда выполнена")
         print(f"  Success: {result.success}")
         print(f"  Return code: {result.return_code}")
         print(f"  CLI available: {result.cli_available}")
@@ -196,7 +194,7 @@ def test_real_cursor_cli():
                             timeout=5
                         )
                         if logs_result.returncode == 0 and logs_result.stdout.strip():
-                            print(f"  [INFO] Последние логи контейнера:")
+                            print("  [INFO] Последние логи контейнера:")
                             for line in logs_result.stdout.strip().split('\n')[-5:]:
                                 if line.strip():
                                     print(f"    {line[:100]}")
@@ -264,7 +262,7 @@ def test_real_cursor_cli():
         print()
         
         if readme_file.exists():
-            print(f"[OK] README.md существует")
+            print("[OK] README.md существует")
             try:
                 readme_content = readme_file.read_text(encoding='utf-8')
                 print(f"  Размер: {len(readme_content)} символов")
@@ -278,7 +276,7 @@ def test_real_cursor_cli():
             except Exception as e:
                 print(f"  [ERROR] Ошибка чтения README.md: {e}")
         else:
-            print(f"[INFO] README.md не найден (возможно, был создан)")
+            print("[INFO] README.md не найден (возможно, был создан)")
         
         print()
         

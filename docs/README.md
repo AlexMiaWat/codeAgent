@@ -1,7 +1,7 @@
 # Документация Code Agent
 
-**Дата обновления:** 2026-01-26  
-**Версия:** 2.3
+**Дата обновления:** 2026-01-23
+**Версия:** 2.4 (После ревизии документации)
 
 ---
 
@@ -38,7 +38,6 @@
 
 ### 📂 testing/ - Тестирование
 - **[TESTING_GUIDE.md](testing/TESTING_GUIDE.md)** - Полное руководство
-- **[COMPREHENSIVE_TEST_REPORT.md](testing/COMPREHENSIVE_TEST_REPORT.md)** - Отчет о тестировании
 
 ### 📂 features/ - Функции
 - **[auto_todo_generation.md](features/auto_todo_generation.md)** - Автогенерация TODO
@@ -46,11 +45,11 @@
 
 ### 📂 solutions/ - Решения
 - **[CURSOR_INTEGRATION_SOLUTIONS.md](solutions/CURSOR_INTEGRATION_SOLUTIONS.md)** - Решения проблем Cursor
-- **[HYBRID_INTERFACE_TEST_RESULTS.md](solutions/HYBRID_INTERFACE_TEST_RESULTS.md)** - Результаты тестов
+- **[SKEPTIC_ANALYSIS_REPORT.md](solutions/SKEPTIC_ANALYSIS_REPORT.md)** - Аналитический отчет
 
 ### 📂 archive/ - Архив
-- **[archive/reports/](archive/reports/)** - Исторические отчеты
-- **[archive/research/](archive/research/)** - Исследования
+- **[archive/reports/](archive/reports/)** - Исторические отчеты и ревизии
+- **[archive/research/](archive/research/)** - Исследования и анализ
 
 ---
 
@@ -71,4 +70,4 @@
 
 ---
 
-**Обновлено:** 2026-01-26
+**Обновлено:** 2026-01-23

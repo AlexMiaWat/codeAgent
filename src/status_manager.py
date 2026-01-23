@@ -3,7 +3,7 @@
 """
 
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 import os
 import logging

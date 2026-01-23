@@ -18,7 +18,6 @@ sys.path.insert(0, str(project_root))
 from src.cursor_cli_interface import create_cursor_cli_interface
 from src.prompt_formatter import PromptFormatter
 import logging
-import time
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,9 +60,9 @@ def test_expert_recommendations():
         output_path="test_expert_recommendations.txt"
     )
     
-    print(f"[FORMAT] Исходная инструкция (человеческий язык):")
+    print("[FORMAT] Исходная инструкция (человеческий язык):")
     print(f"  {human_instruction}")
-    print(f"\n[FORMAT] Отформатированная инструкция (ACTION/TASK формат):")
+    print("\n[FORMAT] Отформатированная инструкция (ACTION/TASK формат):")
     print(f"  {formatted_instruction[:200]}...")
     
     # РЕКОМЕНДАЦИЯ #3: Правильный chat lifecycle
@@ -127,9 +126,9 @@ def test_expert_recommendations():
         file_size = output_file.stat().st_size
         content = output_file.read_text(encoding='utf-8', errors='ignore')
         
-        print(f"  [OK] Файл существует")
+        print("  [OK] Файл существует")
         print(f"  Размер: {file_size} байт")
-        print(f"  Содержимое:")
+        print("  Содержимое:")
         print(f"  {content[:200]}")
         
         has_expected_content = "Hello from expert recommendations" in content
@@ -137,7 +136,7 @@ def test_expert_recommendations():
         
         success = has_expected_content
     else:
-        print(f"  [FAIL] Файл не найден")
+        print("  [FAIL] Файл не найден")
         print(f"  Путь: {output_file.absolute()}")
         success = False
     
@@ -158,8 +157,8 @@ if __name__ == "__main__":
     print("\n" + "="*80)
     print("ТЕСТ: Применение рекомендаций экспертов на целевом проекте")
     print("="*80)
-    print(f"Проект: d:/Space/life")
-    print(f"Интерфейс: Docker (cursor-agent-life)")
+    print("Проект: d:/Space/life")
+    print("Интерфейс: Docker (cursor-agent-life)")
     print("="*80)
     
     try:

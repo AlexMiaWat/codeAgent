@@ -8,7 +8,6 @@
 4. Работу Cursor CLI с полным доступом
 """
 
-import os
 import json
 import pytest
 from pathlib import Path
@@ -73,7 +72,7 @@ class TestFullAccessPermissions:
         deny_list = config["permissions"]["deny"]
         assert len(deny_list) > 0, "Список deny пустой (небезопасно!)"
         
-        print(f"[OK] Структура cli-config.json корректна")
+        print("[OK] Структура cli-config.json корректна")
         print(f"   - Разрешено операций: {len(allow_list)}")
         print(f"   - Запрещено операций: {len(deny_list)}")
     
@@ -100,7 +99,7 @@ class TestFullAccessPermissions:
         for perm in required_permissions:
             assert perm in allow_list, f"Отсутствует необходимое разрешение: {perm}"
         
-        print(f"[OK] Все необходимые разрешения присутствуют")
+        print("[OK] Все необходимые разрешения присутствуют")
     
     def test_cli_config_security_denials(self, cursor_config_dir):
         """Проверка наличия запретов для безопасности"""
@@ -122,7 +121,7 @@ class TestFullAccessPermissions:
         for denial in critical_denials:
             assert denial in deny_list, f"Отсутствует критичный запрет: {denial}"
         
-        print(f"[OK] Все критичные запреты присутствуют")
+        print("[OK] Все критичные запреты присутствуют")
     
     def test_mcp_approvals_structure(self, cursor_config_dir):
         """Проверка структуры mcp-approvals.json"""
@@ -144,7 +143,7 @@ class TestFullAccessPermissions:
             assert approval_data["approved"] is True, f"Сервер {server_name} не одобрен"
             assert "timestamp" in approval_data, f"Отсутствует timestamp для {server_name}"
         
-        print(f"[OK] Структура mcp-approvals.json корректна")
+        print("[OK] Структура mcp-approvals.json корректна")
         print(f"   - Одобрено серверов: {len(approvals_dict)}")
     
     def test_config_yaml_permissions_settings(self, project_root):
@@ -164,7 +163,7 @@ class TestFullAccessPermissions:
         assert cli_config.get("force_mode") is True, "force_mode не установлен в True"
         assert cli_config.get("approve_mcps") is True, "approve_mcps не установлен в True"
         
-        print(f"[OK] Настройки автоматизации в config.yaml корректны")
+        print("[OK] Настройки автоматизации в config.yaml корректны")
     
     def test_cursor_cli_interface_flags(self):
         """Проверка наличия флагов --force и --approve-mcps в интерфейсе"""
@@ -182,7 +181,7 @@ class TestFullAccessPermissions:
         assert content.count("--force") >= 3, "Флаг --force должен быть в нескольких местах"
         assert content.count("--approve-mcps") >= 3, "Флаг --approve-mcps должен быть в нескольких местах"
         
-        print(f"[OK] Флаги --force и --approve-mcps присутствуют в cursor_cli_interface.py")
+        print("[OK] Флаги --force и --approve-mcps присутствуют в cursor_cli_interface.py")
     
     def test_cursor_cli_interface_initialization(self):
         """Проверка инициализации CursorCLIInterface"""
@@ -192,7 +191,7 @@ class TestFullAccessPermissions:
         assert cli is not None, "Не удалось создать CursorCLIInterface"
         assert isinstance(cli, CursorCLIInterface), "Неверный тип интерфейса"
         
-        print(f"[OK] CursorCLIInterface успешно инициализирован")
+        print("[OK] CursorCLIInterface успешно инициализирован")
         print(f"   - CLI доступен: {cli.cli_available}")
         print(f"   - Команда: {cli.cli_command}")
     
@@ -212,7 +211,7 @@ class TestFullAccessPermissions:
         cursor_readme = project_root / ".cursor" / "README.md"
         assert cursor_readme.exists(), "README.md в .cursor не найден"
         
-        print(f"[OK] Вся документация по полному доступу присутствует")
+        print("[OK] Вся документация по полному доступу присутствует")
 
 
 def run_tests():

@@ -15,7 +15,6 @@ sys.path.insert(0, str(project_root))
 
 from src.llm.llm_manager import LLMManager
 from src.llm.crewai_llm_wrapper import create_llm_for_crewai
-from crewai import Agent, Task, Crew
 
 
 async def test_parallel_models():
@@ -42,12 +41,12 @@ async def test_parallel_models():
         )
         
         if response.success:
-            print(f"[OK] Успешно!")
+            print("[OK] Успешно!")
             print(f"  Выбранная модель: {response.model_name}")
             print(f"  Время отклика: {response.response_time:.2f}s")
             if hasattr(response, 'score') and response.score:
                 print(f"  Оценка ответа: {response.score:.2f}")
-            print(f"  Ответ (первые 300 символов):")
+            print("  Ответ (первые 300 символов):")
             print(f"  {response.content[:300]}")
             return True
         else:
@@ -147,7 +146,7 @@ async def test_crewai_agent_simulation():
         
         print("[OK] Ответ получен")
         print(f"  Длина ответа: {len(response)} символов")
-        print(f"  Ответ (первые 400 символов):")
+        print("  Ответ (первые 400 символов):")
         print(f"  {response[:400]}")
         print()
         
@@ -186,7 +185,7 @@ async def test_fallback_chain():
         )
         
         if response.success:
-            print(f"[OK] Успешно!")
+            print("[OK] Успешно!")
             print(f"  Финальная модель: {response.model_name}")
             print(f"  Время отклика: {response.response_time:.2f}s")
             print(f"  Ответ: {response.content[:300]}")

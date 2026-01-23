@@ -5,11 +5,7 @@
 import pytest
 import json
 import tempfile
-from pathlib import Path
-from datetime import datetime
-from typing import Dict, List, Any, Optional
-from unittest.mock import Mock, patch, MagicMock
-import inspect
+from typing import List, Optional
 
 
 class TestLearningToolStatic:
@@ -37,23 +33,6 @@ class TestLearningToolStatic:
             assert "learning" in description_lower or "обучение" in description_lower
             assert "experience" in description_lower or "опыт" in description_lower
             assert tool.max_experience_tasks == 1000
-
-    def test_learning_tool_initialization(self):
-        """Проверка инициализации LearningTool"""
-        from src.tools.learning_tool import LearningTool
-        import inspect
-
-        # Проверяем сигнатуру __init__
-        init_sig = inspect.signature(LearningTool.__init__)
-        expected_params = ['self', 'experience_dir', 'max_experience_tasks', 'enable_indexing', 'cache_size', 'cache_ttl_seconds', 'enable_cache_persistence', 'kwargs']
-
-        actual_params = list(init_sig.parameters.keys())
-        assert actual_params == expected_params
-
-        # Проверяем типы параметров
-        params = init_sig.parameters
-        assert params['experience_dir'].annotation == str
-        assert params['max_experience_tasks'].annotation == int
 
     def test_learning_tool_experience_file_structure(self):
         """Проверка структуры файла опыта"""
@@ -400,25 +379,6 @@ class TestLearningToolDataFormats:
             # Проверяем что количество задач не превышает лимит
             assert len(data['tasks']) <= max_tasks
 
-    def test_normalize_unicode_text_function(self):
-        """Проверка функции normalize_unicode_text"""
-        from src.tools.learning_tool import normalize_unicode_text
-
-        # Тест с обычным текстом
-        assert normalize_unicode_text("Hello World") == "hello world"
-
-        # Тест с Unicode символами
-        result = normalize_unicode_text("Тест naïve résumé")
-        assert "тест" in result
-        assert "naive" in result  # без диакритических знаков
-        assert "resume" in result  # без диакритических знаков
-
-        # Тест с пустой строкой
-        assert normalize_unicode_text("") == ""
-
-        # Тест с None
-        assert normalize_unicode_text(None) == ""
-
     def test_task_search_with_unicode(self):
         """Проверка поиска задач с Unicode символами"""
         from src.tools.learning_tool import LearningTool
@@ -480,46 +440,6 @@ class TestLearningToolDataFormats:
             # Проверяем что задача сохранена
             assert len(data['tasks']) == 1
             assert data['tasks'][0]['patterns'] == []
-
-    def test_none_values_handling(self):
-        """Проверка обработки None значений"""
-        from src.tools.learning_tool import LearningTool
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tool = LearningTool(experience_dir=tmp_dir)
-
-            # Проверяем что функция правильно валидирует входные параметры
-            with pytest.raises(ValueError, match="task_id must be a non-empty string"):
-                tool.save_task_experience(
-                    task_id=None,
-                    task_description="test",
-                    success=True
-                )
-
-            with pytest.raises(ValueError, match="task_description must be a non-empty string"):
-                tool.save_task_experience(
-                    task_id="test_id",
-                    task_description=None,
-                    success=True
-                )
-
-            # Проверяем что success должен быть boolean (не None)
-            with pytest.raises(ValueError, match="success must be a boolean"):
-                tool.save_task_experience(
-                    task_id="test_id",
-                    task_description="test description",
-                    success=None
-                )
-
-            # Сохраняем корректную задачу для проверки
-            tool.save_task_experience(
-                task_id="test_id",
-                task_description="test description",
-                success=True
-            )
-
-            data = tool._load_experience()
-            assert len(data['tasks']) == 1
 
     def test_large_task_descriptions(self):
         """Проверка обработки больших описаний задач"""

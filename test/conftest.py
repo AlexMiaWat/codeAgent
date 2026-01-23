@@ -6,7 +6,7 @@ import os
 import sys
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, MagicMock
+from unittest.mock import MagicMock
 
 # Add src to path for imports
 project_root = Path(__file__).parent.parent

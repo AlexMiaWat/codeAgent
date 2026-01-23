@@ -4,7 +4,6 @@ Smoke тесты для Smart Agent - базовая проверка функц
 
 import pytest
 import tempfile
-import os
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from src.agents.smart_agent import create_smart_agent

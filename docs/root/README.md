@@ -3,7 +3,7 @@
 ## 📄 Документы
 
 - **[QUICK_START_HYBRID.md](QUICK_START_HYBRID.md)** - Быстрый старт с гибридным интерфейсом
-- **[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)** - Структура проекта
+- **[../core/project_structure.md](../core/project_structure.md)** - Структура проекта
 
 ## 🔗 Связанные документы
 

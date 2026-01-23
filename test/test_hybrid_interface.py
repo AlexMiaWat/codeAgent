@@ -17,7 +17,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.hybrid_cursor_interface import (
-    HybridCursorInterface,
     TaskComplexity,
     create_hybrid_cursor_interface
 )
@@ -131,7 +130,7 @@ def test_simple_task_execution():
         complexity=TaskComplexity.AUTO
     )
     
-    print(f"Результат:")
+    print("Результат:")
     print(f"  Success: {result.success}")
     print(f"  Метод: {result.method_used}")
     print(f"  Вывод: {result.output[:200] if result.output else '(пусто)'}...")
@@ -196,7 +195,7 @@ def test_complex_task_execution():
         control_phrase="Файл создан!"
     )
     
-    print(f"Результат:")
+    print("Результат:")
     print(f"  Success: {result.success}")
     print(f"  Метод: {result.method_used}")
     print(f"  Side-effects проверены: {result.side_effects_verified}")
@@ -266,7 +265,7 @@ def test_cli_with_fallback():
         control_phrase="Файл создан!"
     )
     
-    print(f"Результат:")
+    print("Результат:")
     print(f"  Success: {result.success}")
     print(f"  Метод: {result.method_used}")
     print(f"  Side-effects проверены: {result.side_effects_verified}")
@@ -278,9 +277,9 @@ def test_cli_with_fallback():
     
     # Проверяем метод выполнения
     if result.method_used == "cli_with_fallback":
-        print(f"[OK] Fallback сработал корректно")
+        print("[OK] Fallback сработал корректно")
     elif result.method_used == "file":
-        print(f"[OK] Выполнено через файловый интерфейс (ожидаемо)")
+        print("[OK] Выполнено через файловый интерфейс (ожидаемо)")
     else:
         print(f"[WARN] Выполнено через: {result.method_used}")
     

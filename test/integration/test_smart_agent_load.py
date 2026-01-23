@@ -5,7 +5,6 @@
 """
 
 import sys
-import os
 import tempfile
 import shutil
 import time

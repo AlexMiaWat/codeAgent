@@ -336,7 +336,8 @@ def test_error_logging_and_tracking():
 
             print("✅ Ошибки логируются корректно")
             print(f"   Размер лога ошибок: {error_log_file.stat().st_size} bytes")
-            print("   Зарегистрированные ошибки:"            for error in error_scenarios:
+            print("   Зарегистрированные ошибки:")
+            for error in error_scenarios:
                 print(f"     - {error['level']}: {error['error_type']} в {error['component']}")
 
         return True

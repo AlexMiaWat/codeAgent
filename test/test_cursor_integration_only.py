@@ -22,9 +22,9 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.config_loader import ConfigLoader
-from src.todo_manager import TodoManager, TodoItem
+from src.todo_manager import TodoManager
 from src.cursor_file_interface import CursorFileInterface
-from src.cursor_cli_interface import CursorCLIInterface, create_cursor_cli_interface
+from src.cursor_cli_interface import create_cursor_cli_interface
 
 
 def test_config_loading():
@@ -38,7 +38,7 @@ def test_config_loading():
         config = ConfigLoader("config/config.yaml")
         project_dir = config.get_project_dir()
         
-        print(f"[OK] Конфигурация загружена")
+        print("[OK] Конфигурация загружена")
         print(f"  Проект: {project_dir}")
         print(f"  Todo формат: {config.get('project.todo_format')}")
         print(f"  Cursor interface_type: {config.get('cursor.interface_type')}")
@@ -64,7 +64,7 @@ def test_todo_loading(project_dir):
         todo_format = "md"
         todo_manager = TodoManager(project_dir, todo_format=todo_format)
         
-        print(f"[OK] Todo менеджер создан")
+        print("[OK] Todo менеджер создан")
         print(f"  Файл: {todo_manager.todo_file}")
         print(f"  Найдено задач: {len(todo_manager.items)}")
         
@@ -148,7 +148,7 @@ def test_instruction_template(config, task_type):
             template = task_instructions[0]
         
         if template:
-            print(f"[OK] Шаблон найден")
+            print("[OK] Шаблон найден")
             print(f"  ID: {template.get('instruction_id')}")
             print(f"  Имя: {template.get('name')}")
             print(f"  Для Cursor: {template.get('for_cursor')}")
@@ -193,7 +193,7 @@ def test_instruction_formatting(template, todo_item, task_id):
         else:
             instruction_text = f"Выполни задачу: {todo_item.text}\n\nСоздай отчет в docs/results/last_result.md, в конце напиши 'Отчет завершен!'"
         
-        print(f"[OK] Инструкция отформатирована")
+        print("[OK] Инструкция отформатирована")
         print(f"  Task ID: {task_id}")
         print(f"  Длина: {len(instruction_text)} символов")
         print()
@@ -261,7 +261,7 @@ def test_file_interface(project_dir, instruction, task_id):
             new_chat=True
         )
         
-        print(f"[OK] Файл инструкции создан")
+        print("[OK] Файл инструкции создан")
         print(f"  Путь: {file_path}")
         print(f"  Существует: {file_path.exists()}")
         
@@ -302,7 +302,7 @@ def test_wait_for_result_logic(cursor_file, project_dir, task_id, wait_for_file,
         timeout = 5
         check_interval = 1
         
-        print(f"Тестирование ожидания файла:")
+        print("Тестирование ожидания файла:")
         print(f"  Файл: {wait_for_file}")
         print(f"  Контрольная фраза: {control_phrase}")
         print(f"  Таймаут: {timeout}s (короткий для теста)")
@@ -317,11 +317,11 @@ def test_wait_for_result_logic(cursor_file, project_dir, task_id, wait_for_file,
         )
         
         if wait_result["success"]:
-            print(f"[OK] Файл найден (неожиданно)")
+            print("[OK] Файл найден (неожиданно)")
             print(f"  Путь: {wait_result['file_path']}")
             print(f"  Время ожидания: {wait_result['wait_time']:.2f}s")
         else:
-            print(f"[INFO] Файл не найден (ожидаемо для теста)")
+            print("[INFO] Файл не найден (ожидаемо для теста)")
             print(f"  Ошибка: {wait_result.get('error')}")
             print(f"  Ожидаемый путь: {wait_result['file_path']}")
         print()
@@ -363,7 +363,7 @@ def test_full_flow(config, todo_manager, todo_item, project_dir):
         if template:
             print(f"  [OK] Шаблон найден: {template.get('name')}")
         else:
-            print(f"  [INFO] Шаблон не найден, используется базовый")
+            print("  [INFO] Шаблон не найден, используется базовый")
         print()
         
         print("Шаг 3: Форматирование инструкции")
@@ -381,12 +381,12 @@ def test_full_flow(config, todo_manager, todo_item, project_dir):
         print()
         
         print("Шаг 5: Информация для пользователя")
-        print(f"  [INFO] Следующие шаги:")
-        print(f"    1. Открой Cursor IDE")
+        print("  [INFO] Следующие шаги:")
+        print("    1. Открой Cursor IDE")
         print(f"    2. Открой проект: {project_dir}")
-        print(f"    3. Создай новый чат (Ctrl+L)")
+        print("    3. Создай новый чат (Ctrl+L)")
         print(f"    4. Прочитай инструкцию из файла: {file_path}")
-        print(f"    5. Выполни инструкцию в Cursor")
+        print("    5. Выполни инструкцию в Cursor")
         print(f"    6. Сохрани результат в: cursor_results/result_{task_id}.txt")
         print()
         
@@ -408,7 +408,7 @@ def main():
     print("ТЕСТИРОВАНИЕ ИНТЕГРАЦИИ CODE AGENT С CURSOR")
     print("=" * 70)
     print(f"Время начала: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Целевой проект: D:\\Space\\life")
+    print("Целевой проект: D:\\Space\\life")
     print()
     
     results = {}
@@ -458,7 +458,7 @@ def main():
     
     # Тест 8: Ожидание файла
     if template:
-        wait_for_file = template.get('wait_for_file', f"docs/results/last_result.md")
+        wait_for_file = template.get('wait_for_file', "docs/results/last_result.md")
         control_phrase = template.get('control_phrase', "Отчет завершен!")
     else:
         wait_for_file = "docs/results/last_result.md"
@@ -508,7 +508,7 @@ def main():
         print("Для тестирования реального выполнения:")
         print(f"  1. Открой Cursor IDE в проекте {project_dir}")
         print(f"  2. Прочитай инструкцию из файла: {file_path.name}")
-        print(f"  3. Создай новый чат и выполни инструкцию")
+        print("  3. Создай новый чат и выполни инструкцию")
         print(f"  4. Сохрани результат в: cursor_results/result_{task_id}.txt")
         print()
 

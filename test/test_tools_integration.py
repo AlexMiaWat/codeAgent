@@ -2,12 +2,9 @@
 Интеграционные тесты для LearningTool и ContextAnalyzerTool
 """
 
-import pytest
 import tempfile
-import json
 import time
 from pathlib import Path
-from unittest.mock import Mock, patch
 
 
 class TestLearningToolContextAnalyzerIntegration:

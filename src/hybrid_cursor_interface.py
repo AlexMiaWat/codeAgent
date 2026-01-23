@@ -16,12 +16,10 @@ from enum import Enum
 try:
     from .cursor_cli_interface import CursorCLIInterface, CursorCLIResult
     from .cursor_file_interface import CursorFileInterface
-    from .prompt_formatter import PromptFormatter
 except ImportError:
     # Fallback для прямого запуска
     from cursor_cli_interface import CursorCLIInterface, CursorCLIResult
     from cursor_file_interface import CursorFileInterface
-    from prompt_formatter import PromptFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -104,9 +102,9 @@ class HybridCursorInterface:
         self.cli = cli_interface or CursorCLIInterface(project_dir=str(self.project_dir))
         self.file = file_interface or CursorFileInterface(project_dir=str(self.project_dir))
         
-        logger.info(f"Гибридный интерфейс инициализирован")
+        logger.info("Гибридный интерфейс инициализирован")
         logger.info(f"  CLI доступен: {self.cli.is_available()}")
-        logger.info(f"  Файловый интерфейс: готов")
+        logger.info("  Файловый интерфейс: готов")
         logger.info(f"  Проект: {self.project_dir}")
     
     def execute_task(
@@ -194,13 +192,13 @@ class HybridCursorInterface:
         # 3. Если нет ни тех, ни других → COMPLEX (безопаснее)
         
         if has_complex:
-            logger.debug(f"Задача определена как COMPLEX (найдены ключевые слова изменения)")
+            logger.debug("Задача определена как COMPLEX (найдены ключевые слова изменения)")
             return TaskComplexity.COMPLEX
         elif has_simple and not has_complex:
-            logger.debug(f"Задача определена как SIMPLE (только вопросы/анализ)")
+            logger.debug("Задача определена как SIMPLE (только вопросы/анализ)")
             return TaskComplexity.SIMPLE
         else:
-            logger.debug(f"Задача определена как COMPLEX (по умолчанию)")
+            logger.debug("Задача определена как COMPLEX (по умолчанию)")
             return TaskComplexity.COMPLEX
     
     def _execute_via_cli(
@@ -252,10 +250,10 @@ class HybridCursorInterface:
             
             # CLI выполнился, но side-effects не подтверждены
             if cli_result.success and self.verify_side_effects and not side_effects_ok:
-                logger.warning(f"CLI выполнен, но side-effects не подтверждены")
+                logger.warning("CLI выполнен, но side-effects не подтверждены")
                 
                 if with_fallback:
-                    logger.info(f"Fallback на файловый интерфейс")
+                    logger.info("Fallback на файловый интерфейс")
                     return self._execute_via_file_fallback(
                         instruction=instruction,
                         task_id=task_id,
@@ -276,7 +274,7 @@ class HybridCursorInterface:
                 logger.warning(f"CLI не выполнился: {cli_result.error_message}")
                 
                 if with_fallback:
-                    logger.info(f"Fallback на файловый интерфейс")
+                    logger.info("Fallback на файловый интерфейс")
                     return self._execute_via_file_fallback(
                         instruction=instruction,
                         task_id=task_id,
@@ -295,7 +293,7 @@ class HybridCursorInterface:
             logger.error(f"Ошибка выполнения через CLI: {e}")
             
             if with_fallback:
-                logger.info(f"Fallback на файловый интерфейс после ошибки")
+                logger.info("Fallback на файловый интерфейс после ошибки")
                 return self._execute_via_file_fallback(
                     instruction=instruction,
                     task_id=task_id,
@@ -379,7 +377,7 @@ class HybridCursorInterface:
         Returns:
             HybridExecutionResult
         """
-        logger.info(f"Fallback: выполнение через файловый интерфейс")
+        logger.info("Fallback: выполнение через файловый интерфейс")
         
         # Выполняем через файловый интерфейс
         file_result_obj = self._execute_via_file(
@@ -466,7 +464,6 @@ def create_hybrid_cursor_interface(
 
 if __name__ == "__main__":
     # Пример использования
-    import sys
     
     logging.basicConfig(
         level=logging.INFO,
@@ -481,9 +478,9 @@ if __name__ == "__main__":
         verify_side_effects=True
     )
     
-    print(f"Гибридный интерфейс создан")
+    print("Гибридный интерфейс создан")
     print(f"  CLI доступен: {hybrid.cli.is_available()}")
-    print(f"  Файловый интерфейс: готов")
+    print("  Файловый интерфейс: готов")
     print()
     
     # Пример 1: Простая задача (вопрос)
@@ -496,7 +493,7 @@ if __name__ == "__main__":
         task_id="example_1"
     )
     
-    print(f"Результат:")
+    print("Результат:")
     print(f"  Success: {result1.success}")
     print(f"  Метод: {result1.method_used}")
     print(f"  Вывод: {result1.output[:200]}...")
@@ -514,7 +511,7 @@ if __name__ == "__main__":
         control_phrase="Файл создан!"
     )
     
-    print(f"Результат:")
+    print("Результат:")
     print(f"  Success: {result2.success}")
     print(f"  Метод: {result2.method_used}")
     print(f"  Side-effects проверены: {result2.side_effects_verified}")

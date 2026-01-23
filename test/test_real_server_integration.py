@@ -84,20 +84,20 @@ class ServerTester:
                     result = s.connect_ex(('127.0.0.1', 3456))
                     if result == 0:
                         port_in_use = True
-                        print(f"[WARN] Порт 3456 уже занят другим процессом")
+                        print("[WARN] Порт 3456 уже занят другим процессом")
                         # Проверяем, отвечает ли сервер на health check
                         try:
                             response = requests.get(f"{self.base_url}/health", timeout=2)
                             if response.status_code == 200:
-                                print(f"[INFO] Сервер уже запущен и отвечает на запросы")
-                                print(f"[INFO] Используем существующий сервер")
+                                print("[INFO] Сервер уже запущен и отвечает на запросы")
+                                print("[INFO] Используем существующий сервер")
                                 return True
                         except:
-                            print(f"[WARN] Порт занят, но сервер не отвечает. Попытка запустить новый процесс...")
+                            print("[WARN] Порт занят, но сервер не отвечает. Попытка запустить новый процесс...")
             except Exception as e:
                 print(f"[DEBUG] Ошибка при проверке порта: {e}")
             
-            print(f"[INFO] Запуск сервера...")
+            print("[INFO] Запуск сервера...")
             
             # Запуск сервера
             self.server_process = subprocess.Popen(
@@ -155,14 +155,14 @@ class ServerTester:
             if self.server_process.poll() is not None:
                 print(f"[FAIL] Процесс завершился сразу с кодом: {self.server_process.returncode}")
                 if stderr_lines:
-                    print(f"[ERROR] Последние ошибки из stderr:")
+                    print("[ERROR] Последние ошибки из stderr:")
                     for line in stderr_lines[-10:]:
                         print(f"  {line}")
                 # Пытаемся прочитать оставшийся stderr
                 try:
                     remaining_stderr = self.server_process.stderr.read()
                     if remaining_stderr:
-                        print(f"[ERROR] Остаток stderr:")
+                        print("[ERROR] Остаток stderr:")
                         print(remaining_stderr[:500])
                 except:
                     pass
@@ -174,14 +174,14 @@ class ServerTester:
                 if self.server_process.poll() is not None:
                     print(f"[FAIL] Процесс завершился с кодом: {self.server_process.returncode}")
                     if stderr_lines:
-                        print(f"[ERROR] Ошибки из stderr:")
+                        print("[ERROR] Ошибки из stderr:")
                         for line in stderr_lines[-20:]:
                             print(f"  {line}")
                     # Пытаемся прочитать оставшийся stderr
                     try:
                         remaining_stderr = self.server_process.stderr.read()
                         if remaining_stderr:
-                            print(f"[ERROR] Остаток stderr:")
+                            print("[ERROR] Остаток stderr:")
                             print(remaining_stderr[:500])
                     except:
                         pass
@@ -198,7 +198,7 @@ class ServerTester:
                             recent_messages = [line for line in stdout_lines[-5:] 
                                              if any(kw in line.lower() for kw in ['http', 'сервер', 'порт', 'запущен'])]
                             if recent_messages:
-                                print(f"[DEBUG] Последние сообщения сервера:")
+                                print("[DEBUG] Последние сообщения сервера:")
                                 for msg in recent_messages:
                                     print(f"  {msg}")
                         # Дополнительное ожидание для полной готовности сервера
@@ -245,7 +245,7 @@ class ServerTester:
             try:
                 remaining_stderr = self.server_process.stderr.read()
                 if remaining_stderr:
-                    print(f"[ERROR] Остаток stderr:")
+                    print("[ERROR] Остаток stderr:")
                     print(remaining_stderr[:1000])
             except:
                 pass
@@ -254,7 +254,7 @@ class ServerTester:
             try:
                 remaining_stdout = self.server_process.stdout.read()
                 if remaining_stdout:
-                    print(f"[DEBUG] Остаток stdout:")
+                    print("[DEBUG] Остаток stdout:")
                     print(remaining_stdout[:1000])
             except:
                 pass
@@ -265,7 +265,7 @@ class ServerTester:
             import traceback
             traceback.print_exc()
             if stderr_lines:
-                print(f"[ERROR] Ошибки из stderr:")
+                print("[ERROR] Ошибки из stderr:")
                 for line in stderr_lines[-10:]:
                     print(f"  {line}")
             return False
@@ -280,14 +280,14 @@ class ServerTester:
             try:
                 # Пробуем остановить через API (graceful shutdown)
                 try:
-                    print(f"[INFO] Отправка запроса на остановку через API...")
+                    print("[INFO] Отправка запроса на остановку через API...")
                     response = requests.post(f"{self.base_url}/stop", timeout=5)
                     print(f"[INFO] Запрос на остановку отправлен: {response.status_code}")
                     if response.status_code == 200:
-                        print(f"[INFO] Сервер получил запрос на остановку")
+                        print("[INFO] Сервер получил запрос на остановку")
                     
                     # Даем время на graceful shutdown
-                    print(f"[INFO] Ожидание graceful shutdown (10 сек)...")
+                    print("[INFO] Ожидание graceful shutdown (10 сек)...")
                     for i in range(10):
                         if self.server_process.poll() is not None:
                             print(f"[OK] Процесс завершился gracefully (PID: {self.server_process.pid})")
@@ -297,7 +297,7 @@ class ServerTester:
                             print(f"   Ожидание завершения... ({i}/10)")
                 except requests.exceptions.RequestException as e:
                     print(f"[WARN] Не удалось отправить запрос на остановку: {e}")
-                    print(f"[INFO] Продолжаем с принудительной остановкой...")
+                    print("[INFO] Продолжаем с принудительной остановкой...")
                 
                 # Принудительная остановка процесса
                 if self.server_process.poll() is None:
@@ -342,7 +342,7 @@ class ServerTester:
             response = requests.get(f"{self.base_url}/health", timeout=5)
             if response.status_code == 200:
                 data = response.json()
-                print(f"[OK] Health check успешен")
+                print("[OK] Health check успешен")
                 print(f"   Статус: {data.get('status')}")
                 print(f"   Время: {data.get('timestamp')}")
                 return True
@@ -363,7 +363,7 @@ class ServerTester:
             response = requests.get(f"{self.base_url}/status", timeout=5)
             if response.status_code == 200:
                 data = response.json()
-                print(f"[OK] Status получен успешно")
+                print("[OK] Status получен успешно")
                 
                 server_info = data.get('server', {})
                 print(f"   Статус сервера: {server_info.get('status')}")
@@ -394,7 +394,7 @@ class ServerTester:
             response = requests.get(f"{self.base_url}/", timeout=5)
             if response.status_code == 200:
                 data = response.json()
-                print(f"[OK] Root endpoint успешен")
+                print("[OK] Root endpoint успешен")
                 print(f"   Статус: {data.get('status')}")
                 print(f"   Порт: {data.get('port')}")
                 print(f"   Сессия: {data.get('session_id')}")
@@ -417,7 +417,7 @@ class ServerTester:
             response = requests.post(f"{self.base_url}/stop", timeout=2)
             if response.status_code == 200:
                 data = response.json()
-                print(f"[OK] Stop endpoint успешен")
+                print("[OK] Stop endpoint успешен")
                 print(f"   Статус: {data.get('status')}")
                 print(f"   Сообщение: {data.get('message')}")
                 return True

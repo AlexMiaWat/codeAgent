@@ -51,14 +51,14 @@ def test_scenario_1_new_chat():
     instruction = "Создай файл test_scenario_1.txt с текстом 'Тест сценария 1'"
     
     print(f"\n[CMD] Инструкция: {instruction}")
-    print(f"[MODE] Режим: Новый чат (new_chat=True)")
+    print("[MODE] Режим: Новый чат (new_chat=True)")
     
     result = cli.execute(
         prompt=instruction,
         new_chat=True
     )
     
-    print(f"\n[RESULT] Результат:")
+    print("\n[RESULT] Результат:")
     print(f"  Успех: {result.success}")
     print(f"  Код возврата: {result.return_code}")
     if result.stdout:
@@ -166,14 +166,14 @@ def test_scenario_3_complex_russian():
     
     print(f"\n[CMD] Сложная инструкция (длина: {len(instruction)} символов):")
     print(f"  {instruction[:200]}...")
-    print(f"\n[MODE] Режим: Новый чат (new_chat=True)")
+    print("\n[MODE] Режим: Новый чат (new_chat=True)")
     
     result = cli.execute(
         prompt=instruction,
         new_chat=True
     )
     
-    print(f"\n[RESULT] Результат:")
+    print("\n[RESULT] Результат:")
     print(f"  Успех: {result.success}")
     print(f"  Код возврата: {result.return_code}")
     if result.stdout:
@@ -215,7 +215,7 @@ def test_scenario_4_list_chats():
     print("[INFO] Получаем список чатов...")
     chats = cli.list_chats()
     
-    print(f"\n[RESULT] Результат:")
+    print("\n[RESULT] Результат:")
     print(f"  Найдено чатов: {len(chats)}")
     if chats:
         print("  Chat IDs:")
@@ -268,7 +268,7 @@ def test_scenario_5_resume_chat():
         chat_id=chat_id  # Явно указываем chat_id
     )
     
-    print(f"\n[RESULT] Результат:")
+    print("\n[RESULT] Результат:")
     print(f"  Успех: {result.success}")
     print(f"  Код возврата: {result.return_code}")
     if result.stdout:
@@ -282,8 +282,8 @@ def main():
     print("\n" + "="*80)
     print("ТЕСТИРОВАНИЕ ВСЕХ СЦЕНАРИЕВ CURSOR CLI")
     print("="*80)
-    print(f"Целевой проект: d:/Space/life")
-    print(f"Интерфейс: Docker (cursor-agent-life)")
+    print("Целевой проект: d:/Space/life")
+    print("Интерфейс: Docker (cursor-agent-life)")
     print("="*80)
     
     results = {}

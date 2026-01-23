@@ -2,13 +2,11 @@
 ContextAnalyzerTool - инструмент для анализа контекста проекта
 """
 
-import os
 import re
-import json
 import logging
 import unicodedata
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Set
+from typing import Dict, List, Any, Set
 from crewai.tools.base_tool import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -601,7 +599,7 @@ class ContextAnalyzerTool(BaseTool):
                     except UnicodeDecodeError:
                         # Пропускаем файлы с некорректной кодировкой
                         continue
-                    except Exception as e:
+                    except Exception:
                         continue
 
             # Поиск в исходном коде
@@ -626,7 +624,7 @@ class ContextAnalyzerTool(BaseTool):
                     except UnicodeDecodeError:
                         # Пропускаем файлы с некорректной кодировкой
                         continue
-                    except Exception as e:
+                    except Exception:
                         continue
 
             # Формируем результат
@@ -794,7 +792,7 @@ class ContextAnalyzerTool(BaseTool):
                     except UnicodeDecodeError:
                         # Пропускаем файлы с некорректной кодировкой
                         continue
-                    except Exception as e:
+                    except Exception:
                         continue
 
             # Ищем в исходном коде
@@ -820,7 +818,7 @@ class ContextAnalyzerTool(BaseTool):
                     except UnicodeDecodeError:
                         # Пропускаем файлы с некорректной кодировкой
                         continue
-                    except Exception as e:
+                    except Exception:
                         continue
 
             # Сортируем по количеству совпадений

@@ -148,7 +148,7 @@ async def test_json_mode_basic():
         )
         
         if is_valid and json_obj:
-            print(f"[OK] Успешно!")
+            print("[OK] Успешно!")
             print(f"  Модель: {response.model_name}")
             print(f"  Время отклика: {response.response_time:.2f}s")
             print(f"  Парсированный JSON: {json.dumps(json_obj, ensure_ascii=False, indent=2)}")
@@ -162,7 +162,7 @@ async def test_json_mode_basic():
             
             return True
         else:
-            print(f"[FAIL] Валидация не прошла:")
+            print("[FAIL] Валидация не прошла:")
             print(f"  Модель: {response.model_name}")
             print(f"  Ошибка: {error_msg}")
             print(f"  Сырой ответ: {response.content[:300]}")
@@ -236,7 +236,7 @@ async def test_json_mode_fallback():
         }
         
         if models_with_errors:
-            print(f"[INFO] Модели с ошибками (fallback сработал):")
+            print("[INFO] Модели с ошибками (fallback сработал):")
             for model_name, error_count in models_with_errors.items():
                 print(f"  - {model_name}: {error_count} ошибок")
             print()
@@ -249,7 +249,7 @@ async def test_json_mode_fallback():
         )
         
         if is_valid and json_obj:
-            print(f"[OK] Успешно!")
+            print("[OK] Успешно!")
             print(f"  Финальная модель: {response.model_name}")
             print(f"  Время отклика: {response.response_time:.2f}s")
             print(f"  Парсированный JSON: {json.dumps(json_obj, ensure_ascii=False, indent=2)}")
@@ -262,7 +262,7 @@ async def test_json_mode_fallback():
             
             return True
         else:
-            print(f"[FAIL] Валидация не прошла:")
+            print("[FAIL] Валидация не прошла:")
             print(f"  Модель: {response.model_name}")
             print(f"  Ошибка: {error_msg}")
             print(f"  Сырой ответ: {response.content[:500]}")
@@ -314,7 +314,7 @@ async def test_json_extraction_from_markdown():
             print(f"[FAIL] Ошибка генерации: {response.error}")
             return False
         
-        print(f"[INFO] Сырой ответ (первые 300 символов):")
+        print("[INFO] Сырой ответ (первые 300 символов):")
         print(f"  {response.content[:300]}")
         print()
         
@@ -322,7 +322,7 @@ async def test_json_extraction_from_markdown():
         json_obj = extract_json_object(response.content)
         
         if json_obj:
-            print(f"[OK] JSON успешно извлечен!")
+            print("[OK] JSON успешно извлечен!")
             print(f"  Модель: {response.model_name}")
             print(f"  Парсированный JSON: {json.dumps(json_obj, ensure_ascii=False, indent=2)}")
             
@@ -336,7 +336,7 @@ async def test_json_extraction_from_markdown():
             
             return True
         else:
-            print(f"[FAIL] Не удалось извлечь JSON из ответа")
+            print("[FAIL] Не удалось извлечь JSON из ответа")
             print(f"  Полный ответ: {response.content}")
             return False
             

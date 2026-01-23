@@ -5,17 +5,13 @@
 """
 
 import sys
-import os
 import tempfile
 import subprocess
 from pathlib import Path
-from unittest.mock import patch, mock_open
 
 # Добавляем корневую директорию в путь для импорта
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import pytest
-import json
 from datetime import datetime
 
 
@@ -208,7 +204,7 @@ def test_smart_git_push_to_remote():
             smart_file.write_text("# Smart Agent Feature\n\nТестовая фича Smart Agent.\n")
 
             run_git_command(local_repo, "git add smart_feature.md")
-            run_git_command(local_repo, f'git commit -m "feat: Добавлена фича Smart Agent"')
+            run_git_command(local_repo, 'git commit -m "feat: Добавлена фича Smart Agent"')
 
             # Отправляем ветку smart в remote
             run_git_command(local_repo, "git push -u origin smart")
@@ -256,7 +252,7 @@ def test_smart_git_merge_conflict_handling():
             # Модифицируем файл в ветке smart
             config_file.write_text("smart_agent:\n  enabled: true\n  max_iter: 25\n")
             run_git_command(repo_path, "git add config.yaml")
-            run_git_command(repo_path, f'git commit -m "feat: Добавлен max_iter в smart config"')
+            run_git_command(repo_path, 'git commit -m "feat: Добавлен max_iter в smart config"')
 
             # Переключаемся обратно на main и изменяем тот же файл
             run_git_command(repo_path, "git checkout main")

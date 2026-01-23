@@ -5,7 +5,6 @@ This file serves as a template for writing new tests.
 """
 
 import pytest
-from pathlib import Path
 
 
 class TestProjectSetup:

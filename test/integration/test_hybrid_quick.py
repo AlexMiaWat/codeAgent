@@ -9,7 +9,6 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.hybrid_cursor_interface import (
-    HybridCursorInterface,
     TaskComplexity,
     create_hybrid_cursor_interface
 )
@@ -63,7 +62,7 @@ print("-" * 70)
 print(f"CLI доступен: {hybrid.cli.is_available()}")
 print(f"CLI команда: {hybrid.cli.cli_command}")
 print(f"Проект: {hybrid.project_dir}")
-print(f"Файловый интерфейс: готов")
+print("Файловый интерфейс: готов")
 print()
 
 # Тест 3: Создание инструкции с гарантией выполнения
@@ -80,7 +79,7 @@ instruction = PromptFormatter.format_task_with_execution_guarantee(
 )
 
 print(f"Инструкция сформирована, длина: {len(instruction)} символов")
-print(f"Первые 200 символов:")
+print("Первые 200 символов:")
 print(instruction[:200])
 print()
 

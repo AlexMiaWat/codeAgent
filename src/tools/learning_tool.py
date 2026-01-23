@@ -2,7 +2,6 @@
 LearningTool - инструмент для обучения на предыдущих задачах
 """
 
-import os
 import json
 import logging
 import unicodedata
@@ -10,14 +9,13 @@ import fcntl
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Set
 from datetime import datetime, timedelta
-from functools import lru_cache
 import hashlib
 from crewai.tools.base_tool import BaseTool
 
 logger = logging.getLogger(__name__)
 
 
-def normalize_unicode_text(text: str) -> str:
+def normalize_unicode_text(text: Optional[str]) -> str:
     """
     Нормализует Unicode текст для улучшения поиска и сравнения.
 

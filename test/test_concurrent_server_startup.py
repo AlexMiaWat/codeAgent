@@ -15,7 +15,7 @@ import threading
 import subprocess
 import requests
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 import pytest
 
 
@@ -342,7 +342,7 @@ class TestConcurrentServerStartup:
         assert is_port_in_use(3456), "Порт 3456 должен быть занят"
         assert check_http_server(3456), "HTTP сервер должен быть доступен"
         
-        print(f"\n[OK] Финальный результат:")
+        print("\n[OK] Финальный результат:")
         print(f"  - Только один процесс на порту 3456: PID {final_pid}")
         print(f"  - HTTP сервер доступен: {check_http_server(3456)}")
         

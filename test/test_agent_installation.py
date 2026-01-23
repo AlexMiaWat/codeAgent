@@ -110,7 +110,7 @@ def test_agent_installation():
     
     cli = create_cursor_cli_interface()
     if cli.is_available():
-        print(f"[OK] CursorCLIInterface сообщает, что CLI доступен")
+        print("[OK] CursorCLIInterface сообщает, что CLI доступен")
         print(f"  Команда: {cli.cli_command}")
         version = cli.check_version()
         if version:
@@ -118,10 +118,10 @@ def test_agent_installation():
         
         # Проверяем, это ли agent или cursor.CMD
         if cli.cli_command and "agent" in cli.cli_command.lower():
-            print(f"  [OK] Используется правильная команда 'agent'")
+            print("  [OK] Используется правильная команда 'agent'")
         elif cli.cli_command and "cursor.cmd" in cli.cli_command.lower():
-            print(f"  [WARNING] Используется cursor.CMD вместо agent (это редактор, не CLI агент)")
-            print(f"  Рекомендация: Установите agent через официальный скрипт")
+            print("  [WARNING] Используется cursor.CMD вместо agent (это редактор, не CLI агент)")
+            print("  Рекомендация: Установите agent через официальный скрипт")
     else:
         print("[FAIL] CursorCLIInterface сообщает, что CLI недоступен")
     

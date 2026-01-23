@@ -5,9 +5,7 @@
 import pytest
 import json
 import tempfile
-import os
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 from src.tools.learning_tool import LearningTool, normalize_unicode_text
 
 

@@ -4,7 +4,7 @@
 
 import subprocess
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 
 def check_docker_container_status(container_name: str = "cursor-agent-life") -> Dict[str, Any]:

@@ -4,8 +4,6 @@
 
 import pytest
 import json
-from pathlib import Path
-from datetime import datetime
 from src.session_tracker import SessionTracker
 from src.config_loader import ConfigLoader
 

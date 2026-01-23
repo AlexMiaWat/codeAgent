@@ -5,7 +5,6 @@
 """
 
 import sys
-import os
 import tempfile
 import shutil
 from pathlib import Path
@@ -13,8 +12,6 @@ from pathlib import Path
 # Добавляем корневую директорию в путь для импорта
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import pytest
-from src.agents.smart_agent import create_smart_agent
 from src.tools.learning_tool import LearningTool
 from src.tools.context_analyzer_tool import ContextAnalyzerTool
 

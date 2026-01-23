@@ -5,19 +5,15 @@
 """
 
 import sys
-import os
 import json
 import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import patch, mock_open
 
 # Добавляем корневую директорию в путь для импорта
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import pytest
-import yaml
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 def test_smart_experience_directory_creation():

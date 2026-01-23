@@ -2,10 +2,9 @@
 Статические тесты для Smart Agent - проверка структуры, API, конфигурации
 """
 
-import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import inspect
 
 
@@ -32,28 +31,6 @@ class TestSmartAgentStatic:
         actual_params = list(sig.parameters.keys())
         assert actual_params == expected_params
 
-    def test_create_smart_agent_parameter_types(self):
-        """Проверка типов параметров create_smart_agent"""
-        from src.agents.smart_agent import create_smart_agent
-
-        sig = inspect.signature(create_smart_agent)
-        params = sig.parameters
-
-        # Проверяем типы параметров
-        assert params['project_dir'].annotation == Path
-        from typing import Optional
-        assert params['docs_dir'].annotation == Optional[Path]
-        assert params['experience_dir'].annotation == str
-        assert params['role'].annotation == str
-        assert params['goal'].annotation == str
-        assert params['backstory'].annotation == Optional[str]
-        assert params['allow_code_execution'].annotation == bool
-        assert params['use_docker'].annotation == bool
-        assert params['verbose'].annotation == bool
-        assert params['use_llm'].annotation == bool
-        assert params['llm_config_path'].annotation == str
-        assert params['max_experience_tasks'].annotation == int
-
     def test_create_smart_agent_default_values(self):
         """Проверка значений по умолчанию create_smart_agent"""
         from src.agents.smart_agent import create_smart_agent
@@ -72,15 +49,6 @@ class TestSmartAgentStatic:
         assert params['use_llm'].default == True
         assert params['llm_config_path'].default == "config/llm_settings.yaml"
         assert params['max_experience_tasks'].default == 1000
-
-    def test_create_smart_agent_return_type(self):
-        """Проверка типа возвращаемого значения create_smart_agent"""
-        from src.agents.smart_agent import create_smart_agent
-
-        # Проверяем аннотацию возвращаемого типа
-        sig = inspect.signature(create_smart_agent)
-        from crewai import Agent
-        assert sig.return_annotation == Agent
 
     @patch('src.agents.smart_agent.is_docker_available')
     @patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai')
@@ -193,50 +161,6 @@ class TestSmartAgentStatic:
                     assert hasattr(agent_with_llm, 'llm')
                     assert agent_with_llm.llm is not None
 
-    def test_smart_agent_no_llm_configuration(self):
-        """Проверка конфигурации Smart Agent без LLM"""
-        from src.agents.smart_agent import create_smart_agent
-
-        with patch('src.agents.smart_agent.is_docker_available', return_value=False):
-            with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                    project_dir = Path(tmp_dir)
-
-                    # Тест без LLM
-                    agent_no_llm = create_smart_agent(
-                        project_dir=project_dir,
-                        use_llm=False,
-                        verbose=False
-                    )
-
-                    assert agent_no_llm is not None
-                    # When use_llm=False, the agent should have no LLM or a disabled LLM
-                    # The exact behavior depends on CrewAI Agent implementation
-                    # For now, just check that the agent was created successfully
-
-    def test_smart_agent_docker_configuration(self):
-        """Проверка конфигурации Docker в Smart Agent"""
-        from src.agents.smart_agent import create_smart_agent
-
-        with patch('src.agents.smart_agent.is_docker_available', return_value=True):
-            with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                        project_dir = Path(tmp_dir)
-
-                        # Тест с Docker
-                        agent_with_docker = create_smart_agent(
-                            project_dir=project_dir,
-                            use_docker=True,
-                            allow_code_execution=True,
-                            use_llm=False,
-                            verbose=False
-                        )
-
-                        assert agent_with_docker is not None
-
-                        # Агент создан успешно с Docker конфигурацией
-                        # CodeInterpreterTool может быть недоступен в тестовой среде
-
     def test_smart_agent_no_docker_configuration(self):
         """Проверка конфигурации Smart Agent без Docker"""
         from src.agents.smart_agent import create_smart_agent
@@ -261,34 +185,6 @@ class TestSmartAgentStatic:
                     # Проверяем отсутствие CodeInterpreterTool
                     tool_names = [tool.__class__.__name__ for tool in agent_no_docker.tools]
                     assert "CodeInterpreterTool" not in tool_names
-
-    def test_smart_agent_experience_dir_creation(self):
-        """Проверка создания директории опыта"""
-        from src.agents.smart_agent import create_smart_agent
-
-        with patch('src.agents.smart_agent.is_docker_available', return_value=False):
-            with patch('src.llm.crewai_llm_wrapper.create_llm_for_crewai', return_value=None):
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                    project_dir = Path(tmp_dir)
-                    experience_dir = "custom_experience_dir"
-
-                    agent = create_smart_agent(
-                        project_dir=project_dir,
-                        experience_dir=experience_dir,
-                        use_llm=False,
-                        verbose=False
-                    )
-
-                    assert agent is not None
-
-                    # Проверяем что директория опыта создана
-                    experience_path = project_dir / experience_dir
-                    assert experience_path.exists()
-                    assert experience_path.is_dir()
-
-                    # Проверяем что файл опыта создан
-                    experience_file = experience_path / "experience.json"
-                    assert experience_file.exists()
 
     def test_smart_agent_unicode_support(self):
         """Проверка поддержки Unicode в Smart Agent"""

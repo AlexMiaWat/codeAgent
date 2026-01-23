@@ -59,8 +59,8 @@ def test_mini_docs_creation():
     
     print(f"\n[CMD] Инструкция (длина: {len(instruction)} символов):")
     print(f"  Первые 200 символов: {instruction[:200]}...")
-    print(f"\n[MODE] Режим: Новый чат (new_chat=True)")
-    print(f"[TIMEOUT] Таймаут: 2000 секунд")
+    print("\n[MODE] Режим: Новый чат (new_chat=True)")
+    print("[TIMEOUT] Таймаут: 2000 секунд")
     
     start_time = time.time()
     
@@ -72,13 +72,13 @@ def test_mini_docs_creation():
     
     elapsed_time = time.time() - start_time
     
-    print(f"\n[RESULT] Результат выполнения:")
+    print("\n[RESULT] Результат выполнения:")
     print(f"  Успех: {result.success}")
     print(f"  Код возврата: {result.return_code}")
     print(f"  Время выполнения: {elapsed_time:.2f} секунд")
     
     if result.stdout:
-        print(f"\n  Вывод stdout (первые 1000 символов):")
+        print("\n  Вывод stdout (первые 1000 символов):")
         print(f"  {'-'*76}")
         print(f"  {result.stdout[:1000]}")
         print(f"  {'-'*76}")
@@ -86,7 +86,7 @@ def test_mini_docs_creation():
             print(f"  ... (еще {len(result.stdout) - 1000} символов)")
     
     if result.stderr:
-        print(f"\n  Ошибки stderr (первые 500 символов):")
+        print("\n  Ошибки stderr (первые 500 символов):")
         print(f"  {'-'*76}")
         print(f"  {result.stderr[:500]}")
         print(f"  {'-'*76}")
@@ -101,12 +101,12 @@ def test_mini_docs_creation():
         content = output_file.read_text(encoding='utf-8', errors='ignore')
         lines_count = len(content.splitlines())
         
-        print(f"  [OK] Файл существует")
+        print("  [OK] Файл существует")
         print(f"  Размер: {file_size} байт")
         print(f"  Строк: {lines_count}")
         
         if lines_count > 0:
-            print(f"\n  Содержимое файла (первые 500 символов):")
+            print("\n  Содержимое файла (первые 500 символов):")
             print(f"  {'-'*76}")
             print(f"  {content[:500]}")
             print(f"  {'-'*76}")
@@ -116,7 +116,7 @@ def test_mini_docs_creation():
             has_sections = content.count("#") >= 3
             has_content = len(content.strip()) > 200
             
-            print(f"\n  Проверка структуры:")
+            print("\n  Проверка структуры:")
             print(f"    Есть заголовки (#): {has_title}")
             print(f"    Много разделов (>=3): {has_sections}")
             print(f"    Есть содержание (>200 символов): {has_content}")
@@ -124,10 +124,10 @@ def test_mini_docs_creation():
             success = has_title and has_content and lines_count >= 10
             print(f"\n  Результат проверки: {'[OK] Файл корректен' if success else '[WARN] Файл требует проверки'}")
         else:
-            print(f"  [WARN] Файл пустой")
+            print("  [WARN] Файл пустой")
             success = False
     else:
-        print(f"  [FAIL] Файл не найден")
+        print("  [FAIL] Файл не найден")
         print(f"  Путь: {output_file.absolute()}")
         
         # Проверяем существование директории
@@ -141,7 +141,7 @@ def test_mini_docs_creation():
         
         success = False
     
-    print(f"\n[SUMMARY] Итоговый результат:")
+    print("\n[SUMMARY] Итоговый результат:")
     print(f"  Выполнение команды: {'[OK]' if result.success else '[FAIL]'}")
     print(f"  Создание файла: {'[OK]' if output_file.exists() else '[FAIL]'}")
     print(f"  Общий результат: {'[OK] УСПЕХ' if (result.success and success) else '[FAIL] ОШИБКА'}")
@@ -153,8 +153,8 @@ if __name__ == "__main__":
     print("\n" + "="*80)
     print("ДЕТАЛЬНЫЙ ТЕСТ: Создание mini_docs_for_user.md")
     print("="*80)
-    print(f"Проект: d:/Space/life")
-    print(f"Интерфейс: Docker (cursor-agent-life)")
+    print("Проект: d:/Space/life")
+    print("Интерфейс: Docker (cursor-agent-life)")
     print("="*80)
     
     try:

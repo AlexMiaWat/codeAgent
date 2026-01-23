@@ -172,7 +172,7 @@ def test_full_cycle_with_server():
         print()
         
         server = TestServer("config/config.yaml")
-        print(f"[OK] TestServer создан")
+        print("[OK] TestServer создан")
         print(f"  Проект: {server.project_dir}")
         print()
         
@@ -201,15 +201,15 @@ def test_full_cycle_with_server():
         
         task_type = server._determine_task_type(todo_item)
         print(f"[INFO] Тип задачи: {task_type}")
-        print(f"[INFO] Запуск выполнения...")
+        print("[INFO] Запуск выполнения...")
         print()
         
         success = server._execute_task_via_cursor(todo_item, task_type)
         
         if success:
-            print(f"[OK] Задача выполнена успешно!")
+            print("[OK] Задача выполнена успешно!")
         else:
-            print(f"[FAIL] Задача не выполнена")
+            print("[FAIL] Задача не выполнена")
             return False
         print()
         
@@ -225,14 +225,14 @@ def test_full_cycle_with_server():
         for task in server.todo_manager.items:
             if task.text == todo_item.text:
                 if task.done:
-                    print(f"[OK] Задача отмечена как выполненная")
+                    print("[OK] Задача отмечена как выполненная")
                     task_found = True
                 else:
-                    print(f"[WARNING] Задача не отмечена как выполненная")
+                    print("[WARNING] Задача не отмечена как выполненная")
                 break
         
         if not task_found:
-            print(f"[WARNING] Задача не найдена в списке")
+            print("[WARNING] Задача не найдена в списке")
         print()
         
         # Итоги

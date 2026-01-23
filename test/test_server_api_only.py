@@ -65,7 +65,7 @@ def test_root():
                 time.sleep(2)
                 continue
             else:
-                print(f"[FAIL] Таймаут root endpoint после 3 попыток")
+                print("[FAIL] Таймаут root endpoint после 3 попыток")
                 return False
         except Exception as e:
             print(f"[FAIL] Ошибка root endpoint: {e}")
@@ -117,7 +117,7 @@ def test_status():
                 time.sleep(wait_time)
                 continue
             else:
-                print(f"[FAIL] Сервер недоступен после 5 попыток")
+                print("[FAIL] Сервер недоступен после 5 попыток")
                 return False
         except requests.exceptions.Timeout:
             if attempt < 4:
@@ -125,7 +125,7 @@ def test_status():
                 time.sleep(2)
                 continue
             else:
-                print(f"[FAIL] Таймаут status endpoint после 5 попыток")
+                print("[FAIL] Таймаут status endpoint после 5 попыток")
                 return False
         except Exception as e:
             if attempt < 4:
@@ -146,7 +146,7 @@ def wait_for_server(max_wait: int = 300, server_process=None) -> bool:
         server_process: Опциональный процесс сервера для проверки завершения
     """
     print(f"[INFO] Ожидание запуска сервера (макс. {max_wait} сек)...")
-    print(f"[INFO] Примечание: инициализация сервера может занять до 3 минут из-за восстановления checkpoint")
+    print("[INFO] Примечание: инициализация сервера может занять до 3 минут из-за восстановления checkpoint")
     for i in range(max_wait):
         # Проверяем, не завершился ли процесс сервера с ошибкой
         if server_process is not None:
@@ -169,11 +169,11 @@ def wait_for_server(max_wait: int = 300, server_process=None) -> bool:
         time.sleep(1)
     
     print(f"[FAIL] Сервер не запустился за {max_wait} секунд")
-    print(f"[INFO] Возможные причины:")
-    print(f"  1. Медленная инициализация из-за большого checkpoint")
-    print(f"  2. Проблемы с Docker или Cursor CLI")
-    print(f"  3. Отсутствует переменная окружения PROJECT_DIR")
-    print(f"  4. Проверьте логи в logs/code_agent.log")
+    print("[INFO] Возможные причины:")
+    print("  1. Медленная инициализация из-за большого checkpoint")
+    print("  2. Проблемы с Docker или Cursor CLI")
+    print("  3. Отсутствует переменная окружения PROJECT_DIR")
+    print("  4. Проверьте логи в logs/code_agent.log")
     return False
 
 

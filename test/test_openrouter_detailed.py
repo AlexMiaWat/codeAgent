@@ -8,7 +8,6 @@
 """
 
 import asyncio
-import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
@@ -70,7 +69,7 @@ async def test_single_model(mgr, model_name: str):
         response = await mgr._call_model(test_prompt, model_config)
         
         if response.success:
-            print(f"[OK] Успешно!")
+            print("[OK] Успешно!")
             print(f"  Время отклика: {response.response_time:.2f}s")
             print(f"  Ответ: {response.content[:100]}")
             return True
@@ -78,7 +77,7 @@ async def test_single_model(mgr, model_name: str):
             print(f"[FAIL] Ошибка: {response.error}")
             # Проверяем, не является ли это ошибкой API ключа
             if "401" in str(response.error) or "User not found" in str(response.error):
-                print(f"[WARN] Возможно, проблема с API ключом")
+                print("[WARN] Возможно, проблема с API ключом")
             return False
             
     except Exception as e:
@@ -122,7 +121,7 @@ async def test_runner_simple(mgr):
             )
             
             if simple_response.success:
-                print(f"[OK] Простой тест успешен")
+                print("[OK] Простой тест успешен")
                 print(f"  Время: {simple_response.response_time:.2f}s")
                 print(f"  Ответ: {simple_response.content[:100]}")
                 return True
@@ -130,7 +129,7 @@ async def test_runner_simple(mgr):
                 print(f"[FAIL] Простой тест провален: {simple_response.error}")
                 return False
         else:
-            print(f"[SKIP] Модель недоступна, пропускаем тест")
+            print("[SKIP] Модель недоступна, пропускаем тест")
             return False
             
     except Exception as e:
@@ -166,7 +165,7 @@ async def test_free_models(mgr):
             success = await test_single_model(mgr, model_name)
             results[model_name] = success
         else:
-            print(f"[SKIP] Модель не найдена в конфиге")
+            print("[SKIP] Модель не найдена в конфиге")
             results[model_name] = None
         
         await asyncio.sleep(1)  # Задержка между запросами

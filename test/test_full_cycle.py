@@ -52,7 +52,7 @@ def test_full_cycle():
         
         config = ConfigLoader("config/config.yaml")
         project_dir = config.get_project_dir()
-        print(f"[OK] Конфигурация загружена")
+        print("[OK] Конфигурация загружена")
         print(f"  Проект: {project_dir}")
         print()
         
@@ -71,7 +71,7 @@ def test_full_cycle():
             todo_item = TodoItem(text="Тестовая задача для полного цикла", done=False)
         else:
             todo_item = pending_tasks[0]
-            print(f"[OK] Задача найдена")
+            print("[OK] Задача найдена")
             print(f"  Задача: {todo_item.text[:70]}")
             print(f"  Выполнена: {todo_item.done}")
             print()
@@ -106,7 +106,7 @@ def test_full_cycle():
         template = task_instructions[0] if task_instructions and isinstance(task_instructions[0], dict) else None
         
         if template:
-            print(f"[OK] Шаблон найден")
+            print("[OK] Шаблон найден")
             print(f"  ID: {template.get('instruction_id')}")
             print(f"  Имя: {template.get('name')}")
             print(f"  Для Cursor: {template.get('for_cursor')}")
@@ -141,7 +141,7 @@ def test_full_cycle():
 В конце отчета напиши "{control_phrase}"
 """
         
-        print(f"[OK] Инструкция отформатирована")
+        print("[OK] Инструкция отформатирована")
         print(f"  Task ID: {task_id}")
         print(f"  Длина: {len(instruction_text)} символов")
         print()
@@ -168,7 +168,7 @@ def test_full_cycle():
             new_chat=True
         )
         
-        print(f"[OK] Файл инструкции создан")
+        print("[OK] Файл инструкции создан")
         print(f"  Путь: {instruction_file}")
         print(f"  Существует: {instruction_file.exists()}")
         if instruction_file.exists():
@@ -210,7 +210,7 @@ Task ID: {task_id}
 """
         
         result_file.write_text(result_content, encoding='utf-8')
-        print(f"[OK] Файл результата создан (имитация)")
+        print("[OK] Файл результата создан (имитация)")
         print(f"  Путь: {result_file}")
         print(f"  Существует: {result_file.exists()}")
         print()
@@ -229,9 +229,9 @@ Task ID: {task_id}
         
         # Проверяем, что файл существует
         if cursor_file.check_result_exists(task_id):
-            print(f"[OK] Файл результата обнаружен!")
+            print("[OK] Файл результата обнаружен!")
         else:
-            print(f"[FAIL] Файл результата не обнаружен!")
+            print("[FAIL] Файл результата не обнаружен!")
             return False
         
         # Читаем содержимое
@@ -239,7 +239,7 @@ Task ID: {task_id}
         if content:
             print(f"[OK] Содержимое файла прочитано ({len(content)} символов)")
         else:
-            print(f"[FAIL] Не удалось прочитать файл результата!")
+            print("[FAIL] Не удалось прочитать файл результата!")
             return False
         
         # Шаг 9: Проверка контрольной фразы
@@ -270,11 +270,11 @@ Task ID: {task_id}
         )
         
         if wait_result["success"]:
-            print(f"[OK] Файл результата найден через wait_for_result")
+            print("[OK] Файл результата найден через wait_for_result")
             print(f"  Время ожидания: {wait_result['wait_time']:.2f}s")
             print(f"  Путь: {wait_result['file_path']}")
         else:
-            print(f"[FAIL] Файл результата не найден через wait_for_result")
+            print("[FAIL] Файл результата не найден через wait_for_result")
             print(f"  Ошибка: {wait_result.get('error')}")
             return False
         print()
@@ -292,10 +292,10 @@ Task ID: {task_id}
                 status="Выполнено",
                 details=f"Выполнено через Cursor. Task ID: {task_id}. Результат: {result_content[:200]}..."
             )
-            print(f"[OK] Статус задачи обновлен")
+            print("[OK] Статус задачи обновлен")
         except Exception as e:
             print(f"[WARNING] Не удалось обновить статус (проблема с правами доступа): {e}")
-            print(f"[INFO] В реальном сценарии статус будет обновлен корректно")
+            print("[INFO] В реальном сценарии статус будет обновлен корректно")
         print()
         
         # Шаг 12: Отметка задачи как выполненной (опционально)
@@ -306,7 +306,7 @@ Task ID: {task_id}
         
         # В реальном сценарии здесь будет:
         # todo_manager.mark_task_done(todo_item.text)
-        print(f"[INFO] В реальном сценарии задача будет отмечена как выполненная")
+        print("[INFO] В реальном сценарии задача будет отмечена как выполненная")
         print(f"  Задача: {todo_item.text}")
         print()
         
@@ -331,7 +331,7 @@ Task ID: {task_id}
         print("  [OK] 11. Обновление статуса задачи")
         print("  [OK] 12. Отметка задачи как выполненной")
         print()
-        print(f"Созданные файлы:")
+        print("Созданные файлы:")
         print(f"  Инструкция: {instruction_file}")
         print(f"  Результат: {result_file}")
         print()

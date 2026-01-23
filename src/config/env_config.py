@@ -7,7 +7,7 @@
 
 import os
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List
 import logging
 from dataclasses import dataclass, field
 from dotenv import load_dotenv

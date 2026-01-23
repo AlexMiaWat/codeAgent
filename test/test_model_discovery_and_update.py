@@ -99,7 +99,7 @@ async def test_config_update():
         if result['config_updated']:
             print()
             print("[OK] Конфигурация обновлена!")
-            print(f"  Резервная копия сохранена в: config/llm_settings.yaml.backup")
+            print("  Резервная копия сохранена в: config/llm_settings.yaml.backup")
         
         return True
         

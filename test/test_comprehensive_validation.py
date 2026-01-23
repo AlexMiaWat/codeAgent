@@ -18,11 +18,8 @@ import os
 import time
 import logging
 import tempfile
-import shutil
 from pathlib import Path
-from typing import Dict, List, Tuple
-import pytest
-import requests
+from typing import List, Tuple
 
 # Добавляем путь к проекту
 project_root = Path(__file__).parent.parent

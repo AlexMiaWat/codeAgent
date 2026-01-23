@@ -13,13 +13,12 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Set
+from typing import Dict, List, Optional, Any, Set
 from enum import Enum
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 
 import yaml
-from openai import OpenAI, AsyncOpenAI
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 # Загружаем переменные окружения (с перезаписью для обновления ключа)
@@ -472,7 +471,7 @@ class LLMManager:
                 return (in_blacklist, -success_rate, model.error_count)
             
             models_to_try = sorted(models_to_try, key=model_priority)
-            logger.debug(f"JSON mode: модели отсортированы по приоритету (лучшие первыми)")
+            logger.debug("JSON mode: модели отсортированы по приоритету (лучшие первыми)")
         
         # Сохраняем последний ответ (даже если он failed) для fallback
         last_response: Optional[ModelResponse] = None

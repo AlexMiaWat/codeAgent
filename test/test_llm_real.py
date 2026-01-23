@@ -43,14 +43,14 @@ async def test_basic_generation():
         )
         
         if response.success:
-            print(f"[OK] Успешно!")
+            print("[OK] Успешно!")
             print(f"  Модель: {response.model_name}")
             print(f"  Время отклика: {response.response_time:.2f}s")
             print(f"  Длина ответа: {len(response.content)} символов")
             print(f"  Ответ: {response.content[:200]}")
             return True
         else:
-            print(f"[FAIL] Ошибка генерации:")
+            print("[FAIL] Ошибка генерации:")
             print(f"  Модель: {response.model_name}")
             print(f"  Ошибка: {response.error}")
             return False
@@ -92,13 +92,13 @@ async def test_fallback_mechanism():
         )
         
         if response.success:
-            print(f"[OK] Успешно!")
+            print("[OK] Успешно!")
             print(f"  Модель: {response.model_name}")
             print(f"  Время отклика: {response.response_time:.2f}s")
             print(f"  Ответ: {response.content[:300]}")
             return True
         else:
-            print(f"[FAIL] Ошибка генерации:")
+            print("[FAIL] Ошибка генерации:")
             print(f"  Модель: {response.model_name}")
             print(f"  Ошибка: {response.error}")
             return False
@@ -132,7 +132,7 @@ async def test_parallel_mode():
         )
         
         if response.success:
-            print(f"[OK] Успешно!")
+            print("[OK] Успешно!")
             print(f"  Выбранная модель: {response.model_name}")
             print(f"  Время отклика: {response.response_time:.2f}s")
             if hasattr(response, 'score') and response.score:
@@ -140,7 +140,7 @@ async def test_parallel_mode():
             print(f"  Ответ: {response.content[:300]}")
             return True
         else:
-            print(f"[FAIL] Ошибка генерации:")
+            print("[FAIL] Ошибка генерации:")
             print(f"  Модель: {response.model_name}")
             print(f"  Ошибка: {response.error}")
             return False

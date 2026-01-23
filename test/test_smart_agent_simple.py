@@ -2,7 +2,6 @@
 Простой тест импортов Smart Agent без зависимостей
 """
 
-import pytest
 import sys
 from pathlib import Path
 

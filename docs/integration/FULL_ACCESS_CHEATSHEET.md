@@ -76,9 +76,8 @@ agent --version
 
 ## 📚 Документация
 
-- [Полная документация](docs/integration/full_access_setup.md)
-- [Быстрый старт](docs/integration/QUICK_START_FULL_ACCESS.md)
-- [README .cursor](.cursor/README.md)
+- [Полная документация](full_access_setup.md)
+- [Быстрый старт](QUICK_START_FULL_ACCESS.md)
 
 ## 🆘 Проблемы
 

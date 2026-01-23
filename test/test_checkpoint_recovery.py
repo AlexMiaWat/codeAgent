@@ -3,9 +3,7 @@
 """
 
 import pytest
-import json
 import time
-from pathlib import Path
 from src.checkpoint_manager import CheckpointManager, TaskState
 
 

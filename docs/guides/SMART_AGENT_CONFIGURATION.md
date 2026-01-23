@@ -268,6 +268,6 @@ scripts/restore_smart_experience.sh
 ## Ссылки
 
 - [Основная документация](../../README.md)
-- [Руководство по конфигурации](CONFIGURATION_GUIDE.md)
-- [API документация](../core/API_REFERENCE.md)
+- [Руководство по конфигурации](config/config.yaml)
+- [API документация](../core/api.md)
 - [Примеры использования](../../examples/)

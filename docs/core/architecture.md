@@ -408,7 +408,7 @@ sequenceDiagram
 
 **Важно:** LLM Code Agent работает **строго по инструкциям** из конфигурации и не делает глубокий анализ или сложные рассуждения. Вся интеллектуальная работа выполняется агентами Cursor.
 
-Подробнее см. [Интеграция с Cursor](cursor_integration.md) и [Детальный рабочий процесс](workflow_detailed.md)
+Подробнее см. [Интеграция с Cursor](docs/integration/cursor_integration.md) и [Детальный рабочий процесс](workflow_detailed.md)
 
 ## Git интеграция
 

@@ -106,7 +106,7 @@ def test_scenario_2_analyze_docs():
         print(f"  [OK] Файл создан: {len(content)} байт, {len(content.splitlines())} строк")
         return result.success
     else:
-        print(f"  [FAIL] Файл не найден")
+        print("  [FAIL] Файл не найден")
         return False
 
 
@@ -198,7 +198,7 @@ def test_scenario_4_russian_instruction():
         print(f"  [OK] Файл создан: {len(content)} байт")
         return result.success
     else:
-        print(f"  [FAIL] Файл не найден")
+        print("  [FAIL] Файл не найден")
         return False
 
 
@@ -253,9 +253,9 @@ def test_scenario_5_lifecycle_full():
     success = output_file.exists() and result1.success and result2.success and result3.success
     
     if output_file.exists():
-        print(f"  [OK] Файл создан")
+        print("  [OK] Файл создан")
     else:
-        print(f"  [FAIL] Файл не найден")
+        print("  [FAIL] Файл не найден")
     
     return success
 
@@ -265,8 +265,8 @@ def run_all_scenarios():
     print("\n" + "="*80)
     print("КОМПЛЕКСНОЕ ТЕСТИРОВАНИЕ СЛОЖНЫХ СЦЕНАРИЕВ")
     print("="*80)
-    print(f"Проект: d:/Space/life")
-    print(f"Интерфейс: Docker (cursor-agent-life)")
+    print("Проект: d:/Space/life")
+    print("Интерфейс: Docker (cursor-agent-life)")
     print("="*80)
     
     scenarios = [

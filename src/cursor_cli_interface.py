@@ -12,7 +12,7 @@ import subprocess
 import shutil
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 import time
 from dataclasses import dataclass
 from dotenv import load_dotenv
@@ -566,7 +566,7 @@ class CursorCLIInterface:
         # Проверяем существование .cursor/rules - Cursor автоматически читает их
         cursor_rules_dir = project_path / ".cursor" / "rules"
         if cursor_rules_dir.exists():
-            logger.debug(f"Директория .cursor/rules существует, роль агента будет настроена через правила")
+            logger.debug("Директория .cursor/rules существует, роль агента будет настроена через правила")
             # Cursor CLI автоматически использует .cursor/rules, дополнительная настройка не требуется
         
         # Можно создать AGENTS.md с описанием роли (опционально)
@@ -663,7 +663,7 @@ This agent role is used for automated project tasks execution.
                 return []
                 
         except subprocess.TimeoutExpired:
-            logger.warning(f"Таймаут выполнения команды list_chats (30 секунд). Контейнер может быть занят или команда выполняется дольше ожидаемого.")
+            logger.warning("Таймаут выполнения команды list_chats (30 секунд). Контейнер может быть занят или команда выполняется дольше ожидаемого.")
             return []  # Возвращаем пустой список, это не критичная ошибка
         except Exception as e:
             logger.error(f"Ошибка в list_chats: {e}")
@@ -898,7 +898,7 @@ This agent role is used for automated project tasks execution.
                     if ("unknown command" in output or "invalid command" in output or 
                         "not found" in output or "usage:" in output or "unknown option" in output):
                         command_not_supported = True
-                        logger.debug(f"Команда 'agent delete' не поддерживается Cursor CLI")
+                        logger.debug("Команда 'agent delete' не поддерживается Cursor CLI")
                         logger.debug(f"   Вывод команды: {full_output[:300]}")
                         not_supported_count = len(chat_ids)  # Все чаты не поддерживаются
                     elif result.returncode == 0 and ("deleted" in output or "removed" in output or "success" in output):
@@ -1321,7 +1321,7 @@ This agent role is used for automated project tasks execution.
                                 logger.debug(f"Stdout: {result_stdout[:500]}")
                         elif result.returncode == 143:
                             # Код 143 (SIGTERM) - логируем как информационное сообщение
-                            logger.debug(f"Agent вернул код 143 (SIGTERM) - процесс был прерван, но может быть успешным")
+                            logger.debug("Agent вернул код 143 (SIGTERM) - процесс был прерван, но может быть успешным")
                     else:
                         result = subprocess.run(
                             exec_cmd,
@@ -1664,7 +1664,7 @@ This agent role is used for automated project tasks execution.
             
             # Проверяем, нужно ли активировать fallback для этой ошибки
             if not self._should_trigger_fallback(result, resilience):
-                logger.info(f"Ошибка не требует fallback, останавливаем попытки")
+                logger.info("Ошибка не требует fallback, останавливаем попытки")
                 break
             
             # Задержка перед следующей попыткой
@@ -2097,119 +2097,7 @@ This agent role is used for automated project tasks execution.
                 cli_available=True,
                 error_message=f"Исключение: {str(e)}"
             )
-    
-    def execute_with_fallback(
-        self,
-        prompt: str,
-        working_dir: Optional[str] = None,
-        timeout: Optional[int] = None,
-        additional_args: Optional[list[str]] = None,
-        new_chat: bool = True,
-        chat_id: Optional[str] = None
-    ) -> CursorCLIResult:
-        """
-        Выполнить команду с автоматическим fallback на резервные модели
-        
-        Сначала пытается выполнить с основной моделью (auto).
-        При ошибках (billing, timeout, и т.д.) автоматически пробует резервные модели.
-        
-        Args:
-            prompt: Инструкция/промпт для выполнения
-            working_dir: Рабочая директория
-            timeout: Таймаут выполнения
-            additional_args: Дополнительные аргументы
-            new_chat: Создать новый чат
-            chat_id: ID чата для продолжения
-            
-        Returns:
-            CursorCLIResult с результатом выполнения (последняя попытка)
-        """
-        # Получаем конфигурацию
-        model_config = self._get_model_config()
-        primary_model = model_config['model']
-        fallback_models = model_config.get('fallback_models', [])
-        resilience = model_config.get('resilience', {})
-        
-        enable_fallback = resilience.get('enable_fallback', True)
-        max_attempts = resilience.get('max_fallback_attempts', 3)
-        retry_delay = resilience.get('fallback_retry_delay', 2)
-        
-        # Формируем список моделей для попыток
-        models_to_try = [primary_model]
-        if enable_fallback and fallback_models:
-            models_to_try.extend(fallback_models[:max_attempts - 1])
-        
-        # Компактный лог fallback моделей
-        fallback_info = f"'{primary_model}'"
-        if fallback_models:
-            fallback_info += f" → {fallback_models}"
-        logger.info(Colors.colorize(
-            f"🔄 Fallback: {fallback_info}",
-            Colors.BRIGHT_MAGENTA
-        ))
-        
-        last_result = None
-        
-        # Пробуем каждую модель по очереди
-        for attempt, model in enumerate(models_to_try, 1):
-            logger.debug(f"Попытка {attempt}/{len(models_to_try)} с моделью '{model}'")
-            
-            # Выполняем команду с текущей моделью
-            result = self._execute_with_specific_model(
-                prompt=prompt,
-                model=model,
-                working_dir=working_dir,
-                timeout=timeout,
-                additional_args=additional_args,
-                new_chat=new_chat,
-                chat_id=chat_id
-            )
-            
-            last_result = result
-            
-            # Если успешно - возвращаем результат
-            if result.success:
-                if attempt > 1:
-                    # Fallback помог - но это все равно признак проблемы с основной моделью
-                    logger.info(f"✅ Успешно выполнено с резервной моделью '{model}' (попытка {attempt})")
-                    logger.warning(f"⚠️ Основная модель '{primary_model}' не смогла выполнить команду, использован fallback на '{model}'")
-                    # Устанавливаем флаги для отслеживания использования fallback
-                    result.fallback_used = True
-                    result.primary_model_failed = True
-                else:
-                    logger.info(f"✅ Успешно выполнено с основной моделью '{model}'")
-                return result
-            
-            # Проверяем, нужно ли продолжать fallback
-            if not enable_fallback or attempt >= len(models_to_try):
-                break
-            
-            # Проверяем, нужно ли активировать fallback для этой ошибки
-            if not self._should_trigger_fallback(result, resilience):
-                logger.info(f"Ошибка не требует fallback, останавливаем попытки")
-                break
-            
-            # Задержка перед следующей попыткой
-            if attempt < len(models_to_try):
-                logger.info(f"Ожидание {retry_delay}с перед следующей попыткой...")
-                time.sleep(retry_delay)
-        
-        # Все попытки неудачны
-        if last_result:
-            logger.error(f"❌ Все попытки ({len(models_to_try)}) неудачны. Последняя ошибка: {last_result.error_message}")
-        else:
-            logger.error("❌ Не удалось выполнить команду")
-            last_result = CursorCLIResult(
-                success=False,
-                stdout="",
-                stderr="",
-                return_code=-1,
-                cli_available=True,
-                error_message="Не удалось выполнить команду с любой из моделей"
-            )
-        
-        return last_result
-    
+
     def execute_instruction(
         self,
         instruction: str,

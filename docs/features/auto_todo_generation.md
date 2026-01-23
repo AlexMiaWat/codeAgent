@@ -317,5 +317,5 @@ tracker.reset_session_counter()
 ## См. также
 
 - [Формат TODO листов](../planning/todo_format_requirements.md)
-- [Конфигурация сервера](../configuration/server_config.md)
-- [Инструкции для Cursor](../configuration/cursor_instructions.md)
+- [Конфигурация сервера](../../config/config.yaml)
+- [Инструкции для Cursor](../../config/config.yaml)

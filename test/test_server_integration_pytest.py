@@ -6,8 +6,6 @@
 
 import pytest
 import requests
-import time
-from pathlib import Path
 
 
 class TestServerIntegration:

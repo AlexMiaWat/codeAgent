@@ -641,7 +641,6 @@ python test/compare_keys.py
 - [QUICK_START.md](../../test/QUICK_START.md) - Быстрый старт
 - [API_TESTS_README.md](../../test/API_TESTS_README.md) - Документация по API тестам
 - [AUTO_SERVER_START.md](../../test/AUTO_SERVER_START.md) - Автозапуск сервера
-- [API_KEY_STATUS.md](API_KEY_STATUS.md) - Статус API ключа
 
 ---
 

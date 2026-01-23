@@ -8,7 +8,6 @@
 - Code Agent читает результат и продолжает работу
 """
 
-import os
 import time
 import logging
 from pathlib import Path
@@ -46,7 +45,7 @@ class CursorFileInterface:
         self.commands_dir.mkdir(parents=True, exist_ok=True)
         self.results_dir.mkdir(parents=True, exist_ok=True)
         
-        logger.info(f"Cursor File Interface initialized")
+        logger.info("Cursor File Interface initialized")
         logger.info(f"Commands dir: {self.commands_dir}")
         logger.info(f"Results dir: {self.results_dir}")
     
@@ -182,7 +181,7 @@ class CursorFileInterface:
                     f"Файл результата слишком большой ({file_size} байт, максимум {self.max_file_size}): {file_path}"
                 )
                 return None
-        except OSError as e:
+        except OSError:
             logger.error(f"Ошибка проверки размера файла результата: {file_path}", exc_info=True)
             return None
         

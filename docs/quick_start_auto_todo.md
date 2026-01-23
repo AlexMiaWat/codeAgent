@@ -205,7 +205,7 @@ rm .codeagent_sessions.json
 ## Следующие шаги
 
 - 📖 [Полная документация](features/auto_todo_generation.md)
-- ⚙️ [Настройка инструкций](configuration/cursor_instructions.md)
+- ⚙️ [Настройка инструкций](../config/config.yaml)
 - 🧪 [Тестирование](../test/test_auto_todo_generation.py)
 
 ## Часто задаваемые вопросы

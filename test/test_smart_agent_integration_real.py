@@ -9,7 +9,6 @@ import os
 import tempfile
 import json
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 # Добавляем корневую директорию в путь для импорта
 sys.path.insert(0, str(Path(__file__).parent.parent))

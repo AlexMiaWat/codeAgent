@@ -2,9 +2,9 @@
 
 **Документация:** https://cursor.com/docs/cli/overview
 
-## ⚠️ ВАЖНО: Команда называется `agent`, а не `cursor-agent`!
-
 ## Быстрая установка
+
+⚠️ **ВАЖНО:** Команда называется `agent`, а не `cursor-agent`!
 
 ### Для Linux/macOS/WSL
 
