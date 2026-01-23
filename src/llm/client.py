@@ -11,6 +11,7 @@ ClientManager - управление API клиентами провайдеро
 import os
 import asyncio
 import logging
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
@@ -40,7 +41,7 @@ class ClientManager(IClientManager):
             config_path: Путь к файлу конфигурации
         """
         self.config_loader = config_loader
-        self.config_path = config_path
+        self.config_path = Path(config_path)
         self.config: Dict[str, Any] = {}
         self.clients: Dict[str, AsyncOpenAI] = {}
         self.providers: Dict[str, ProviderConfig] = {}

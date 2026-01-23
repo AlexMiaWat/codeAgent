@@ -24,7 +24,7 @@ class TestBaseComponentSmoke:
         """Test BaseComponent can be created"""
         component = BaseComponent("test_component")
         assert component.component_name == "test_component"
-        assert component._status == ComponentStatus.INITIALIZING
+        assert component.get_status() == ComponentStatus.INITIALIZING
 
     def test_base_component_lifecycle(self):
         """Test basic lifecycle operations"""
@@ -32,15 +32,15 @@ class TestBaseComponentSmoke:
 
         # Should be able to initialize
         component.initialize()
-        assert component._status == ComponentStatus.READY
+        assert component.get_status() == ComponentStatus.READY
 
         # Should be able to start
         component.start()
-        assert component._status == ComponentStatus.RUNNING
+        assert component.get_status() == ComponentStatus.RUNNING
 
         # Should be able to stop
         component.stop()
-        assert component._status == ComponentStatus.DISABLED
+        assert component.get_status() == ComponentStatus.DISABLED
 
     def test_base_component_health_check(self):
         """Test health check functionality"""
@@ -285,19 +285,19 @@ class TestComponentIntegrationSmoke:
         component = BaseComponent("test_component")
 
         # Initial state
-        assert component._status == ComponentStatus.INITIALIZING
+        assert component.get_status() == ComponentStatus.INITIALIZING
 
         # Initialize
         component.initialize()
-        assert component._status == ComponentStatus.READY
+        assert component.get_status() == ComponentStatus.READY
 
         # Start
         component.start()
-        assert component._status == ComponentStatus.RUNNING
+        assert component._status is ComponentStatus.RUNNING
 
         # Stop
         component.stop()
-        assert component._status == ComponentStatus.DISABLED
+        assert component._status is ComponentStatus.DISABLED
 
     def test_component_error_recovery(self):
         """Test component can recover from errors"""
@@ -312,5 +312,5 @@ class TestComponentIntegrationSmoke:
         # Try to reinitialize (this would normally be handled by error recovery logic)
         component._status = ComponentStatus.INITIALIZING
         component.initialize()
-        assert component._status == ComponentStatus.READY
+        assert component.get_status() == ComponentStatus.READY
         assert component.is_ready()

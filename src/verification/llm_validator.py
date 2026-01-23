@@ -27,11 +27,25 @@ class LLMValidator(ILLMValidator):
             llm_manager: Менеджер LLM (если None - будет создан новый)
             config: Конфигурация валидатора
         """
-        self.llm_manager = llm_manager or LLMManager()
         self.config = config or {}
         self.code_quality_threshold = self.config.get('code_quality_threshold', 0.7)
         self.task_compliance_threshold = self.config.get('task_compliance_threshold', 0.8)
         self.logic_validation_threshold = self.config.get('logic_validation_threshold', 0.75)
+
+        # Initialize LLM manager lazily to avoid config loading in tests
+        self._llm_manager = llm_manager
+
+    @property
+    def llm_manager(self) -> LLMManager:
+        """Lazy initialization of LLM manager"""
+        if self._llm_manager is None:
+            self._llm_manager = LLMManager()
+        return self._llm_manager
+
+    @llm_manager.setter
+    def llm_manager(self, value: LLMManager):
+        """Set LLM manager"""
+        self._llm_manager = value
 
     async def validate_code_quality(self, code_changes: Dict[str, Any],
                                    context: Optional[Dict[str, Any]] = None) -> VerificationResult:

@@ -6,8 +6,9 @@ including task types, execution states, and other core enumerations.
 """
 
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import re
+from datetime import datetime
 
 
 class TaskType(Enum):
@@ -211,3 +212,52 @@ class ComponentState(Enum):
     STOPPING = "stopping"
     STOPPED = "stopped"
     ERROR = "error"
+
+
+class ComponentStatus(Enum):
+    """Status enumeration for component lifecycle (alias for ComponentState)."""
+    INITIALIZING = "initializing"
+    READY = "ready"
+    RUNNING = "running"
+    STOPPING = "stopping"
+    STOPPED = "stopped"
+    DISABLED = "disabled"
+    ERROR = "error"
+
+
+# For backward compatibility
+ComponentState = ComponentStatus
+
+
+class ServerConfig:
+    """Configuration class for server components."""
+
+    def __init__(self, **kwargs):
+        self.host = kwargs.get('host', 'localhost')
+        self.port = kwargs.get('port', 3456)
+        self.debug = kwargs.get('debug', False)
+        self.max_workers = kwargs.get('max_workers', 4)
+        self.timeout = kwargs.get('timeout', 30)
+
+
+class ComponentHealth:
+    """Health status representation for components."""
+
+    def __init__(self, status: str = "unknown", message: str = "", details: Optional[Dict[str, Any]] = None):
+        self.status = status
+        self.message = message
+        self.details = details or {}
+        self.timestamp = datetime.now()
+
+    def is_healthy(self) -> bool:
+        """Check if component is healthy."""
+        return self.status in ["healthy", "ok", "ready"]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert health status to dictionary."""
+        return {
+            "status": self.status,
+            "message": self.message,
+            "details": self.details,
+            "timestamp": self.timestamp.isoformat()
+        }

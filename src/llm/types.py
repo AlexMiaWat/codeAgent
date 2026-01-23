@@ -8,10 +8,11 @@
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Any, Protocol
+from typing import Dict, List, Optional, Any, Protocol, Set
 from pathlib import Path
+from datetime import datetime
 
 
 class ModelRole(Enum):
@@ -73,6 +74,67 @@ class EvaluationResult:
     """Результат оценки ответа"""
     score: float
     reasoning: Optional[str] = None
+
+
+@dataclass
+class RoutingDecision:
+    """Решение о маршрутизации"""
+    model_name: str
+    strategy: str
+    reasoning: str
+    confidence: float
+    alternatives: List[str] = field(default_factory=list)
+
+
+# Типы для интеллектуального роутера
+class TaskType(Enum):
+    """Типы задач для классификации запросов"""
+    CREATIVE_WRITING = "creative_writing"
+    CODE_GENERATION = "code_generation"
+    CODE_REVIEW = "code_review"
+    ANALYSIS = "analysis"
+    QUESTION_ANSWERING = "question_answering"
+    SUMMARIZATION = "summarization"
+    TRANSLATION = "translation"
+    MATH_PROBLEM = "math_problem"
+    LOGIC_REASONING = "logic_reasoning"
+    CHAT_CONVERSATION = "chat_conversation"
+    JSON_GENERATION = "json_generation"
+    TECHNICAL_WRITING = "technical_writing"
+    UNKNOWN = "unknown"
+
+
+class ComplexityLevel(Enum):
+    """Уровень сложности запроса"""
+    SIMPLE = "simple"
+    MODERATE = "moderate"
+    COMPLEX = "complex"
+    VERY_COMPLEX = "very_complex"
+
+
+@dataclass
+class RequestAnalysis:
+    """Анализ запроса"""
+    task_type: TaskType
+    complexity: ComplexityLevel
+    estimated_tokens: int
+    requires_accuracy: bool = False
+    requires_creativity: bool = False
+    requires_speed: bool = False
+    is_structured: bool = False
+    keywords: Set[str] = field(default_factory=set)
+    confidence: float = 0.0
+
+
+@dataclass
+class ModelPerformance:
+    """Производительность модели для конкретного типа задач"""
+    model_name: str
+    task_type: TaskType
+    avg_score: float = 0.0
+    avg_response_time: float = 0.0
+    success_rate: float = 0.0
+    sample_count: int = 0
 
 
 # Интерфейсы компонентов
@@ -211,3 +273,271 @@ class IConfigLoader(Protocol):
     def substitute_env_vars(self, obj: Any) -> Any:
         """Подставить переменные окружения"""
         ...
+
+
+class IIntelligentRouter(Protocol):
+    """Интерфейс интеллектуального роутера"""
+
+    def analyze_request(self, request: GenerationRequest) -> 'RequestAnalysis':
+        """Анализировать запрос"""
+        ...
+
+    def route_request(self, request: GenerationRequest) -> 'RoutingDecision':
+        """Определить маршрут для запроса"""
+        ...
+
+    def learn_from_result(
+        self,
+        request: GenerationRequest,
+        response: ModelResponse,
+        evaluation_score: Optional[float] = None
+    ) -> None:
+        """Обучаться на результате"""
+        ...
+
+
+class IIntelligentEvaluator(Protocol):
+    """Интерфейс интеллектуального оценщика"""
+
+    async def evaluate_intelligent(
+        self,
+        prompt: str,
+        response: str,
+        client_manager: 'IClientManager',
+        task_type: str = "unknown",
+        evaluation_context: Optional['EvaluationContext'] = None,
+        method: 'EvaluationMethod' = 'EvaluationMethod.HYBRID'
+    ) -> 'DetailedEvaluation':
+        """Интеллектуальная оценка ответа"""
+        ...
+
+    async def evaluate_response(
+        self,
+        prompt: str,
+        response: str,
+        client_manager: 'IClientManager',
+        evaluator_model: Optional[ModelConfig] = None
+    ) -> EvaluationResult:
+        """Устаревший метод для совместимости"""
+        ...
+
+
+class IAdaptiveStrategyManager(Protocol):
+    """Интерфейс адаптивного менеджера стратегий"""
+
+    async def generate_adaptive(self, request: GenerationRequest) -> ModelResponse:
+        """Адаптивная генерация"""
+        ...
+
+    def get_adaptive_stats(self) -> Dict[str, Any]:
+        """Получить статистику адаптивного менеджера"""
+        ...
+
+    def get_strategy_recommendations(self, task_type: str) -> List[Dict[str, Any]]:
+        """Получить рекомендации по стратегиям"""
+        ...
+
+
+class IErrorLearningSystem(Protocol):
+    """Интерфейс системы обучения на ошибках"""
+
+    async def analyze_and_learn_from_error(
+        self,
+        request_prompt: str,
+        model_name: str,
+        response: Optional[ModelResponse] = None,
+        error_message: Optional[str] = None,
+        task_type: str = "unknown"
+    ) -> None:
+        """Анализировать ошибку и обучаться"""
+        ...
+
+    def get_learning_stats(self) -> Dict[str, Any]:
+        """Получить статистику обучения"""
+        ...
+
+    def get_error_prevention_recommendations(self, request_prompt: str, task_type: str = "unknown") -> List[str]:
+        """Получить рекомендации по предотвращению ошибок"""
+        ...
+
+
+# Типы для адаптивной стратегии
+class StrategyType(Enum):
+    """Типы стратегий генерации"""
+    SINGLE = "single"
+    PARALLEL = "parallel"
+    FALLBACK = "fallback"
+    ADAPTIVE = "adaptive"
+    CONSENSUS = "consensus"
+    ITERATIVE = "iterative"
+
+
+@dataclass
+class StrategyPerformance:
+    """Производительность стратегии для конкретного типа задач"""
+    strategy: StrategyType
+    task_type: str
+    avg_score: float = 0.0
+    avg_response_time: float = 0.0
+    success_rate: float = 0.0
+    sample_count: int = 0
+    last_used: datetime = field(default_factory=datetime.now)
+    adaptation_count: int = 0
+
+
+@dataclass
+class StrategyDecision:
+    """Решение о выборе стратегии"""
+    strategy: StrategyType
+    confidence: float
+    reasoning: str
+    expected_score: float = 0.0
+    expected_latency: float = 0.0
+    alternatives: List[StrategyType] = field(default_factory=list)
+
+
+@dataclass
+class AdaptationContext:
+    """Контекст для адаптации стратегии"""
+    trigger: str  # Из adaptive_strategy.AdaptationTrigger
+    current_strategy: StrategyType
+    performance_metrics: Dict[str, float]
+    task_characteristics: Dict[str, Any]
+    historical_performance: List[StrategyPerformance]
+    timestamp: datetime = field(default_factory=datetime.now)
+
+
+@dataclass
+class LearningInsight:
+    """Инсайт обучения"""
+    insight_type: str
+    description: str
+    confidence: float
+    affected_components: List[str]
+    recommended_actions: List[str]
+    expected_impact: str
+    timestamp: datetime = field(default_factory=datetime.now)
+
+
+# Типы для интеллектуального оценщика
+class QualityAspect(Enum):
+    """Аспекты качества ответа"""
+    ACCURACY = "accuracy"
+    COMPLETENESS = "completeness"
+    RELEVANCE = "relevance"
+    CLARITY = "clarity"
+    STRUCTURE = "structure"
+    CREATIVITY = "creativity"
+    TECHNICAL_ACCURACY = "technical_accuracy"
+    SAFETY = "safety"
+    EFFICIENCY = "efficiency"
+
+
+class EvaluationMethod(Enum):
+    """Методы оценки"""
+    LLM_BASED = "llm_based"
+    RULE_BASED = "rule_based"
+    HYBRID = "hybrid"
+    COMPARATIVE = "comparative"
+    REFERENCE_BASED = "reference_based"
+
+
+@dataclass
+class DetailedEvaluation:
+    """Детальная оценка ответа"""
+    overall_score: float
+    aspect_scores: Dict[QualityAspect, float] = field(default_factory=dict)
+    confidence: float = 1.0
+    method_used: EvaluationMethod = EvaluationMethod.HYBRID
+    reasoning: str = ""
+    issues_detected: List[str] = field(default_factory=list)
+    strengths: List[str] = field(default_factory=list)
+    recommendations: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class EvaluationContext:
+    """Контекст оценки"""
+    task_type: str
+    complexity_level: str
+    expected_format: Optional[str] = None
+    domain_knowledge: Set[str] = field(default_factory=set)
+    quality_requirements: Dict[QualityAspect, float] = field(default_factory=dict)
+    reference_answers: List[str] = field(default_factory=list)
+
+
+@dataclass
+class EvaluationPattern:
+    """Паттерн для оценки"""
+    aspect: QualityAspect
+    patterns: List[str] = field(default_factory=list)
+    keywords_positive: Set[str] = field(default_factory=set)
+    keywords_negative: Set[str] = field(default_factory=set)
+    weight: float = 1.0
+
+
+# Типы для системы обучения на ошибках
+class ErrorType(Enum):
+    """Типы ошибок"""
+    API_ERROR = "api_error"
+    TIMEOUT_ERROR = "timeout_error"
+    RATE_LIMIT_ERROR = "rate_limit_error"
+    CONTENT_POLICY_ERROR = "content_policy_error"
+    INVALID_RESPONSE = "invalid_response"
+    LOW_QUALITY = "low_quality"
+    HALLUCINATION = "hallucination"
+    INCOMPLETE_RESPONSE = "incomplete_response"
+    IRRELEVANT_RESPONSE = "irrelevant_response"
+    FORMATTING_ERROR = "formatting_error"
+    NETWORK_ERROR = "network_error"
+
+
+class ErrorPattern(Enum):
+    """Паттерны ошибок"""
+    MODEL_OVERLOAD = "model_overload"
+    CONTEXT_TOO_LONG = "context_too_long"
+    COMPLEX_QUERY = "complex_query"
+    UNSUPPORTED_FORMAT = "unsupported_format"
+    SENSITIVE_CONTENT = "sensitive_content"
+    AMBIGUOUS_REQUEST = "ambiguous_request"
+    RESOURCE_EXHAUSTED = "resource_exhausted"
+
+
+@dataclass
+class ErrorAnalysis:
+    """Анализ ошибки"""
+    error_type: ErrorType
+    error_pattern: Optional[ErrorPattern] = None
+    severity: float = 1.0
+    confidence: float = 0.0
+    root_cause: str = ""
+    suggested_fix: str = ""
+    prevention_measures: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ErrorRecord:
+    """Запись об ошибке"""
+    timestamp: datetime
+    request_prompt: str
+    model_name: str
+    response: Optional[ModelResponse] = None
+    error_analysis: Optional[ErrorAnalysis] = None
+    task_type: str = "unknown"
+    retry_successful: bool = False
+    user_feedback: Optional[str] = None
+
+
+@dataclass
+class ErrorPatternStats:
+    """Статистика паттерна ошибок"""
+    pattern: ErrorPattern
+    occurrences: int = 0
+    affected_models: Set[str] = field(default_factory=set)
+    affected_task_types: Set[str] = field(default_factory=set)
+    avg_severity: float = 0.0
+    last_occurrence: Optional[datetime] = None
+    mitigation_attempts: int = 0
+    mitigation_success_rate: float = 0.0

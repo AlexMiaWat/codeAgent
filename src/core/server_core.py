@@ -287,7 +287,7 @@ class ServerCore:
 
             # Выполнение задачи
             logger.info(f"Executing task {todo_item.id}: {todo_item.text}")
-            success = self.task_executor(todo_item, task_number=task_number, total_tasks=total_tasks)
+            success = await self.task_executor(todo_item, task_number=task_number, total_tasks=total_tasks)
             verification_result['execution_result'] = {'success': success}
 
             # Ждем завершения in-execution мониторинга
@@ -908,6 +908,299 @@ class ServerCore:
 
         # Все проверки пройдены
         return 'approve_execution'
+
+    async def execute_task_via_intelligent_llm(self, todo_item: 'TodoItem') -> tuple[bool, Dict[str, Any]]:
+        """
+        Выполнить задачу через интеллектуальную LLM систему
+
+        Использует все компоненты интеллектуальной интеграции:
+        - IntelligentRouter для анализа задачи
+        - AdaptiveStrategyManager для выбора стратегии
+        - LLMManager для выполнения
+        - IntelligentEvaluator для оценки результата
+        - ErrorLearningSystem для обучения на ошибках
+
+        Args:
+            todo_item: Задача для выполнения
+
+        Returns:
+            Кортеж (success, execution_result):
+            - success: True если выполнение успешно
+            - execution_result: Детальные результаты выполнения
+        """
+        if not self.llm_manager or not self.is_llm_available():
+            logger.warning("LLM Manager недоступен, используем fallback на Cursor")
+            # Fallback на старый метод
+            return await self._execute_task_via_cursor_fallback(todo_item)
+
+        execution_result = {
+            'intelligent_components_used': [],
+            'analysis': {},
+            'strategy': {},
+            'execution': {},
+            'evaluation': {},
+            'learning': {},
+            'errors': []
+        }
+
+        try:
+            # Шаг 1: Анализ задачи через IntelligentRouter
+            logger.info(f"Анализ задачи через IntelligentRouter: {todo_item.text[:100]}...")
+            try:
+                from ..llm.types import GenerationRequest
+                analysis_request = GenerationRequest(
+                    prompt=todo_item.text,
+                    use_fastest=False  # Для анализа используем качественные модели
+                )
+                analysis = self.llm_manager.intelligent_router.analyze_request(analysis_request)
+                execution_result['intelligent_components_used'].append('IntelligentRouter')
+                execution_result['analysis'] = {
+                    'task_type': analysis.task_type.value if hasattr(analysis.task_type, 'value') else str(analysis.task_type),
+                    'complexity': analysis.complexity.value if hasattr(analysis.complexity, 'value') else str(analysis.complexity),
+                    'estimated_tokens': analysis.estimated_tokens,
+                    'requires_accuracy': analysis.requires_accuracy,
+                    'requires_creativity': analysis.requires_creativity,
+                    'confidence': analysis.confidence
+                }
+                logger.info(f"Анализ завершен: тип={analysis.task_type}, сложность={analysis.complexity}, уверенность={analysis.confidence:.2f}")
+            except Exception as e:
+                logger.error(f"Ошибка анализа через IntelligentRouter: {e}")
+                execution_result['errors'].append(f"IntelligentRouter error: {e}")
+                # Продолжаем с базовым анализом
+                execution_result['analysis'] = {
+                    'task_type': 'unknown',
+                    'fallback': True,
+                    'error': str(e)
+                }
+
+            # Шаг 2: Выбор стратегии через AdaptiveStrategyManager
+            logger.info("Выбор стратегии через AdaptiveStrategyManager...")
+            try:
+                # Создаем более полный запрос для стратегии
+                strategy_request = GenerationRequest(
+                    prompt=todo_item.text,
+                    use_parallel=False,  # Начинаем с последовательного выполнения
+                    use_fastest=False
+                )
+
+                # Используем adaptive стратегию
+                strategy_response = await self.llm_manager.adaptive_strategy_manager.generate_adaptive(strategy_request)
+                execution_result['intelligent_components_used'].append('AdaptiveStrategyManager')
+                execution_result['strategy'] = {
+                    'strategy_used': 'adaptive',
+                    'model_used': strategy_response.model_name,
+                    'response_time': strategy_response.response_time,
+                    'success': strategy_response.success
+                }
+                logger.info(f"Стратегия выбрана: {strategy_response.model_name}, время={strategy_response.response_time:.2f}s")
+
+                # Сохраняем результат выполнения как основной результат задачи
+                task_result = strategy_response.content
+
+            except Exception as e:
+                logger.error(f"Ошибка выбора стратегии через AdaptiveStrategyManager: {e}")
+                execution_result['errors'].append(f"AdaptiveStrategyManager error: {e}")
+                # Fallback на простой LLM вызов
+                try:
+                    simple_request = GenerationRequest(
+                        prompt=f"Выполни следующую задачу: {todo_item.text}\n\nПредоставь подробный и качественный результат.",
+                        use_fastest=True
+                    )
+                    fallback_response = await self.llm_manager.generate_response(simple_request)
+                    task_result = fallback_response.content
+                    execution_result['strategy'] = {
+                        'strategy_used': 'fallback_simple',
+                        'model_used': fallback_response.model_name,
+                        'response_time': fallback_response.response_time,
+                        'success': fallback_response.success
+                    }
+                    logger.info("Использован fallback на простой LLM вызов")
+                except Exception as e2:
+                    logger.error(f"Ошибка и fallback LLM вызова: {e2}")
+                    execution_result['errors'].append(f"Fallback LLM error: {e2}")
+                    # Полный fallback на Cursor
+                    return await self._execute_task_via_cursor_fallback(todo_item)
+
+            execution_result['execution'] = {
+                'result_length': len(task_result) if task_result else 0,
+                'has_content': bool(task_result and task_result.strip())
+            }
+
+            # Шаг 3: Оценка результата через IntelligentEvaluator
+            logger.info("Оценка результата через IntelligentEvaluator...")
+            try:
+                evaluation = await self.llm_manager.intelligent_evaluator.evaluate_intelligent(
+                    prompt=todo_item.text,
+                    response=task_result,
+                    client_manager=self.llm_manager.client_manager,
+                    task_type=execution_result['analysis'].get('task_type', 'unknown')
+                )
+                execution_result['intelligent_components_used'].append('IntelligentEvaluator')
+                execution_result['evaluation'] = {
+                    'overall_score': evaluation.overall_score,
+                    'quality_score': evaluation.quality_score,
+                    'relevance_score': evaluation.relevance_score,
+                    'completeness_score': evaluation.completeness_score,
+                    'efficiency_score': evaluation.efficiency_score,
+                    'reasoning': evaluation.reasoning
+                }
+                logger.info(f"Оценка завершена: общий балл={evaluation.overall_score:.2f}")
+
+                # Проверяем порог качества
+                quality_threshold = 0.6  # Можно вынести в конфиг
+                if evaluation.overall_score < quality_threshold:
+                    logger.warning(f"Качество результата ниже порога ({evaluation.overall_score:.2f} < {quality_threshold})")
+                    execution_result['quality_below_threshold'] = True
+                else:
+                    execution_result['quality_acceptable'] = True
+
+            except Exception as e:
+                logger.error(f"Ошибка оценки через IntelligentEvaluator: {e}")
+                execution_result['errors'].append(f"IntelligentEvaluator error: {e}")
+                # Задаем базовую оценку
+                execution_result['evaluation'] = {
+                    'overall_score': 0.5,  # Нейтральная оценка
+                    'fallback': True,
+                    'error': str(e)
+                }
+
+            # Шаг 4: Обучение через ErrorLearningSystem (если есть ошибки или низкое качество)
+            if execution_result.get('quality_below_threshold') or execution_result['errors']:
+                logger.info("Обучение через ErrorLearningSystem...")
+                try:
+                    # Готовим данные для обучения
+                    error_data = {
+                        'task_description': todo_item.text,
+                        'task_type': execution_result['analysis'].get('task_type', 'unknown'),
+                        'execution_result': task_result,
+                        'evaluation_score': execution_result['evaluation'].get('overall_score', 0.0),
+                        'errors': execution_result['errors'],
+                        'quality_below_threshold': execution_result.get('quality_below_threshold', False)
+                    }
+
+                    # Обучаемся на ошибке
+                    await self.llm_manager.error_learning_system.learn_from_error(error_data)
+                    execution_result['intelligent_components_used'].append('ErrorLearningSystem')
+                    execution_result['learning'] = {
+                        'performed': True,
+                        'error_data_processed': True
+                    }
+                    logger.info("Обучение на ошибке выполнено")
+                except Exception as e:
+                    logger.error(f"Ошибка обучения через ErrorLearningSystem: {e}")
+                    execution_result['errors'].append(f"ErrorLearningSystem error: {e}")
+                    execution_result['learning'] = {
+                        'performed': False,
+                        'error': str(e)
+                    }
+
+            # Сохраняем результат в файл
+            success = await self._save_task_result_to_file(todo_item, task_result, execution_result)
+
+            # Логируем использование интеллектуальных компонентов
+            components_used = execution_result.get('intelligent_components_used', [])
+            logger.info(f"Использовано интеллектуальных компонентов: {len(components_used)} - {', '.join(components_used)}")
+
+            return success, execution_result
+
+        except Exception as e:
+            logger.error(f"Критическая ошибка в интеллектуальном выполнении задачи: {e}")
+            execution_result['errors'].append(f"Critical error: {e}")
+
+            # Fallback на Cursor при критических ошибках
+            logger.info("Переход на fallback выполнение через Cursor")
+            return await self._execute_task_via_cursor_fallback(todo_item)
+
+    async def _execute_task_via_cursor_fallback(self, todo_item: 'TodoItem') -> tuple[bool, Dict[str, Any]]:
+        """
+        Fallback выполнение задачи через Cursor интерфейс
+
+        Args:
+            todo_item: Задача для выполнения
+
+        Returns:
+            Кортеж (success, execution_result)
+        """
+        logger.warning(f"Использование fallback выполнения через Cursor для задачи: {todo_item.text[:100]}...")
+
+        execution_result = {
+            'fallback_used': True,
+            'fallback_reason': 'LLM system unavailable or failed',
+            'execution_method': 'cursor_fallback'
+        }
+
+        try:
+            # Импортируем и используем cursor интерфейс как fallback
+            # Это упрощенная версия - в реальности нужно интегрировать с существующей логикой
+            success = False  # Placeholder - нужно реализовать реальный fallback
+
+            # TODO: Реализовать полный fallback на Cursor интерфейс
+            logger.warning("Fallback на Cursor не полностью реализован - возвращаем неудачу")
+
+            return success, execution_result
+
+        except Exception as e:
+            logger.error(f"Ошибка fallback выполнения: {e}")
+            execution_result['fallback_error'] = str(e)
+            return False, execution_result
+
+    async def _save_task_result_to_file(self, todo_item: 'TodoItem', result: str, execution_result: Dict[str, Any]) -> bool:
+        """
+        Сохранить результат выполнения задачи в файл
+
+        Args:
+            todo_item: Задача
+            result: Результат выполнения
+            execution_result: Детали выполнения
+
+        Returns:
+            True если сохранение успешно
+        """
+        try:
+            import time
+            task_id = f"task_{int(time.time())}"
+
+            # Создаем директорию для результатов если не существует
+            results_dir = self.project_dir / "docs" / "results"
+            results_dir.mkdir(parents=True, exist_ok=True)
+
+            # Сохраняем основной результат
+            result_file = results_dir / f"intelligent_result_{task_id}.md"
+            with open(result_file, 'w', encoding='utf-8') as f:
+                f.write(f"# Результат выполнения задачи\n\n")
+                f.write(f"**Задача:** {todo_item.text}\n\n")
+                f.write(f"**ID задачи:** {task_id}\n\n")
+                f.write(f"**Метод выполнения:** Интеллектуальная LLM система\n\n")
+
+                if execution_result.get('intelligent_components_used'):
+                    f.write(f"**Использованные компоненты:** {', '.join(execution_result['intelligent_components_used'])}\n\n")
+
+                f.write("## Результат\n\n")
+                f.write(result)
+                f.write("\n\n")
+
+                # Добавляем информацию об оценке если есть
+                if 'evaluation' in execution_result:
+                    eval_data = execution_result['evaluation']
+                    f.write("## Оценка качества\n\n")
+                    if 'overall_score' in eval_data:
+                        f.write(f"**Общий балл:** {eval_data['overall_score']:.2f}\n\n")
+                    if eval_data.get('reasoning'):
+                        f.write(f"**Обоснование:** {eval_data['reasoning']}\n\n")
+
+                # Добавляем информацию об ошибках если есть
+                if execution_result.get('errors'):
+                    f.write("## Ошибки выполнения\n\n")
+                    for error in execution_result['errors']:
+                        f.write(f"- {error}\n")
+                    f.write("\n")
+
+            logger.info(f"Результат сохранен в файл: {result_file}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Ошибка сохранения результата в файл: {e}")
+            return False
 
     async def execute_full_iteration(
         self,
