@@ -131,23 +131,6 @@ smart_experience/*.log
 custom_experience/
 shared_experience/
 
-# Test results and reports (generated)
-docs/results/*.md
-!docs/results/last_result.md
-docs/results/*.json
-docs/results/ab_testing_*.md
-docs/results/ab_testing_*.json
-docs/results/baseline_analysis_*.json
-docs/results/corrections_after_*_review_*.md
-docs/results/current_plan_task_*.md
-docs/results/final_report_after_*_corrections_*.md
-docs/results/llm_baseline_metrics_*.md
-docs/results/new_plan_after_*_corrections_*.md
-docs/results/plan_result_task_*.md
-
-# Reviews directory (generated)
-docs/reviews/*.md
-
 # Benchmark and testing scripts (if they generate output)
 scripts/benchmark_output/
 scripts/test_output/
@@ -233,18 +216,6 @@ test/**/*.log
 # Temporary test experience directories
 test_*_experience/
 test_*_experience_*/
-
-# Test results in docs
-docs/results/test_*.md
-docs/results/test_full_task_*.md
-docs/results/test_full_task_1769119092.md
-docs/results/*_test_*.md
-docs/results/*_results*.md
-docs/results/free_instruction_*.md
-
-# Revision reports (generated)
-docs/results/revision_*_revision_*.md
-docs/results/*_revision_*.md
 
 # Benchmark outputs
 benchmark_results/
@@ -345,3 +316,22 @@ temp/*.jpeg
 
 # Process files
 nul
+
+# ===================================
+# Additional project-specific ignores
+# ===================================
+# Temporary optimization reports
+revision_optimize_*.md
+*_optimize_*.md
+
+# Combined documentation artifacts
+*_combined_*.md
+*_merged_*.md
+
+# Optimization working files
+optimize_temp/
+revision_temp/
+
+# ===================================
+# End of additional ignores
+# ===================================

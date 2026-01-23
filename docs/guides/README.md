@@ -10,6 +10,7 @@
 - **[API_KEYS_SETUP.md](API_KEYS_SETUP.md)** - Настройка API ключей
 - **[GIT_AUTHENTICATION_SETUP.md](GIT_AUTHENTICATION_SETUP.md)** - Настройка Git аутентификации
 - **[SMART_AGENT_CONFIGURATION.md](SMART_AGENT_CONFIGURATION.md)** - Конфигурация Smart Agent
+- **[smart_agent_tools.md](smart_agent_tools.md)** - Инструменты Smart Agent
 
 ## 🔧 Интеграции
 
