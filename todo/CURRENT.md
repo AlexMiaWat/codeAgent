@@ -54,7 +54,7 @@
   - Создать `llm_utils.py` с advanced error handling и retry logic
 
 ### Расширяемость через MCP и плагины
-- [ ] **Интеграция enterprise-grade MCP серверов** - см. docs/planning/task_3_20260122_224954.md
+- [ ] **Интеграция enterprise-grade MCP серверов** - см. docs/planning/task_3_20260123_083422.md
   - Реализовать GitHub MCP с webhook интеграцией для real-time синхронизации
   - Добавить PostgreSQL MCP с connection pooling и migrations
   - Интегрировать Docker MCP с security scanning и vulnerability assessment
