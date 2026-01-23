@@ -13,6 +13,7 @@
 import sys
 import subprocess
 import time
+import os
 from pathlib import Path
 
 # Устанавливаем UTF-8 кодировку для вывода
@@ -37,7 +38,10 @@ def run_test(test_file: str, description: str, timeout: int = 300) -> tuple[bool
         return False, f"Файл теста не найден: {test_path}"
     
     try:
-        # Запускаем тест
+        # Запускаем тест с правильным PYTHONPATH
+        env = os.environ.copy()
+        env['PYTHONPATH'] = str(project_root / 'src') + os.pathsep + env.get('PYTHONPATH', '')
+
         result = subprocess.run(
             [sys.executable, str(test_path)],
             cwd=str(project_root),
@@ -45,7 +49,8 @@ def run_test(test_file: str, description: str, timeout: int = 300) -> tuple[bool
             text=True,
             timeout=timeout,
             encoding='utf-8',
-            errors='replace'
+            errors='replace',
+            env=env
         )
         
         # Выводим результат

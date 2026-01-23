@@ -3704,7 +3704,7 @@ class CodeAgentServer:
 
     def run_iteration(self, iteration: int = 1):
         """
-        Выполнение одной итерации цикла с интегрированной логикой ServerCore
+        Выполнение одной итерации цикла с делегированием полного контроля ServerCore
 
         Args:
             iteration: Номер итерации
@@ -3714,60 +3714,34 @@ class CodeAgentServer:
         """
         logger.info(f"Начало итерации {iteration}")
 
-        # Проверяем запрос на остановку перед началом итерации
-        with self._stop_lock:
-            if self._should_stop:
-                logger.warning("Получен запрос на остановку перед началом итерации")
-                return False
+        # Создаем callbacks для проверки остановки и перезапуска
+        def should_stop():
+            with self._stop_lock:
+                return self._should_stop
 
-        # Проверяем необходимость перезапуска перед итерацией
-        if self._check_reload_needed():
-            logger.warning("Обнаружено изменение кода перед началом итерации")
-            raise ServerReloadException("Перезапуск из-за изменения кода перед началом итерации")
+        def should_reload():
+            return self._check_reload_needed()
 
         try:
-            # Используем ServerCore для выполнения итерации
-            has_more_tasks, pending_tasks = self.server_core.execute_iteration(iteration)
+            # Делегируем полный контроль выполнения итерации ServerCore
+            has_more_tasks, executed_tasks = self.server_core.execute_full_iteration(
+                iteration=iteration,
+                should_stop_callback=should_stop,
+                should_reload_callback=should_reload,
+                reload_exception_class=ServerReloadException
+            )
 
-            # Если есть задачи для выполнения, выполняем их с контролем остановки
-            if pending_tasks:
-                # Выполняем задачи с контролем остановки и перезапуска
-                total_tasks = len(pending_tasks)
-                for idx, todo_item in enumerate(pending_tasks, start=1):
-                    # Проверяем запрос на остановку перед каждой задачей
-                    with self._stop_lock:
-                        if self._should_stop:
-                            logger.warning(f"Получен запрос на остановку перед выполнением задачи {idx}/{total_tasks}")
-                            break
-
-                    # Проверяем необходимость перезапуска перед задачей
-                    if self._check_reload_needed():
-                        logger.warning(f"Обнаружено изменение кода перед выполнением задачи {idx}/{total_tasks}")
-                        raise ServerReloadException("Перезапуск из-за изменения кода перед выполнением задачи")
-
-                    # Выполняем задачу через ServerCore
-                    success = self.server_core.execute_single_task(todo_item, task_number=idx, total_tasks=total_tasks)
-
-                    # Проверяем запрос на остановку после выполнения задачи
-                    with self._stop_lock:
-                        if self._should_stop:
-                            logger.warning(f"Получен запрос на остановку после выполнения задачи {idx}/{total_tasks}")
-                            break
-
-                    # Если задача завершилась из-за критической ошибки Cursor, проверяем флаг остановки
-                    if not success:
-                        with self._stop_lock:
-                            if self._should_stop:
-                                logger.warning("Задача завершилась из-за критической ошибки Cursor - прерывание итерации")
-                                break
-
-                    # Проверяем необходимость перезапуска после задачи
-                    if self._check_reload_needed():
-                        logger.warning(f"Обначен код после выполнения задачи {idx}/{total_tasks}")
-                        raise ServerReloadException("Перезапуск из-за изменения кода после выполнения задачи")
+            # Логируем результаты выполнения задач
+            if executed_tasks:
+                successful_count = sum(1 for _, success in executed_tasks if success)
+                total_count = len(executed_tasks)
+                logger.info(f"Итерация {iteration} завершена: {successful_count}/{total_count} задач выполнено успешно")
 
             return has_more_tasks
 
+        except ServerReloadException:
+            # Перебрасываем исключение перезапуска дальше
+            raise
         except Exception as e:
             logger.error(f"Ошибка выполнения итерации {iteration}: {e}", exc_info=True)
             return False

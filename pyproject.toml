@@ -110,7 +110,8 @@ testpaths = ["test"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-addopts = "-v --strict-markers --tb=short"
+addopts = "-v --strict-markers --tb=short --timeout=300 --timeout-method=thread"
+timeout = 300
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",

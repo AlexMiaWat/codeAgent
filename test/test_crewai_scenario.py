@@ -271,7 +271,10 @@ async def main():
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        asyncio.run(asyncio.wait_for(main(), timeout=300))  # 5 минут таймаут
+    except asyncio.TimeoutError:
+        print("\n[ERROR] Тестирование превысило таймаут (5 минут)")
+        sys.exit(1)
     except KeyboardInterrupt:
         print("\n[INFO] Тестирование прервано пользователем")
     except Exception as e:

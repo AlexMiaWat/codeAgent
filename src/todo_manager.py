@@ -10,6 +10,7 @@ import logging
 import os
 
 from .core.interfaces import ITodoManager
+from .core.types import TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 class TodoItem:
     """Элемент todo-листа"""
     
-    def __init__(self, text: str, level: int = 0, done: bool = False, parent: Optional['TodoItem'] = None, comment: Optional[str] = None, category: Optional[str] = None, id: Optional[str] = None):
+    def __init__(self, text: str, level: int = 0, done: bool = False, parent: Optional['TodoItem'] = None, comment: Optional[str] = None, category: Optional[str] = None, id: Optional[str] = None, task_type: Optional[TaskType] = None):
         """
         Инициализация элемента todo
 
@@ -29,6 +30,7 @@ class TodoItem:
             comment: Комментарий к задаче (например, причина пропуска или краткое описание выполнения)
             category: Категория задачи
             id: Уникальный идентификатор задачи
+            task_type: Тип задачи (опционально, будет определен автоматически если не указан)
         """
         self.text = text.strip()
         self.level = level
@@ -38,11 +40,32 @@ class TodoItem:
         self.comment = comment
         self.category = category
         self.id = id
-    
+        self.task_type = task_type or TaskType.auto_detect(text)
+
+    @property
+    def effective_task_type(self) -> Optional[TaskType]:
+        """
+        Get the effective task type, using auto-detection if not explicitly set.
+
+        Returns:
+            TaskType for this todo item
+        """
+        return self.task_type or TaskType.auto_detect(self.text)
+
+    def set_task_type(self, task_type: Optional[TaskType]) -> None:
+        """
+        Explicitly set the task type for this todo item.
+
+        Args:
+            task_type: TaskType to set, or None to enable auto-detection
+        """
+        self.task_type = task_type
+
     def __repr__(self) -> str:
         status = "✓" if self.done else "○"
         indent = "  " * self.level
-        return f"{indent}{status} {self.text}"
+        task_type_str = f"[{self.effective_task_type.value}]" if self.effective_task_type else ""
+        return f"{indent}{status} {task_type_str} {self.text}"
 
 
 class TodoManager(ITodoManager):
@@ -641,6 +664,155 @@ class TodoManager(ITodoManager):
             'todo_format': self.todo_format,
             'items_count': len(getattr(self, 'items', [])),
             'pending_count': len(self.get_pending_tasks()),
+        }
+
+    def get_tasks_by_type(self, task_type: TaskType) -> List[TodoItem]:
+        """
+        Get all tasks of a specific type.
+
+        Args:
+            task_type: TaskType to filter by
+
+        Returns:
+            List of TodoItem instances of the specified type
+        """
+        all_tasks = self.get_all_tasks()
+        return [task for task in all_tasks if task.effective_task_type == task_type]
+
+    def get_task_type_statistics(self) -> Dict[str, Any]:
+        """
+        Get statistics about task types distribution.
+
+        Returns:
+            Dictionary containing statistics about task types (counts, percentages, etc.)
+        """
+        all_tasks = self.get_all_tasks()
+        total_tasks = len(all_tasks)
+
+        if total_tasks == 0:
+            return {
+                'total_tasks': 0,
+                'types': {},
+                'untyped_tasks': 0,
+                'untyped_percentage': 0.0
+            }
+
+        type_counts = {}
+        untyped_count = 0
+
+        for task in all_tasks:
+            task_type = task.effective_task_type
+            if task_type:
+                type_key = task_type.value
+                type_counts[type_key] = type_counts.get(type_key, 0) + 1
+            else:
+                untyped_count += 1
+
+        # Calculate percentages
+        type_stats = {}
+        for type_name, count in type_counts.items():
+            type_stats[type_name] = {
+                'count': count,
+                'percentage': round((count / total_tasks) * 100, 2)
+            }
+
+        return {
+            'total_tasks': total_tasks,
+            'types': type_stats,
+            'untyped_tasks': untyped_count,
+            'untyped_percentage': round((untyped_count / total_tasks) * 100, 2)
+        }
+
+    def update_task_type(self, task_id: str, task_type: Optional[TaskType]) -> bool:
+        """
+        Update the task type for a specific task.
+
+        Args:
+            task_id: Unique task identifier
+            task_type: New TaskType to assign, or None for auto-detection
+
+        Returns:
+            True if update was successful, False otherwise
+        """
+        try:
+            all_tasks = self.get_all_tasks()
+            for task in all_tasks:
+                if task.id == task_id:
+                    task.set_task_type(task_type)
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"Failed to update task type for task {task_id}: {e}")
+            return False
+
+    def validate_task_types(self) -> Dict[str, Any]:
+        """
+        Validate that all tasks have appropriate types assigned.
+
+        Returns:
+            Dictionary containing validation results, including any tasks
+            that may need type assignment or correction
+        """
+        all_tasks = self.get_all_tasks()
+        total_tasks = len(all_tasks)
+
+        if total_tasks == 0:
+            return {
+                'valid': True,
+                'total_tasks': 0,
+                'typed_tasks': 0,
+                'untyped_tasks': 0,
+                'issues': []
+            }
+
+        typed_tasks = 0
+        untyped_tasks = []
+        type_distribution = {}
+
+        for task in all_tasks:
+            effective_type = task.effective_task_type
+            if effective_type:
+                typed_tasks += 1
+                type_key = effective_type.value
+                type_distribution[type_key] = type_distribution.get(type_key, 0) + 1
+            else:
+                untyped_tasks.append({
+                    'id': task.id,
+                    'text': task.text,
+                    'level': task.level
+                })
+
+        # Check for potential issues
+        issues = []
+
+        # Tasks without types
+        if untyped_tasks:
+            issues.append({
+                'type': 'untyped_tasks',
+                'severity': 'warning',
+                'message': f'{len(untyped_tasks)} tasks have no type assigned',
+                'tasks': untyped_tasks[:10]  # Limit to first 10 for brevity
+            })
+
+        # Check type distribution balance
+        if typed_tasks > 0:
+            expected_types = {t.value for t in TaskType.get_all_types()}
+            missing_types = expected_types - set(type_distribution.keys())
+            if missing_types:
+                issues.append({
+                    'type': 'missing_types',
+                    'severity': 'info',
+                    'message': f'No tasks found for types: {", ".join(missing_types)}',
+                    'missing_types': list(missing_types)
+                })
+
+        return {
+            'valid': len(issues) == 0,
+            'total_tasks': total_tasks,
+            'typed_tasks': typed_tasks,
+            'untyped_tasks': len(untyped_tasks),
+            'type_distribution': type_distribution,
+            'issues': issues
         }
 
     def dispose(self) -> None:

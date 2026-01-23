@@ -198,6 +198,37 @@ def mock_todo_manager():
         {"id": 1, "title": "Task 1", "status": "pending"},
         {"id": 2, "title": "Task 2", "status": "pending"},
     ]
+    mock.get_pending_tasks.return_value = []
+    mock.load_todos.return_value = None
+    return mock
+
+
+@pytest.fixture
+def mock_checkpoint_manager():
+    """Return a mock Checkpoint Manager."""
+    mock = MagicMock()
+    mock.increment_iteration.return_value = None
+    mock.get_completed_tasks.return_value = []
+    mock.save_checkpoint.return_value = True
+    mock.load_checkpoint.return_value = {}
+    return mock
+
+
+@pytest.fixture
+def mock_crewai_agent():
+    """Return a mock CrewAI Agent."""
+    mock = MagicMock()
+    mock.execute.return_value = "Task executed successfully"
+    mock.name = "TestAgent"
+    mock.role = "Test Role"
+    return mock
+
+
+@pytest.fixture
+def mock_crewai_llm():
+    """Return a mock CrewAI LLM."""
+    mock = MagicMock()
+    mock.generate.return_value = "Generated response"
     return mock
 
 

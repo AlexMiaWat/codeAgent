@@ -188,6 +188,123 @@ git:
     remote: origin
 ```
 
+### Quality Gates - Контроль качества
+
+```yaml
+quality_gates:
+  enabled: true                    # Включить систему quality gates
+  strict_mode: false              # Строгий режим (блокировать выполнение при неудаче)
+
+  gates:
+    # Проверка покрытия кода тестами
+    coverage:
+      enabled: true
+      min_coverage: 80            # Минимальное покрытие в процентах
+      required_for: ["production", "release"]  # Обязательно для сред
+
+    # Проверка цикломатической сложности
+    complexity:
+      enabled: true
+      max_complexity: 10          # Максимальная сложность функции
+      exclude_patterns: ["test_*", "*_test.py"]  # Исключаемые файлы
+
+    # Проверка безопасности кода
+    security:
+      enabled: true
+      scan_dependencies: true     # Сканировать зависимости
+      severity_threshold: "medium"  # Минимальная severity для блокировки
+
+    # Проверка стиля кода
+    style:
+      enabled: true
+      tools: ["ruff", "mypy", "bandit"]  # Используемые инструменты
+      fail_on_warnings: false     # Блокировка на warnings
+
+    # Проверка типов задач проекта
+    task_type:
+      enabled: true
+      max_untyped_percentage: 0.3   # Макс. 30% задач без типа
+      min_typed_percentage: 0.7     # Мин. 70% задач с типами
+      check_distribution: true      # Проверять сбалансированность типов
+
+# Примеры конфигураций quality gates:
+
+# Минимальная конфигурация (только базовые проверки)
+quality_gates:
+  enabled: true
+  gates:
+    coverage:
+      enabled: true
+      min_coverage: 70
+    task_type:
+      enabled: true
+
+# Строгая конфигурация для production
+quality_gates:
+  enabled: true
+  strict_mode: true
+  gates:
+    coverage:
+      enabled: true
+      min_coverage: 90
+      required_for: ["production", "staging"]
+    complexity:
+      enabled: true
+      max_complexity: 8
+    security:
+      enabled: true
+      severity_threshold: "low"
+    style:
+      enabled: true
+      fail_on_warnings: true
+    task_type:
+      enabled: true
+      max_untyped_percentage: 0.1
+      min_typed_percentage: 0.9
+
+# Отключенная система quality gates
+quality_gates:
+  enabled: false
+```
+
+**Параметры Quality Gates:**
+
+| Параметр | Тип | Описание | По умолчанию |
+|----------|-----|----------|--------------|
+| `enabled` | bool | Включить систему quality gates | `true` |
+| `strict_mode` | bool | Блокировать выполнение при невыполнении критериев | `false` |
+
+**Проверки Coverage:**
+| Параметр | Тип | Описание |
+|----------|-----|----------|
+| `min_coverage` | int | Минимальное покрытие кода тестами (0-100%) |
+| `required_for` | list | Среды, где проверка обязательна |
+
+**Проверки Complexity:**
+| Параметр | Тип | Описание |
+|----------|-----|----------|
+| `max_complexity` | int | Максимальная цикломатическая сложность |
+| `exclude_patterns` | list | Шаблоны файлов для исключения |
+
+**Проверки Security:**
+| Параметр | Тип | Описание |
+|----------|-----|----------|
+| `scan_dependencies` | bool | Сканировать зависимости на уязвимости |
+| `severity_threshold` | str | Минимальный уровень severity (`low`, `medium`, `high`) |
+
+**Проверки Style:**
+| Параметр | Тип | Описание |
+|----------|-----|----------|
+| `tools` | list | Инструменты проверки стиля (`ruff`, `mypy`, `bandit`) |
+| `fail_on_warnings` | bool | Блокировка на warnings |
+
+**Проверки Task Type:**
+| Параметр | Тип | Описание |
+|----------|-----|----------|
+| `max_untyped_percentage` | float | Максимальный процент задач без типа (0.0-1.0) |
+| `min_typed_percentage` | float | Минимальный процент задач с типами (0.0-1.0) |
+| `check_distribution` | bool | Проверять сбалансированность распределения типов |
+
 ## 2. agents.yaml - Определения агентов
 
 ### Базовый агент исполнителя

@@ -205,7 +205,7 @@ requests>=2.28.0
             assert response.success
             assert "Response from" in response.content
 
-        asyncio.run(test_parallel())
+        asyncio.run(asyncio.wait_for(test_parallel(), timeout=60))
 
     @patch('src.llm.llm_manager.AsyncOpenAI')
     def test_parallel_fallback_when_one_model_fails(self, mock_openai_class):
@@ -278,7 +278,7 @@ requests>=2.28.0
             assert response.success
             assert "Response from model2 (fallback)" in response.content
 
-        asyncio.run(test_parallel_fallback())
+        asyncio.run(asyncio.wait_for(test_parallel_fallback(), timeout=60))
 
     def test_smart_agent_with_real_tools_only(self):
         """Тест Smart Agent в режиме только инструментов (без LLM)"""

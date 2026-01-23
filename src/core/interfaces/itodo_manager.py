@@ -11,6 +11,7 @@ from pathlib import Path
 
 if TYPE_CHECKING:
     from ...todo_manager import TodoItem
+    from ..types import TaskType
 
 
 class ITodoManager(ABC):
@@ -85,5 +86,53 @@ class ITodoManager(ABC):
 
         Returns:
             True if saving was successful, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def get_tasks_by_type(self, task_type: 'TaskType') -> List['TodoItem']:
+        """
+        Get all tasks of a specific type.
+
+        Args:
+            task_type: TaskType to filter by
+
+        Returns:
+            List of TodoItem instances of the specified type
+        """
+        pass
+
+    @abstractmethod
+    def get_task_type_statistics(self) -> Dict[str, Any]:
+        """
+        Get statistics about task types distribution.
+
+        Returns:
+            Dictionary containing statistics about task types (counts, percentages, etc.)
+        """
+        pass
+
+    @abstractmethod
+    def update_task_type(self, task_id: str, task_type: Optional['TaskType']) -> bool:
+        """
+        Update the task type for a specific task.
+
+        Args:
+            task_id: Unique task identifier
+            task_type: New TaskType to assign, or None for auto-detection
+
+        Returns:
+            True if update was successful, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def validate_task_types(self) -> Dict[str, Any]:
+        """
+        Validate that all tasks have appropriate types assigned.
+
+        Returns:
+            Dictionary containing validation results, including any tasks
+            that may need type assignment or correction
         """
         pass

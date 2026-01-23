@@ -9,7 +9,7 @@ from datetime import datetime
 
 from .interfaces import IQualityGateManager
 from .models.quality_result import QualityGateResult, QualityResult, QualityCheckType, QualityStatus
-from .checkers import CoverageChecker, ComplexityChecker, SecurityChecker, StyleChecker
+from .checkers import CoverageChecker, ComplexityChecker, SecurityChecker, StyleChecker, TaskTypeChecker
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,8 @@ class QualityGateManager(IQualityGateManager):
             QualityCheckType.COVERAGE: CoverageChecker(),
             QualityCheckType.COMPLEXITY: ComplexityChecker(),
             QualityCheckType.SECURITY: SecurityChecker(),
-            QualityCheckType.STYLE: StyleChecker()
+            QualityCheckType.STYLE: StyleChecker(),
+            QualityCheckType.TASK_TYPE: TaskTypeChecker()
         }
 
         # Настройка по умолчанию
@@ -66,6 +67,12 @@ class QualityGateManager(IQualityGateManager):
                 'style': {
                     'enabled': True,
                     'tools': ['ruff', 'mypy', 'bandit']
+                },
+                'task_type': {
+                    'enabled': True,
+                    'max_untyped_percentage': 0.3,
+                    'min_typed_percentage': 0.7,
+                    'check_distribution': True
                 }
             }
         }
@@ -155,6 +162,56 @@ class QualityGateManager(IQualityGateManager):
 
         gate_result.execution_time = (datetime.now() - start_time).total_seconds()
         logger.info(f"All quality gates completed in {gate_result.execution_time:.2f}s")
+
+        return gate_result
+
+    async def run_specific_gates(
+        self,
+        gate_types: List[QualityCheckType],
+        context: Optional[Dict[str, Any]] = None
+    ) -> QualityGateResult:
+        """
+        Запуск только указанных quality gates
+
+        Args:
+            gate_types: Список типов gates для запуска
+            context: Контекст для чекеров
+
+        Returns:
+            Результат выполнения quality gates
+        """
+        start_time = datetime.now()
+        gate_result = QualityGateResult()
+
+        logger.debug(f"Running specific quality gates: {[gt.value for gt in gate_types]}")
+
+        # Создаем задачи только для указанных типов
+        tasks = []
+        for gate_type in gate_types:
+            if gate_type in self._checkers and self._enabled_gates.get(gate_type, False):
+                checker = self._checkers[gate_type]
+                task = asyncio.create_task(self._run_single_checker(checker, context))
+                tasks.append((gate_type, task))
+
+        # Выполняем задачи параллельно
+        if tasks:
+            for gate_type, task in tasks:
+                try:
+                    result = await task
+                    gate_result.add_result(result)
+                    logger.debug(f"Gate {gate_type.value} completed with status: {result.status.value}")
+                except Exception as e:
+                    error_result = QualityResult(
+                        check_type=gate_type,
+                        status=QualityStatus.ERROR,
+                        message=f"Failed to run {gate_type.value} checker: {str(e)}",
+                        execution_time=0.0
+                    )
+                    gate_result.add_result(error_result)
+                    logger.error(f"Error running gate {gate_type.value}: {e}")
+
+        gate_result.execution_time = (datetime.now() - start_time).total_seconds()
+        logger.debug(f"Specific quality gates completed in {gate_result.execution_time:.2f}s")
 
         return gate_result
 

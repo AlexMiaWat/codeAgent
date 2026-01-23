@@ -17,11 +17,13 @@ import time
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Callable, Protocol
 from datetime import datetime
+from collections import defaultdict
 
 from ..core.interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger
 from ..todo_manager import TodoItem
 from ..quality import QualityGateManager
-from ..quality.models.quality_result import QualityGateResult
+from ..quality.models.quality_result import QualityGateResult, QualityCheckType
+from ..core.types import TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -141,12 +143,15 @@ class ServerCore:
         self.revision_executor = revision_executor
         self.todo_generator = todo_generator
         self.config = config
-        self.quality_gate_manager = quality_gate_manager or QualityGateManager()
+        self.quality_gate_manager = quality_gate_manager or QualityGateManager(self.config.get('quality_gates', {}))
         self.auto_todo_enabled = auto_todo_enabled
         self.task_delay = task_delay
 
         # Состояние ревизии для текущей сессии
         self._revision_done = False
+
+        # Настройки стратегии выполнения по типам задач
+        self._execution_strategies = self._init_execution_strategies()
 
     def execute_iteration(self, iteration: int) -> tuple[bool, list]:
         """
@@ -173,6 +178,9 @@ class ServerCore:
 
         # Дополнительная фильтрация: исключаем задачи, которые уже выполнены в checkpoint
         pending_tasks = self._filter_completed_tasks(pending_tasks)
+
+        # Приоритизация задач по типам
+        pending_tasks = self._prioritize_tasks(pending_tasks)
 
         # Обрабатываем сценарий отсутствия задач
         if not pending_tasks:
@@ -204,60 +212,80 @@ class ServerCore:
         """
         self.status_manager.add_separator()
 
-        # Проверка Quality Gates перед выполнением задачи
-        if self.quality_gate_manager and self._is_quality_gates_enabled():
+        # Валидация типа задачи перед выполнением
+        if not self._validate_task_type(todo_item):
+            logger.warning(f"Пропускаем выполнение задачи без определенного типа: {todo_item.text}")
+            return False
+
+        # Проверка Quality Gates перед выполнением задачи (с учетом типа задачи)
+        if self._should_apply_quality_gates(todo_item):
             try:
-                import asyncio
-                try:
-                    # Check if we're already in an event loop
-                    loop = asyncio.get_running_loop()
-                    # If we are, create a task instead
-                    gate_result = loop.create_task(self.quality_gate_manager.run_all_gates(context={
-                        'task_type': todo_item.category or 'default',
-                        'task_id': todo_item.id,
-                        'project_path': str(self.project_dir)
-                    }))
-                    # For simplicity, we'll run it synchronously in this context
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(asyncio.run, gate_result)
-                        gate_result = future.result()
-                except RuntimeError:
-                    # No running event loop, use asyncio.run
-                    gate_result = asyncio.run(self.quality_gate_manager.run_all_gates(context={
-                        'task_type': todo_item.category or 'default',
-                        'task_id': todo_item.id,
-                        'project_path': str(self.project_dir)
-                    }))
+                # Определяем, какие чекеры запускать для этой задачи
+                gates_to_run = self._get_quality_gates_for_task(todo_item)
 
-                logger.info(f"Quality gates check completed: {gate_result.overall_status.value}")
+                if gates_to_run:
+                    import asyncio
+                    try:
+                        # Check if we're already in an event loop
+                        loop = asyncio.get_running_loop()
+                        # If we are, create a task instead
+                        gate_result = loop.create_task(self.quality_gate_manager.run_specific_gates(
+                            gates_to_run,
+                            context={
+                                'task_type': todo_item.category or 'default',
+                                'task_id': todo_item.id,
+                                'project_path': str(self.project_dir),
+                                'todo_manager': self.todo_manager
+                            }
+                        ))
+                        # For simplicity, we'll run it synchronously in this context
+                        import concurrent.futures
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            future = executor.submit(asyncio.run, gate_result)
+                            gate_result = future.result()
+                    except RuntimeError:
+                        # No running event loop, use asyncio.run
+                        gate_result = asyncio.run(self.quality_gate_manager.run_specific_gates(
+                            gates_to_run,
+                            context={
+                                'task_type': todo_item.category or 'default',
+                                'task_id': todo_item.id,
+                                'project_path': str(self.project_dir),
+                                'todo_manager': self.todo_manager
+                            }
+                        ))
 
-                # Проверяем нужно ли блокировать выполнение
-                if self.quality_gate_manager.should_block_execution(gate_result):
-                    error_msg = f"Quality gates failed for task {todo_item.id}: {gate_result.overall_status.value}"
-                    logger.error(error_msg)
-                    raise QualityGateException(error_msg, gate_result)
+                    logger.info(f"Quality gates check completed for task {todo_item.id}: {gate_result.overall_status.value}")
+
+                    # Проверяем нужно ли блокировать выполнение
+                    if self.quality_gate_manager.should_block_execution(gate_result):
+                        error_msg = f"Quality gates failed for task {todo_item.id}: {gate_result.overall_status.value}"
+                        logger.error(error_msg)
+                        raise QualityGateException(error_msg, gate_result)
+                else:
+                    logger.debug(f"No quality gates to run for task {todo_item.id}")
 
             except QualityGateException:
                 raise  # Перебрасываем исключение дальше
             except Exception as e:
-                logger.error(f"Error during quality gates check: {e}")
+                logger.error(f"Error during quality gates check for task {todo_item.id}: {e}")
                 # В случае ошибки проверки качества - продолжаем выполнение (fail-open)
                 logger.warning("Continuing execution despite quality gates error (fail-open policy)")
 
         # Выполнение задачи
         success = self.task_executor(todo_item, task_number=task_number, total_tasks=total_tasks)
 
-        # Применяем задержку между задачами
+        # Применяем задержку между задачами (учитывая тип задачи)
         if success and task_number < total_tasks and self.task_delay > 0:
-            logger.debug(f"Задержка между задачами: {self.task_delay} сек")
-            time.sleep(self.task_delay)
+            task_delay = self._calculate_task_delay(todo_item)
+            logger.debug(f"Задержка между задачами: {task_delay} сек (тип: {todo_item.effective_task_type.display_name if todo_item.effective_task_type else 'неизвестный'})")
+            time.sleep(task_delay)
 
         return success
 
     async def execute_tasks_batch(self, pending_tasks: List[TodoItem], iteration: int) -> bool:
         """
-        Выполнить пакет задач в рамках одной итерации
+        Выполнить пакет задач в рамках одной итерации с учетом стратегий выполнения
 
         Args:
             pending_tasks: Список задач для выполнения
@@ -266,13 +294,37 @@ class ServerCore:
         Returns:
             True если итерация должна продолжаться
         """
-        total_tasks = len(pending_tasks)
+        # Группируем задачи по типам для выполнения по стратегиям
+        tasks_by_type = defaultdict(list)
+        for task in pending_tasks:
+            task_type = task.effective_task_type or TaskType.CODE  # По умолчанию CODE
+            tasks_by_type[task_type].append(task)
 
-        for idx, todo_item in enumerate(pending_tasks, start=1):
-            success = self.execute_single_task(todo_item, task_number=idx, total_tasks=total_tasks)
-            if not success:
-                logger.warning(f"Задача {idx}/{total_tasks} завершилась с ошибкой")
-                # Продолжаем выполнение следующих задач
+        # Выполняем задачи по типам с учетом batch_size
+        for task_type, tasks in tasks_by_type.items():
+            strategy = self._execution_strategies.get(task_type, self._execution_strategies[TaskType.CODE])
+            batch_size = strategy['batch_size']
+
+            logger.info(f"Выполнение задач типа {task_type.display_name} (batch_size={batch_size})")
+
+            # Выполняем задачи батчами
+            for i in range(0, len(tasks), batch_size):
+                batch = tasks[i:i + batch_size]
+                batch_start_idx = i + 1
+
+                for idx_in_batch, todo_item in enumerate(batch, start=1):
+                    global_idx = batch_start_idx + idx_in_batch - 1
+                    success = self.execute_single_task(todo_item, task_number=global_idx, total_tasks=len(tasks))
+
+                    if not success:
+                        logger.warning(f"Задача {global_idx}/{len(tasks)} типа {task_type.display_name} завершилась с ошибкой")
+                        # Продолжаем выполнение следующих задач
+
+                    # Применяем задержку между задачами в батче (если не последняя задача в батче)
+                    if idx_in_batch < len(batch) and self.task_delay > 0:
+                        task_delay = self._calculate_task_delay(todo_item)
+                        logger.debug(f"Задержка между задачами типа {task_type.display_name}: {task_delay} сек")
+                        time.sleep(task_delay)
 
         return True  # Итерация завершена успешно
 
@@ -501,3 +553,271 @@ class ServerCore:
         # Проверяем глобальную настройку enabled
         quality_config = self.config.get('quality_gates', {})
         return quality_config.get('enabled', False)
+
+    def _init_execution_strategies(self) -> Dict[TaskType, Dict[str, Any]]:
+        """
+        Инициализация стратегий выполнения для разных типов задач
+
+        Returns:
+            Словарь стратегий выполнения по типам задач
+        """
+        return {
+            TaskType.CODE: {
+                'priority': 1,
+                'batch_size': 3,  # Выполняем по 3 задачи разработки за раз
+                'delay_multiplier': 1.0,  # Стандартная задержка
+                'quality_gates_required': True,  # Обязательные quality gates
+                'max_failures': 2,  # Максимум 2 неудачи подряд
+            },
+            TaskType.TEST: {
+                'priority': 2,
+                'batch_size': 2,  # Выполняем по 2 тестовые задачи за раз
+                'delay_multiplier': 0.5,  # Уменьшенная задержка
+                'quality_gates_required': True,
+                'max_failures': 1,  # Максимум 1 неудача подряд
+            },
+            TaskType.REFACTOR: {
+                'priority': 3,
+                'batch_size': 1,  # Выполняем по 1 задаче рефакторинга за раз
+                'delay_multiplier': 1.5,  # Увеличенная задержка
+                'quality_gates_required': True,
+                'max_failures': 1,
+            },
+            TaskType.DOCS: {
+                'priority': 4,
+                'batch_size': 5,  # Выполняем по 5 документационных задач за раз
+                'delay_multiplier': 0.3,  # Минимальная задержка
+                'quality_gates_required': False,  # Quality gates не обязательны
+                'max_failures': 3,  # Максимум 3 неудачи подряд
+            },
+            TaskType.RELEASE: {
+                'priority': 5,
+                'batch_size': 1,  # Выполняем по 1 задаче релиза за раз
+                'delay_multiplier': 2.0,  # Значительная задержка
+                'quality_gates_required': True,
+                'max_failures': 0,  # Никаких неудач
+            },
+            TaskType.DEVOPS: {
+                'priority': 6,
+                'batch_size': 2,  # Выполняем по 2 devops задачи за раз
+                'delay_multiplier': 1.2,  # Немного увеличенная задержка
+                'quality_gates_required': True,
+                'max_failures': 1,
+            }
+        }
+
+    def _prioritize_tasks(self, tasks: List[TodoItem]) -> List[TodoItem]:
+        """
+        Приоритизация задач на основе их типов
+
+        Args:
+            tasks: Список задач для приоритизации
+
+        Returns:
+            Отсортированный список задач по приоритету
+        """
+        def get_task_priority(task: TodoItem) -> int:
+            task_type = task.effective_task_type
+            if task_type and task_type in self._execution_strategies:
+                return self._execution_strategies[task_type]['priority']
+            else:
+                return 99  # Задачи без типа имеют самый низкий приоритет
+
+        # Сортируем по приоритету (меньше число = выше приоритет)
+        return sorted(tasks, key=get_task_priority)
+
+    def _get_execution_strategy(self, task: TodoItem) -> Dict[str, Any]:
+        """
+        Получить стратегию выполнения для задачи
+
+        Args:
+            task: Задача
+
+        Returns:
+            Стратегия выполнения
+        """
+        task_type = task.effective_task_type
+        if task_type and task_type in self._execution_strategies:
+            return self._execution_strategies[task_type]
+        else:
+            # Стратегия по умолчанию для задач без типа
+            return {
+                'priority': 99,
+                'batch_size': 1,
+                'delay_multiplier': 1.0,
+                'quality_gates_required': False,
+                'max_failures': 3,
+            }
+
+    def _should_apply_quality_gates(self, task: TodoItem) -> bool:
+        """
+        Определить, нужно ли применять quality gates для задачи
+
+        Args:
+            task: Задача
+
+        Returns:
+            True если quality gates нужно применять
+        """
+        if not self._is_quality_gates_enabled():
+            return False
+
+        # Всегда проверяем тип задачи (TaskTypeChecker)
+        # Для других чекеров применяем стратегию типа задачи
+        strategy = self._get_execution_strategy(task)
+        return strategy.get('quality_gates_required', False)
+
+    def _get_quality_gates_for_task(self, task: TodoItem) -> List[QualityCheckType]:
+        """
+        Определить, какие quality gates применять для задачи
+
+        Args:
+            task: Задача
+
+        Returns:
+            Список типов quality gates для применения
+        """
+        gates_to_run = []
+
+        # TaskTypeChecker всегда применяется
+        gates_to_run.append(QualityCheckType.TASK_TYPE)
+
+        # Другие чекеры применяются в зависимости от типа задачи и условий
+        task_type = task.effective_task_type
+        if task_type:
+            if task_type in [TaskType.CODE, TaskType.REFACTOR]:
+                # Для задач разработки применяем complexity и style чекеры
+                gates_to_run.extend([QualityCheckType.COMPLEXITY, QualityCheckType.STYLE])
+            elif task_type == TaskType.RELEASE:
+                # Для релизов применяем все чекеры
+                gates_to_run.extend([
+                    QualityCheckType.COVERAGE,
+                    QualityCheckType.COMPLEXITY,
+                    QualityCheckType.SECURITY,
+                    QualityCheckType.STYLE
+                ])
+            elif task_type == TaskType.TEST:
+                # Для тестовых задач применяем coverage и style
+                gates_to_run.extend([QualityCheckType.COVERAGE, QualityCheckType.STYLE])
+
+        return gates_to_run
+
+    def _calculate_task_delay(self, task: TodoItem) -> int:
+        """
+        Рассчитать задержку между задачами с учетом типа задачи
+
+        Args:
+            task: Задача
+
+        Returns:
+            Задержка в секундах
+        """
+        strategy = self._get_execution_strategy(task)
+        multiplier = strategy.get('delay_multiplier', 1.0)
+        return int(self.task_delay * multiplier)
+
+    def _validate_task_type(self, task: TodoItem) -> bool:
+        """
+        Валидация типа задачи перед выполнением
+
+        Args:
+            task: Задача для валидации
+
+        Returns:
+            True если задача может быть выполнена
+        """
+        task_type = task.effective_task_type
+
+        if task_type is None:
+            logger.warning(f"Задача не имеет определенного типа: {task.text}")
+            # Пока не блокируем выполнение задач без типа,
+            # но логируем предупреждение для улучшения системы типов
+            return True
+
+        # Задача имеет корректный тип
+        logger.debug(f"Задача типа {task_type.display_name}: {task.text}")
+        return True
+
+    def execute_full_iteration(
+        self,
+        iteration: int,
+        should_stop_callback: Optional[Callable[[], bool]] = None,
+        should_reload_callback: Optional[Callable[[], bool]] = None,
+        reload_exception_class: Optional[type] = None
+    ) -> tuple[bool, list]:
+        """
+        Выполнить полную итерацию цикла с учетом остановки и перезапуска
+
+        Args:
+            iteration: Номер итерации
+            should_stop_callback: Callback для проверки запроса на остановку
+            should_reload_callback: Callback для проверки необходимости перезапуска
+            reload_exception_class: Класс исключения для перезапуска
+
+        Returns:
+            Кортеж (has_more_tasks, executed_tasks):
+            - has_more_tasks: True если есть еще задачи для выполнения
+            - executed_tasks: Список выполненных задач в формате [(task, success), ...]
+        """
+        logger.info(f"Начало полной итерации {iteration} в ServerCore")
+
+        # Проверяем запрос на остановку перед началом итерации
+        if should_stop_callback and should_stop_callback():
+            logger.warning("Получен запрос на остановку перед началом итерации")
+            return False, []
+
+        # Проверяем необходимость перезапуска перед итерацией
+        if should_reload_callback and should_reload_callback():
+            logger.warning("Обнаружено изменение кода перед началом итерации")
+            if reload_exception_class:
+                raise reload_exception_class("Перезапуск из-за изменения кода перед началом итерации")
+            return False, []
+
+        try:
+            # Получаем задачи для выполнения
+            has_more_tasks, pending_tasks = self.execute_iteration(iteration)
+
+            executed_tasks = []
+
+            # Если есть задачи для выполнения, выполняем их с контролем остановки
+            if pending_tasks:
+                total_tasks = len(pending_tasks)
+                for idx, todo_item in enumerate(pending_tasks, start=1):
+                    # Проверяем запрос на остановку перед каждой задачей
+                    if should_stop_callback and should_stop_callback():
+                        logger.warning(f"Получен запрос на остановку перед выполнением задачи {idx}/{total_tasks}")
+                        break
+
+                    # Проверяем необходимость перезапуска перед задачей
+                    if should_reload_callback and should_reload_callback():
+                        logger.warning(f"Обнаружено изменение кода перед выполнением задачи {idx}/{total_tasks}")
+                        if reload_exception_class:
+                            raise reload_exception_class("Перезапуск из-за изменения кода перед выполнением задачи")
+                        break
+
+                    # Выполняем задачу
+                    success = self.execute_single_task(todo_item, task_number=idx, total_tasks=total_tasks)
+                    executed_tasks.append((todo_item, success))
+
+                    # Проверяем запрос на остановку после выполнения задачи
+                    if should_stop_callback and should_stop_callback():
+                        logger.warning(f"Получен запрос на остановку после выполнения задачи {idx}/{total_tasks}")
+                        break
+
+                    # Если задача завершилась неудачно из-за критической ошибки, проверяем флаг остановки
+                    if not success and should_stop_callback and should_stop_callback():
+                        logger.warning("Задача завершилась из-за критической ошибки - прерывание итерации")
+                        break
+
+                    # Проверяем необходимость перезапуска после задачи
+                    if should_reload_callback and should_reload_callback():
+                        logger.warning(f"Обнаружено изменение кода после выполнения задачи {idx}/{total_tasks}")
+                        if reload_exception_class:
+                            raise reload_exception_class("Перезапуск из-за изменения кода после выполнения задачи")
+                        break
+
+            return has_more_tasks, executed_tasks
+
+        except Exception as e:
+            logger.error(f"Ошибка выполнения полной итерации {iteration}: {e}", exc_info=True)
+            return False, []

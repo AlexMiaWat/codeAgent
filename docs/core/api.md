@@ -189,6 +189,53 @@ manager.update_task_status("Задача 1", "Выполнено", "Детали
 
 ---
 
+### types
+
+#### `TaskType` (`src/core/types.py`)
+
+Перечисление типов задач для категоризации и управления задачами проекта.
+
+```python
+from src.core.types import TaskType
+
+# Типы задач
+TaskType.CODE      # Разработка кода
+TaskType.DOCS      # Документация
+TaskType.REFACTOR  # Рефакторинг
+TaskType.TEST      # Тестирование
+TaskType.RELEASE   # Релиз
+TaskType.DEVOPS    # DevOps/инфраструктура
+
+# Методы
+task_type = TaskType.from_string("code")  # Создание из строки
+detected = TaskType.auto_detect("Write unit tests")  # Автоопределение
+priority = TaskType.CODE.priority  # Приоритет (1-6)
+display = TaskType.CODE.display_name  # Человекочитаемое имя
+```
+
+**Значения:**
+
+- `CODE = "code"` - Разработка нового функционала, исправление багов
+- `DOCS = "docs"` - Создание/обновление документации
+- `REFACTOR = "refactor"` - Рефакторинг существующего кода
+- `TEST = "test"` - Написание и выполнение тестов
+- `RELEASE = "release"` - Подготовка релизов, версионирование
+- `DEVOPS = "devops"` - Инфраструктура, CI/CD, развертывание
+
+**Методы:**
+
+- `from_string(value: str)` - Создание типа из строки
+- `auto_detect(text: str)` - Автоматическое определение типа по тексту
+- `get_all_types()` - Получение всех типов
+- `get_types_by_priority()` - Типы в порядке приоритета
+
+**Свойства:**
+
+- `display_name: str` - Локализованное имя типа
+- `priority: int` - Приоритет типа (1-высший, 6-низший)
+
+---
+
 ### todo_manager
 
 #### `TodoManager`
@@ -213,15 +260,26 @@ manager.mark_task_done("Задача 1")
 - `mark_task_done(task_text: str)` - Отметка задачи как выполненной
 - `get_task_hierarchy()` - Получение иерархии задач
 
+**Новые методы для работы с типами задач:**
+
+- `get_tasks_by_type(task_type: TaskType)` - Получение задач определенного типа
+- `get_task_type_statistics()` - Статистика по распределению типов задач
+- `update_task_type(task_id: str, task_type: Optional[TaskType])` - Обновление типа задачи
+- `validate_task_types()` - Валидация корректности типов задач
+
 #### `TodoItem`
 
-Элемент todo-листа.
+Элемент todo-листа с поддержкой типизации задач.
 
 ```python
-item = TodoItem("Текст задачи", level=0, done=False)
-print(item.text)  # Текст задачи
-print(item.level)  # Уровень вложенности
-print(item.done)   # Выполнена ли задача
+from src.core.types import TaskType
+
+item = TodoItem("Текст задачи", level=0, done=False, task_type=TaskType.CODE)
+print(item.text)           # Текст задачи
+print(item.level)          # Уровень вложенности
+print(item.done)           # Выполнена ли задача
+print(item.task_type)      # Явно установленный тип
+print(item.effective_task_type)  # Эффективный тип (с автоопределением)
 ```
 
 **Атрибуты:**
@@ -231,6 +289,12 @@ print(item.done)   # Выполнена ли задача
 - `done: bool` - Выполнена ли задача
 - `parent: Optional[TodoItem]` - Родительский элемент
 - `children: List[TodoItem]` - Дочерние элементы
+- `task_type: Optional[TaskType]` - Явно установленный тип задачи
+- `effective_task_type: Optional[TaskType]` - Эффективный тип (с автоопределением)
+
+**Методы:**
+
+- `set_task_type(task_type: Optional[TaskType])` - Установить тип задачи
 
 ---
 

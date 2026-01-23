@@ -6,10 +6,12 @@ from .coverage_checker import CoverageChecker
 from .complexity_checker import ComplexityChecker
 from .security_checker import SecurityChecker
 from .style_checker import StyleChecker
+from .task_type_checker import TaskTypeChecker
 
 __all__ = [
     'CoverageChecker',
     'ComplexityChecker',
     'SecurityChecker',
-    'StyleChecker'
+    'StyleChecker',
+    'TaskTypeChecker'
 ]

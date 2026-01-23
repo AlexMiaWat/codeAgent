@@ -130,40 +130,97 @@ class TestLLMComponentsInteraction:
 class TestServerTaskManagerInteraction:
     """Тесты взаимодействия Server и TaskManager"""
 
-    def test_server_task_manager_initialization(self, ensure_project_dir_env):
+    def test_server_task_manager_initialization(self, ensure_project_dir_env, mock_todo_manager, mock_status_manager, mock_checkpoint_manager, mock_llm_manager):
         """Тест инициализации Server с TaskManager"""
         from src.server import CodeAgentServer
-        from src.todo_manager import TodoManager
+        from unittest.mock import MagicMock
 
-        # Создаем сервер с моками
-        with patch('src.server.CodeAgentServer._setup_http_server'):
-            with patch('src.server.CodeAgentServer._setup_file_watcher'):
-                with patch('src.cursor_cli_interface.CursorCLIInterface.check_availability', return_value=False):
-                    server = CodeAgentServer()
+        # Мокаем DI контейнер и его resolve методы
+        with patch('src.server.create_default_container') as mock_container_factory:
+            mock_container = MagicMock()
+            mock_container_factory.return_value = mock_container
 
-                    # Проверяем что TaskManager инициализирован
-                    assert hasattr(server, 'todo_manager')
-                    assert isinstance(server.todo_manager, TodoManager)
+            # Настраиваем resolve методы
+            mock_container.resolve.side_effect = lambda interface: {
+                'src.core.interfaces.ITodoManager': mock_todo_manager,
+                'src.core.interfaces.IStatusManager': mock_status_manager,
+                'src.core.interfaces.ICheckpointManager': mock_checkpoint_manager,
+                'src.core.interfaces.ILogger': MagicMock(),
+            }.get(str(interface), MagicMock())
 
-    def test_server_task_execution_workflow(self, ensure_project_dir_env):
+            # Создаем сервер с моками
+            with patch('src.server.CodeAgentServer._setup_http_server'):
+                with patch('src.server.CodeAgentServer._setup_file_watcher'):
+                    with patch('src.cursor_cli_interface.CursorCLIInterface.is_available', return_value=False):
+                            with patch('src.config_loader.ConfigLoader') as mock_config_loader:
+                                mock_config = MagicMock()
+                                mock_config.get_project_dir.return_value = Path("/tmp/test")
+                                mock_config.get_docs_dir.return_value = "docs"
+                                mock_config.get_status_file.return_value = "status.md"
+                                mock_config.get.return_value = {}
+                                mock_config.config = {}
+                                mock_config_loader.return_value = mock_config
+
+                                # Мокаем TaskManagerImpl
+                                with patch('src.core.implementations.TaskManagerImpl') as mock_task_manager_impl:
+                                    mock_task_manager_instance = MagicMock()
+                                    mock_task_manager_impl.return_value = mock_task_manager_instance
+
+                                    server = CodeAgentServer()
+
+                            # Проверяем что сервер создан
+                            assert server is not None
+                            # Проверяем что менеджеры установлены
+                            assert server.todo_manager is not None
+                            assert server.status_manager is not None
+
+    def test_server_task_execution_workflow(self, ensure_project_dir_env, mock_todo_manager, mock_status_manager, mock_checkpoint_manager, mock_llm_manager):
         """Тест рабочего процесса выполнения задач"""
         from src.server import CodeAgentServer
+        from unittest.mock import MagicMock
 
-        with patch('src.server.CodeAgentServer._setup_http_server'):
-            with patch('src.server.CodeAgentServer._setup_file_watcher'):
-                with patch('src.cursor_cli_interface.CursorCLIInterface.check_availability', return_value=False):
-                    with patch('src.agents.executor_agent.ExecutorAgent') as mock_agent_class:
-                        # Настраиваем мок агента
-                        mock_agent = Mock()
-                        mock_agent_class.return_value = mock_agent
-                        mock_agent.execute_task.return_value = "Task completed"
+        # Мокаем DI контейнер и его resolve методы
+        with patch('src.server.create_default_container') as mock_container_factory:
+            mock_container = MagicMock()
+            mock_container_factory.return_value = mock_container
 
-                        server = CodeAgentServer()
+            # Настраиваем resolve методы
+            mock_container.resolve.side_effect = lambda interface: {
+                'src.core.interfaces.ITodoManager': mock_todo_manager,
+                'src.core.interfaces.IStatusManager': mock_status_manager,
+                'src.core.interfaces.ICheckpointManager': mock_checkpoint_manager,
+                'src.core.interfaces.ILogger': MagicMock(),
+            }.get(str(interface), MagicMock())
 
-                        # Проверяем что сервер может выполнить задачу
-                        # (здесь просто проверяем инициализацию компонентов)
-                        assert server is not None
-                        assert server.todo_manager is not None
+            with patch('src.server.CodeAgentServer._setup_http_server'):
+                with patch('src.server.CodeAgentServer._setup_file_watcher'):
+                    with patch('src.cursor_cli_interface.CursorCLIInterface.is_available', return_value=False):
+                        with patch('src.agents.executor_agent.create_executor_agent') as mock_agent_func:
+                            # Настраиваем мок агента
+                            mock_agent = Mock()
+                            mock_agent_func.return_value = mock_agent
+                            mock_agent.execute_task.return_value = "Task completed"
+
+                            with patch('src.config_loader.ConfigLoader') as mock_config_loader:
+                                mock_config = MagicMock()
+                                mock_config.get_project_dir.return_value = Path("/tmp/test")
+                                mock_config.get_docs_dir.return_value = "docs"
+                                mock_config.get_status_file.return_value = "status.md"
+                                mock_config.get.return_value = {}
+                                mock_config.config = {}
+                                mock_config_loader.return_value = mock_config
+
+                                # Мокаем TaskManagerImpl
+                                with patch('src.core.implementations.TaskManagerImpl') as mock_task_manager_impl:
+                                    mock_task_manager_instance = MagicMock()
+                                    mock_task_manager_impl.return_value = mock_task_manager_instance
+
+                                    server = CodeAgentServer()
+
+                                # Проверяем что сервер может выполнить задачу
+                                # (здесь просто проверяем инициализацию компонентов)
+                                assert server is not None
+                                assert server.todo_manager is not None
 
 
 class TestSmartAgentToolsInteraction:
