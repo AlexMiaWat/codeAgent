@@ -133,6 +133,7 @@ shared_experience/
 
 # Test results and reports (generated)
 docs/results/*.md
+!docs/results/last_result.md
 docs/results/*.json
 docs/results/ab_testing_*.md
 docs/results/ab_testing_*.json
