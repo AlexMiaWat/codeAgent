@@ -215,7 +215,6 @@ def main():
     total = len(results)
 
     for test_name, success in results:
-        status = "✅ ПРОЙДЕН" if success else "❌ ПРОВАЛЕН"
         print("20")
         if success:
             passed += 1

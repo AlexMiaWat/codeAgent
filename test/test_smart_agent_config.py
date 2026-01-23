@@ -437,7 +437,7 @@ def test_smart_agent_config_environment_integration():
             from config.config_loader import ConfigLoader
             config = ConfigLoader.load_config()
 
-            smart_config = config.get('smart_agent', {})
+            config.get('smart_agent', {})
 
             # Проверяем, что переменные окружения влияют на конфигурацию
             # (в реальной реализации это может работать через ConfigLoader)
@@ -484,7 +484,7 @@ def test_smart_agent_cursor_config_integration():
 
         # Проверяем настройки разрешений
         permissions = cursor_config.get('permissions', {})
-        assert permissions.get('enabled', False) == True, "permissions должны быть включены"
+        assert permissions.get('enabled', False), "permissions должны быть включены"
 
         print("✅ Интеграция с конфигурацией Cursor корректна")
         return True
@@ -590,7 +590,6 @@ def main():
     total = len(results)
 
     for test_name, success in results:
-        status = "✅ ПРОЙДЕН" if success else "❌ ПРОВАЛЕН"
         print("40")
         if success:
             passed += 1

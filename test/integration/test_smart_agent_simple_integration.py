@@ -158,7 +158,7 @@ def функция_тест():
     def test_pattern_learning_integration(self):
         """Тест обучения паттернам в интеграционном сценарии"""
         learning_tool = LearningTool(experience_dir=str(self.experience_dir))
-        context_tool = ContextAnalyzerTool(project_dir=str(self.project_dir))
+        ContextAnalyzerTool(project_dir=str(self.project_dir))
 
         # Создаем несколько задач с похожими паттернами
         patterns_data = [

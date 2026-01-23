@@ -5,18 +5,13 @@
 """
 
 import sys
-import os
 import time
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, mock_open
 
 # Добавляем корневую директорию в путь для импорта
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import pytest
-import json
-from datetime import datetime, timedelta
 
 
 def test_learning_tool_cache_performance():
@@ -59,7 +54,7 @@ def test_learning_tool_cache_performance():
             start_time = time.time()
 
             for i in range(20):
-                result = tool._run("find_similar", **{
+                tool._run("find_similar", **{
                     "query": f"performance test task {i % 5}",
                     "limit": 3
                 })
@@ -114,13 +109,13 @@ def test_context_analyzer_performance():
 
         # Тестируем кэширование повторных запросов
         start_time = time.time()
-        result2 = tool._run("analyze_project")  # Повторный анализ
+        tool._run("analyze_project")  # Повторный анализ
         cached_analysis_time = time.time() - start_time
 
-        print(".4f"
+        print(f"   Повторный анализ: {cached_analysis_time:.4f} сек")
         # Проверяем, что повторный анализ быстрее (эффект кэширования)
         speedup = analysis_time / cached_analysis_time if cached_analysis_time > 0 else 1
-        print(".2f"
+        print(f"   Ускорение: {speedup:.2f}x")
         # Для кэширования ожидаем ускорение минимум в 2 раза
         assert speedup >= 2.0, f"Недостаточное ускорение от кэширования: {speedup:.2f}x"
 
@@ -143,7 +138,7 @@ def test_smart_agent_memory_usage():
         process = psutil.Process(os.getpid())
         initial_memory = process.memory_info().rss / 1024 / 1024  # MB
 
-        print(".2f"
+        print(f"   Начальная память: {initial_memory:.2f} MB")
         # Импортируем инструменты Smart Agent
         from src.tools.learning_tool import LearningTool
         from src.tools.context_analyzer_tool import ContextAnalyzerTool
@@ -151,19 +146,19 @@ def test_smart_agent_memory_usage():
         import_memory = process.memory_info().rss / 1024 / 1024  # MB
         import_usage = import_memory - initial_memory
 
-        print(".2f"
+        print(f"   Память после импорта: {import_usage:.2f} MB")
         # Проверяем, что импорт не использует слишком много памяти (< 50 MB)
         assert import_usage < 50.0, f"Слишком большое использование памяти при импорте: {import_usage:.2f} MB"
 
         # Создаем инструменты
         with tempfile.TemporaryDirectory() as temp_dir:
             learning_tool = LearningTool(experience_dir=temp_dir + "/experience")
-            context_tool = ContextAnalyzerTool(project_dir=".")
+            ContextAnalyzerTool(project_dir=".")
 
             tool_memory = process.memory_info().rss / 1024 / 1024  # MB
             tool_usage = tool_memory - import_memory
 
-            print(".2f"
+            print(f"   Память после создания инструментов: {tool_usage:.2f} MB")
             # Проверяем, что создание инструментов не использует слишком много памяти (< 20 MB)
             assert tool_usage < 20.0, f"Слишком большое использование памяти при создании инструментов: {tool_usage:.2f} MB"
 
@@ -181,7 +176,7 @@ def test_smart_agent_memory_usage():
             load_memory = process.memory_info().rss / 1024 / 1024  # MB
             load_usage = load_memory - tool_memory
 
-            print(".2f"
+            print(f"   Память после нагрузки: {load_usage:.2f} MB")
             # Проверяем, что нагрузка не вызывает утечку памяти (< 10 MB прирост)
             assert load_usage < 10.0, f"Возможная утечка памяти при нагрузке: {load_usage:.2f} MB"
 
@@ -277,7 +272,9 @@ def test_cache_hit_rate_optimization():
             avg_search_time = search_time / total_searches
             hit_rate = hits / total_searches
 
-            print(".1%"            print(".4f"            print(f"   📊 Всего поисков: {total_searches}, hits: {hits}")
+            print(f"   🔍 Hit rate: {hit_rate:.1%}")
+            print(f"   ⏱️  Среднее время поиска: {avg_search_time:.4f}")
+            print(f"   📊 Всего поисков: {total_searches}, hits: {hits}")
 
             # Ожидаем hit rate > 80% для хорошей производительности кэша
             assert hit_rate > 0.8, f"Низкий hit rate кэша: {hit_rate:.1%}"
@@ -354,7 +351,8 @@ def test_concurrent_performance():
 
         total_time = time.time() - start_time
 
-        print(".2f"        print(f"   📊 Всего операций: {len(results)}")
+        print(f"   ⏱️  Общее время: {total_time:.2f} сек")
+        print(f"   📊 Всего операций: {len(results)}")
         print(f"   ❌ Ошибок: {len(errors)}")
 
         if errors:
@@ -412,7 +410,7 @@ def test_performance_metrics_collection():
             search_queries = ["metrics test", "performance", "optimization"]
             for query in search_queries:
                 start = time.time()
-                result = tool._run("find_similar", **{
+                tool._run("find_similar", **{
                     "query": query,
                     "limit": 3
                 })
@@ -426,7 +424,10 @@ def test_performance_metrics_collection():
             avg_search_time = sum(search_times) / len(search_times) if search_times else 0
             total_operations = len(operations)
 
-            print("   📊 Метрики производительности:"            print(".4f"            print(".4f"            print(f"   🔢 Всего операций: {total_operations}")
+            print("   📊 Метрики производительности:")
+            print(f"   💾 Среднее время сохранения: {avg_save_time:.4f} сек")
+            print(f"   🔍 Среднее время поиска: {avg_search_time:.4f} сек")
+            print(f"   🔢 Всего операций: {total_operations}")
 
             # Проверяем разумность метрик
             assert avg_save_time < 0.1, f"Среднее время сохранения слишком велико: {avg_save_time:.4f}"
@@ -468,7 +469,6 @@ def main():
     total = len(results)
 
     for test_name, success in results:
-        status = "✅ ПРОЙДЕН" if success else "❌ ПРОВАЛЕН"
         print("40")
         if success:
             passed += 1

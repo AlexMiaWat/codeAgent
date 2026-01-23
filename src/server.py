@@ -2012,7 +2012,7 @@ class CodeAgentServer:
         
         # Проверяем наличие индикаторов работы
         has_work = any(indicator in result_lower for indicator in work_indicators)
-        has_plan_only = all(indicator not in result_lower or "план" not in result_lower[:200] for indicator in plan_only_indicators)
+        all(indicator not in result_lower or "план" not in result_lower[:200] for indicator in plan_only_indicators)
         
         # Дополнительная проверка - наличие изменений в git (если доступен)
         try:
@@ -2194,7 +2194,7 @@ class CodeAgentServer:
             
             for task in matching_tasks:
                 start_time_str = task.get("start_time")
-                end_time_str = task.get("end_time")
+                task.get("end_time")
                 if start_time_str:
                     try:
                         start_time = datetime.fromisoformat(start_time_str)
@@ -3143,7 +3143,7 @@ class CodeAgentServer:
             critical_instructions = min(3, len(valid_instructions))  # Минимум 3 инструкции для завершения
             
             for instruction_num, template in enumerate(valid_instructions, start=1):
-                instruction_id = template.get('instruction_id', instruction_num)
+                template.get('instruction_id', instruction_num)
                 instruction_name = template.get('name', f'Инструкция {instruction_num}')
                 instruction_text = template.get('template', '')
                 wait_for_file = template.get('wait_for_file', '')
@@ -4091,7 +4091,7 @@ class CodeAgentServer:
                 
                 # Игнорируем файлы, которые не в src/ директории (если это не main.py или другие важные файлы в корне)
                 src_dir = str(Path(__file__).parent).lower()
-                root_dir = str(Path(__file__).parent.parent).lower()
+                str(Path(__file__).parent.parent).lower()
                 file_path_normalized = file_path.lower()
                 
                 # Разрешаем только файлы в src/ или важные файлы в корне (main.py, setup.py и т.д.)
@@ -4607,7 +4607,7 @@ class CodeAgentServer:
             try:
                 if not self.checkpoint_manager.was_clean_shutdown():
                     self.checkpoint_manager.mark_server_stop(clean=False)
-            except:
+            except Exception:
                 pass
 
 

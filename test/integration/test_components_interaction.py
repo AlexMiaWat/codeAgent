@@ -285,7 +285,7 @@ class TestToolsInteraction:
 
         assert found_experience is not None
         assert found_experience["solution"] == "test solution"
-        assert found_experience["success"] == True
+        assert found_experience["success"]
 
 
 class TestErrorHandlingIntegration:

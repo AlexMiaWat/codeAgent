@@ -178,7 +178,7 @@ class UtilityClass:
         assert "analysis_workflow_001" in similar
 
         # Шаг 4: Анализируем зависимости конкретного файла
-        dependency_info = context_tool.find_file_dependencies(file_path="main.py")
+        context_tool.find_file_dependencies(file_path="main.py")
 
         # Шаг 5: Сохраняем опыт работы с зависимостями
         learning_tool.save_task_experience(

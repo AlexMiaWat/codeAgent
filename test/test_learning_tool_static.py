@@ -57,7 +57,7 @@ class TestLearningToolInitialization:
 
             assert tool.experience_dir == Path(temp_dir)
             assert tool.max_experience_tasks == 1000
-            assert tool.enable_indexing == True
+            assert tool.enable_indexing
             assert tool.cache_size == 1000
             assert tool.cache_ttl_seconds == 3600
             assert tool.experience_file == Path(temp_dir) / "experience.json"
@@ -75,10 +75,10 @@ class TestLearningToolInitialization:
             )
 
             assert tool.max_experience_tasks == 500
-            assert tool.enable_indexing == False
+            assert not tool.enable_indexing
             assert tool.cache_size == 500
             assert tool.cache_ttl_seconds == 1800
-            assert tool.enable_cache_persistence == True
+            assert tool.enable_cache_persistence
 
     def test_learning_tool_initialization(self):
         """Проверка сигнатуры __init__ LearningTool"""
@@ -143,7 +143,7 @@ class TestLearningToolSaveExperience:
             task = data["tasks"][0]
             assert task["task_id"] == "test_task_1"
             assert task["description"] == "Test task description"
-            assert task["success"] == True
+            assert task["success"]
             assert task["execution_time"] == 10.5
             assert task["notes"] == "Test notes"
             assert task["patterns"] == ["pattern1", "pattern2"]
@@ -330,7 +330,7 @@ class TestLearningToolCaching:
 
             # Первый поиск
             tool.save_task_experience("task1", "initial task", True)
-            result1 = tool.find_similar_tasks("initial")
+            tool.find_similar_tasks("initial")
 
             # Добавим новую задачу
             tool.save_task_experience("task2", "another initial task", True)

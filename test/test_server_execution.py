@@ -57,13 +57,10 @@ def test_cursor_cli_execution():
         )
         if result.returncode == 0 and result.stdout.strip():
             print(f"   [OK] Контейнер запущен: {result.stdout.strip()}")
-            container_running = True
         else:
             print("   [INFO] Контейнер не запущен, будет запущен автоматически")
-            container_running = False
     except Exception as e:
         print(f"   [WARN] Ошибка проверки контейнера: {e}")
-        container_running = False
     
     # 3. Инициализация Cursor CLI интерфейса
     print("\n3. Инициализация Cursor CLI интерфейса...")

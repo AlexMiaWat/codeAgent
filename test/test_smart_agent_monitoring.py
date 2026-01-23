@@ -5,18 +5,14 @@
 """
 
 import sys
-import os
 import tempfile
 import logging
 import json
 from pathlib import Path
-from unittest.mock import patch, mock_open
 
 # Добавляем корневую директорию в путь для импорта
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import pytest
-import yaml
 from datetime import datetime, timedelta
 
 
@@ -26,55 +22,6 @@ def test_smart_agent_logging_setup():
 
     try:
         # Имитируем настройку логирования из config/logging.yaml
-        log_config = {
-            'version': 1,
-            'disable_existing_loggers': False,
-            'formatters': {
-                'detailed': {
-                    'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-                },
-                'simple': {
-                    'format': '%(levelname)s - %(message)s'
-                }
-            },
-            'handlers': {
-                'console': {
-                    'class': 'logging.StreamHandler',
-                    'level': 'INFO',
-                    'formatter': 'simple',
-                    'stream': 'ext://sys.stdout'
-                },
-                'smart_agent_file': {
-                    'class': 'logging.FileHandler',
-                    'level': 'DEBUG',
-                    'formatter': 'detailed',
-                    'filename': 'logs/smart_agent.log'
-                },
-                'smart_agent_errors': {
-                    'class': 'logging.FileHandler',
-                    'level': 'ERROR',
-                    'formatter': 'detailed',
-                    'filename': 'logs/smart_agent_errors.log'
-                }
-            },
-            'loggers': {
-                'smart_agent': {
-                    'level': 'DEBUG',
-                    'handlers': ['console', 'smart_agent_file', 'smart_agent_errors'],
-                    'propagate': False
-                },
-                'learning_tool': {
-                    'level': 'INFO',
-                    'handlers': ['smart_agent_file'],
-                    'propagate': False
-                },
-                'context_analyzer': {
-                    'level': 'INFO',
-                    'handlers': ['smart_agent_file'],
-                    'propagate': False
-                }
-            }
-        }
 
         # Создаем логгеры
         smart_logger = logging.getLogger('smart_agent')
@@ -431,7 +378,8 @@ def test_monitoring_dashboard_data():
             print("✅ Данные мониторинга сформированы корректно")
             print(f"   Статус: {loaded_data['status']}")
             print(f"   Обработано задач: {metrics['total_tasks_processed']}")
-            print(".1%"            print(".2f")
+            print(f"   Успешность выполнения: {metrics['success_rate']:.1%}")
+            print(f"   Среднее время выполнения: {metrics['avg_execution_time']:.2f} сек")
 
         return True
 
@@ -554,7 +502,6 @@ def main():
     total = len(results)
 
     for test_name, success in results:
-        status = "✅ ПРОЙДЕН" if success else "❌ ПРОВАЛЕН"
         print("40")
         if success:
             passed += 1

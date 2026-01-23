@@ -576,7 +576,7 @@ class ContextAnalyzerTool(BaseTool):
             }
 
             # Ищем релевантные файлы с улучшенной Unicode обработкой
-            task_normalized = normalize_unicode_text(task_description)
+            normalize_unicode_text(task_description)
 
             # Поиск в документации
             if self.docs_dir.exists():

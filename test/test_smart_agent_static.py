@@ -53,15 +53,15 @@ class TestSmartAgentStatic:
 
         # Опциональные параметры
         assert params['docs_dir'].annotation == Optional[Path]
-        assert params['experience_dir'].annotation == str
-        assert params['role'].annotation == str
-        assert params['goal'].annotation == str
+        assert params['experience_dir'].annotation is str
+        assert params['role'].annotation is str
+        assert params['goal'].annotation is str
         assert params['backstory'].annotation == Optional[str]
         assert params['allow_code_execution'].annotation == bool
         assert params['use_docker'].annotation == bool
         assert params['verbose'].annotation == bool
         assert params['use_llm'].annotation == bool
-        assert params['llm_config_path'].annotation == str
+        assert params['llm_config_path'].annotation is str
         assert params['max_experience_tasks'].annotation == int
 
     def test_create_smart_agent_return_type(self, dummy_openai_key):
@@ -107,7 +107,7 @@ class TestSmartAgentStatic:
                     # Проверяем значения атрибутов
                     assert agent.role == "Test Smart Agent"
                     assert agent.goal == "Test goal"
-                    assert agent.verbose == True  # default value
+                    assert agent.verbose  # default value
 
     def test_smart_agent_tools_structure(self, dummy_openai_key):
         """Проверка структуры инструментов Smart Agent"""
@@ -224,10 +224,10 @@ class TestSmartAgentConstants:
 
         assert sig.parameters['role'].default == "Smart Project Executor Agent"
         assert sig.parameters['experience_dir'].default == "smart_experience"
-        assert sig.parameters['verbose'].default == True
-        assert sig.parameters['allow_code_execution'].default == True
-        assert sig.parameters['use_docker'].default == True
-        assert sig.parameters['use_llm'].default == True
+        assert sig.parameters['verbose'].default
+        assert sig.parameters['allow_code_execution'].default
+        assert sig.parameters['use_docker'].default
+        assert sig.parameters['use_llm'].default
         assert sig.parameters['max_experience_tasks'].default == 1000
 
     def test_backstory_components(self, dummy_openai_key):

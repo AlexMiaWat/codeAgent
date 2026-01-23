@@ -162,7 +162,7 @@ class StatusManager:
             PermissionError: Если нет прав на запись файла
             OSError: При других ошибках записи
         """
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         message = f"**Задача:** {task_name}\n**Статус:** {status}"
         
         if details:

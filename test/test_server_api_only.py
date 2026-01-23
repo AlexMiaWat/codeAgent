@@ -355,13 +355,13 @@ def main():
             try:
                 requests.post(f"{BASE_URL}/stop", timeout=2)
                 time.sleep(1)
-            except:
+            except Exception:
                 pass
             # Завершаем процесс
             try:
                 server_process.terminate()
                 server_process.wait(timeout=5)
-            except:
+            except Exception:
                 try:
                     server_process.kill()
                 except:

@@ -226,22 +226,22 @@ class TestSmartAgentWorkflowIntegration:
             assert "контекст" in context_info.lower()
 
             # Шаг 2: Поиск связанных файлов
-            related_files = context_tool._run("find_related_files", query="user management")
+            context_tool._run("find_related_files", query="user management")
             # Функция должна выполниться без ошибок
 
             # Шаг 3: Сохранение опыта о начале работы
-            start_result = learning_tool._run("save_experience",
+            learning_tool._run("save_experience",
                                             task_id="user_mgmt_start",
                                             task_description="Start implementing user management",
                                             success=True,
                                             patterns=["user_management", "planning"])
 
             # Шаг 4: Анализ зависимостей
-            deps_result = context_tool._run("find_dependencies", file_path="src/models.py")
+            context_tool._run("find_dependencies", file_path="src/models.py")
             # Функция должна выполниться без ошибок
 
             # Шаг 5: Получение рекомендаций для продолжения
-            recommendations = learning_tool._run("get_recommendations",
+            learning_tool._run("get_recommendations",
                                                current_task="continue user management implementation")
             # Функция должна выполниться без ошибок
 
@@ -380,12 +380,11 @@ class TestSmartAgentPerformanceIntegration:
             )
 
             learning_tool = None
-            context_tool = None
             for tool in agent.tools:
                 if isinstance(tool, LearningTool):
                     learning_tool = tool
                 elif isinstance(tool, ContextAnalyzerTool):
-                    context_tool = tool
+                    pass
 
             assert learning_tool is not None
 
@@ -400,12 +399,12 @@ class TestSmartAgentPerformanceIntegration:
             # Первый поиск - кэш пустой
             start_time = time.time()
             result1 = learning_tool._run("find_similar", query="performance")
-            first_search_time = time.time() - start_time
+            time.time() - start_time
 
             # Второй поиск - должен использовать кэш
             start_time = time.time()
             result2 = learning_tool._run("find_similar", query="performance")
-            second_search_time = time.time() - start_time
+            time.time() - start_time
 
             # Результаты должны быть одинаковыми
             assert result1 == result2

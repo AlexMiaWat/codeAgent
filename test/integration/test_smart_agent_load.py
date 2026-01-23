@@ -148,7 +148,7 @@ This is a test project for Smart Agent load testing.
                 start_time = time.time()
 
                 try:
-                    result = tool._run("save_experience",
+                    tool._run("save_experience",
                                      task_id=f"load_task_{i:06d}",
                                      task_description=f"Load test task #{i} for performance testing",
                                      success=i % 10 != 0,  # 90% success rate
@@ -192,7 +192,7 @@ This is a test project for Smart Agent load testing.
         for query in search_queries:
             start_time = time.time()
             try:
-                results = tool._run("find_similar_tasks", query=query)
+                tool._run("find_similar_tasks", query=query)
                 duration = time.time() - start_time
                 self.metrics.record_response_time(duration)
                 self.metrics.record_memory_usage()
@@ -219,7 +219,7 @@ This is a test project for Smart Agent load testing.
                 # Анализ структуры проекта
                 start_time = time.time()
                 try:
-                    result = tool._run("analyze_project")
+                    tool._run("analyze_project")
                     duration = time.time() - start_time
                     self.metrics.record_response_time(duration)
                 except Exception as e:
@@ -230,7 +230,7 @@ This is a test project for Smart Agent load testing.
                 file_path = f"module_{(i % 10)}.py"
                 start_time = time.time()
                 try:
-                    result = tool._run("analyze_dependencies", file_path=file_path)
+                    tool._run("analyze_dependencies", file_path=file_path)
                     duration = time.time() - start_time
                     self.metrics.record_response_time(duration)
                 except Exception as e:
@@ -240,7 +240,7 @@ This is a test project for Smart Agent load testing.
                 # Анализ конкретного файла
                 start_time = time.time()
                 try:
-                    result = tool._run("analyze_file", file_path=file_path)
+                    tool._run("analyze_file", file_path=file_path)
                     duration = time.time() - start_time
                     self.metrics.record_response_time(duration)
                 except Exception as e:
@@ -278,7 +278,7 @@ This is a test project for Smart Agent load testing.
 
                 try:
                     # Шаг 1: Анализ проекта
-                    analysis_result = context_tool._run("analyze_project")
+                    context_tool._run("analyze_project")
 
                     # Шаг 2: Сохранение опыта анализа
                     learning_tool._run("save_experience",
@@ -290,11 +290,11 @@ This is a test project for Smart Agent load testing.
                                      notes="Combined workflow analysis")
 
                     # Шаг 3: Поиск похожих задач
-                    search_result = learning_tool._run("find_similar_tasks",
+                    learning_tool._run("find_similar_tasks",
                                                      query="analysis workflow")
 
                     # Шаг 4: Анализ зависимостей
-                    dep_result = context_tool._run("analyze_dependencies",
+                    context_tool._run("analyze_dependencies",
                                                  file_path="module_0.py")
 
                     # Шаг 5: Сохранение финального опыта

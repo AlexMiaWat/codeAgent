@@ -171,7 +171,7 @@ if __name__ == "__main__":
                 print(f"   Количество задач: {len(data['tasks'])}")
                 assert len(data["tasks"]) == 1
                 assert data["tasks"][0]["task_id"] == "integration_test_001"
-                assert data["tasks"][0]["success"] == True
+                assert data["tasks"][0]["success"]
                 print("   ✅ Данные опыта корректно сохранены")
             else:
                 print("   ❌ Файл опыта не найден!")
@@ -279,7 +279,6 @@ def main():
     total = len(results)
 
     for test_name, success in results:
-        status = "✅ ПРОЙДЕН" if success else "❌ ПРОВАЛЕН"
         print("30")
         if success:
             passed += 1

@@ -43,10 +43,10 @@ class TestSmartAgentStatic:
         assert params['role'].default == "Smart Project Executor Agent"
         assert params['goal'].default == "Execute complex tasks with enhanced intelligence, learning from previous executions"
         assert params['backstory'].default is None
-        assert params['allow_code_execution'].default == True
-        assert params['use_docker'].default == True
-        assert params['verbose'].default == True
-        assert params['use_llm'].default == True
+        assert params['allow_code_execution'].default
+        assert params['use_docker'].default
+        assert params['verbose'].default
+        assert params['use_llm'].default
         assert params['llm_config_path'].default == "config/llm_settings.yaml"
         assert params['max_experience_tasks'].default == 1000
 
@@ -180,7 +180,7 @@ class TestSmartAgentStatic:
                     )
 
                     assert agent_no_docker is not None
-                    assert agent_no_docker.allow_code_execution == False
+                    assert not agent_no_docker.allow_code_execution
 
                     # Проверяем отсутствие CodeInterpreterTool
                     tool_names = [tool.__class__.__name__ for tool in agent_no_docker.tools]

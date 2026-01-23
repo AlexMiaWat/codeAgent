@@ -342,9 +342,9 @@ def auto_start_server(request):
 def pytest_collection_modifyitems(config, items):
     """Modify test collection to skip tests based on markers."""
     skip_slow = pytest.mark.skip(reason="Slow test skipped (use -m slow to run)")
-    skip_cursor = pytest.mark.skip(reason="Cursor not available")
+    pytest.mark.skip(reason="Cursor not available")
     skip_llm = pytest.mark.skip(reason="LLM API not configured")
-    skip_docker = pytest.mark.skip(reason="Docker not available")
+    pytest.mark.skip(reason="Docker not available")
 
     for item in items:
         # Skip slow tests by default unless explicitly requested

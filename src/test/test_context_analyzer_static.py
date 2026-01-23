@@ -104,7 +104,7 @@ class TestContextAnalyzerToolStatic:
         actual_params = list(sig.parameters.keys())
         assert actual_params == expected_params
 
-        assert sig.parameters['file_path'].annotation == str
+        assert sig.parameters['file_path'].annotation is str or sig.parameters['file_path'].annotation == 'str'
 
     def test_get_task_context_method_signature(self):
         """Проверка сигнатуры метода get_task_context"""
@@ -117,7 +117,7 @@ class TestContextAnalyzerToolStatic:
         actual_params = list(sig.parameters.keys())
         assert actual_params == expected_params
 
-        assert sig.parameters['task_description'].annotation == str
+        assert sig.parameters['task_description'].annotation is str
 
     def test_analyze_component_method_signature(self):
         """Проверка сигнатуры метода analyze_component"""
@@ -130,7 +130,7 @@ class TestContextAnalyzerToolStatic:
         actual_params = list(sig.parameters.keys())
         assert actual_params == expected_params
 
-        assert sig.parameters['component_path'].annotation == str
+        assert sig.parameters['component_path'].annotation is str
 
     def test_find_related_files_method_signature(self):
         """Проверка сигнатуры метода find_related_files"""
@@ -143,7 +143,7 @@ class TestContextAnalyzerToolStatic:
         actual_params = list(sig.parameters.keys())
         assert actual_params == expected_params
 
-        assert sig.parameters['query'].annotation == str
+        assert sig.parameters['query'].annotation is str
 
     def test_run_method_actions(self):
         """Проверка доступных действий в методе _run"""

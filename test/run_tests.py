@@ -403,7 +403,7 @@ class TestRunner:
                     for line in logs_result.stdout.strip().split('\n')[-3:]:
                         if line.strip():
                             self.print_info(f"    {line[:100]}")
-            except:
+            except Exception:
                 pass
     
     def get_docker_container_logs(self, container_name: str = "cursor-agent-life", lines: int = 20) -> str:

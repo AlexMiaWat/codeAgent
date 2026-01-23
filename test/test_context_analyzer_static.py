@@ -355,7 +355,7 @@ class TestContextAnalyzerErrorHandling:
             tool = ContextAnalyzerTool(project_dir=temp_dir)
 
             # Попытка анализа файла не должна вызвать исключение
-            result = tool.find_file_dependencies("binary.dat")
+            tool.find_file_dependencies("binary.dat")
             # Должна вернуться пустая зависимость или сообщение об ошибке
 
     @patch('builtins.open')
@@ -367,7 +367,7 @@ class TestContextAnalyzerErrorHandling:
             tool = ContextAnalyzerTool(project_dir=temp_dir)
 
             # Попытка анализа должна обработать ошибку
-            result = tool.analyze_project_structure()
+            tool.analyze_project_structure()
             # Операция должна продолжиться несмотря на ошибку
 
     def test_dependency_analysis_edge_cases(self):

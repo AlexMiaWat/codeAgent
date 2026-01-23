@@ -2,7 +2,6 @@
 Статические тесты для LearningTool - проверка структуры данных, API, форматов
 """
 
-import pytest
 import json
 import tempfile
 from typing import List, Optional
@@ -95,11 +94,11 @@ class TestLearningToolStatic:
 
         # Проверяем типы параметров
         params = sig.parameters
-        assert params['task_id'].annotation == str
-        assert params['task_description'].annotation == str
+        assert params['task_id'].annotation is str
+        assert params['task_description'].annotation is str
         assert params['success'].annotation == bool
         assert params['execution_time'].annotation == Optional[float]
-        assert params['notes'].annotation == str
+        assert params['notes'].annotation is str
         assert params['patterns'].annotation == List[str]
 
     def test_save_task_experience_return_type(self):
@@ -176,7 +175,7 @@ class TestLearningToolStatic:
 
         # Проверяем типы и значения по умолчанию
         params = sig.parameters
-        assert params['query'].annotation == str
+        assert params['query'].annotation is str
         assert params['limit'].annotation == int
         assert params['limit'].default == 5
 
@@ -202,7 +201,7 @@ class TestLearningToolStatic:
         actual_params = list(sig.parameters.keys())
         assert actual_params == expected_params
 
-        assert sig.parameters['current_task'].annotation == str
+        assert sig.parameters['current_task'].annotation is str
 
     def test_get_statistics_method_signature(self):
         """Проверка сигнатуры метода get_statistics"""

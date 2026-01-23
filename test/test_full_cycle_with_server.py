@@ -220,7 +220,7 @@ def test_full_cycle_with_server():
         print()
         
         # Проверяем, что задача отмечена как выполненная
-        updated_tasks = server.todo_manager.get_pending_tasks()
+        server.todo_manager.get_pending_tasks()
         task_found = False
         for task in server.todo_manager.items:
             if task.text == todo_item.text:

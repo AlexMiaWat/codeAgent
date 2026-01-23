@@ -64,8 +64,21 @@ def resolve_link_path(link_path: str, base_file: Path) -> Path:
     
     # Относительный путь
     base_dir = base_file.parent
-    resolved = (base_dir / clean_path).resolve()
-    
+    # Правильная нормализация относительного пути с .. компонентами
+    combined = base_dir / clean_path
+    parts = list(combined.parts)
+    normalized = []
+
+    for part in parts:
+        if part == '..':
+            if normalized:
+                normalized.pop()  # Убираем предыдущий компонент
+        elif part != '.':
+            normalized.append(part)
+
+    normalized_path = Path(*normalized)
+    resolved = (PROJECT_ROOT / normalized_path).resolve()
+
     return resolved
 
 

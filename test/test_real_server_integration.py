@@ -77,13 +77,11 @@ class ServerTester:
             
             # Проверяем, не занят ли порт другим процессом
             import socket
-            port_in_use = False
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(1)
                     result = s.connect_ex(('127.0.0.1', 3456))
                     if result == 0:
-                        port_in_use = True
                         print("[WARN] Порт 3456 уже занят другим процессом")
                         # Проверяем, отвечает ли сервер на health check
                         try:
@@ -247,7 +245,7 @@ class ServerTester:
                 if remaining_stderr:
                     print("[ERROR] Остаток stderr:")
                     print(remaining_stderr[:1000])
-            except:
+            except Exception:
                 pass
             
             # Пытаемся прочитать оставшийся stdout
@@ -256,7 +254,7 @@ class ServerTester:
                 if remaining_stdout:
                     print("[DEBUG] Остаток stdout:")
                     print(remaining_stdout[:1000])
-            except:
+            except Exception:
                 pass
             return False
             

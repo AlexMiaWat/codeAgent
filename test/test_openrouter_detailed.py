@@ -161,7 +161,7 @@ async def test_free_models(mgr):
         
         # Проверяем, есть ли модель в конфиге
         if model_name in mgr.models:
-            model_config = mgr.models[model_name]
+            mgr.models[model_name]
             success = await test_single_model(mgr, model_name)
             results[model_name] = success
         else:

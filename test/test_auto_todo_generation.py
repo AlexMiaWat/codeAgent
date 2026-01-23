@@ -78,7 +78,6 @@ class TestSessionTracker:
         
         # Создаем трекер и записываем генерацию
         tracker1 = SessionTracker(tmp_path, tracker_file)
-        session_id = tracker1.current_session_id
         tracker1.record_generation("todo/test.md", 5)
         
         # Создаем новый трекер с тем же файлом

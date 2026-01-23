@@ -39,8 +39,8 @@ def test_smart_agent_env_variables_parsing():
             env_config = EnvConfig.load()
 
             # Проверяем парсинг булевых значений
-            assert env_config.get_bool('SMART_AGENT_ENABLED', False) == True
-            assert env_config.get_bool('SMART_AGENT_VERBOSE', True) == False
+            assert env_config.get_bool('SMART_AGENT_ENABLED', False)
+            assert not env_config.get_bool('SMART_AGENT_VERBOSE', True)
 
             # Проверяем парсинг строк
             assert env_config.get('SMART_AGENT_EXPERIENCE_DIR') == 'custom_experience'
@@ -183,9 +183,9 @@ def test_smart_agent_env_variables_defaults():
             from src.config.env_config import EnvConfig
 
             # Проверяем парсинг булевых значений по умолчанию
-            assert EnvConfig._parse_bool(None) == False  # None -> False
-            assert EnvConfig._parse_bool('true') == True
-            assert EnvConfig._parse_bool('false') == False
+            assert not EnvConfig._parse_bool(None)  # None -> False
+            assert EnvConfig._parse_bool('true')
+            assert not EnvConfig._parse_bool('false')
 
             # Проверяем парсинг целых чисел по умолчанию
             assert EnvConfig._parse_int('200') == 200
@@ -222,7 +222,7 @@ def test_learning_tool_env_variables():
             env_config = EnvConfig.load()
 
             # Проверяем парсинг переменных LearningTool
-            assert env_config.get_bool('LEARNING_TOOL_ENABLE_INDEXING', False) == True
+            assert env_config.get_bool('LEARNING_TOOL_ENABLE_INDEXING', False)
             assert env_config.get_int('LEARNING_TOOL_CACHE_SIZE', 1000) == 1500
             assert env_config.get_int('LEARNING_TOOL_CACHE_TTL', 3600) == 7200
 
@@ -246,7 +246,7 @@ def test_context_analyzer_env_variables():
             env_config = EnvConfig.load()
 
             # Проверяем парсинг переменных ContextAnalyzerTool
-            assert env_config.get_bool('CONTEXT_ANALYZER_DEEP_ANALYSIS', False) == True
+            assert env_config.get_bool('CONTEXT_ANALYZER_DEEP_ANALYSIS', False)
             assert env_config.get('CONTEXT_ANALYZER_SUPPORTED_LANGUAGES', 'python') == 'python,javascript,typescript'
             assert env_config.get_int('CONTEXT_ANALYZER_MAX_DEPTH', 5) == 10
 
@@ -337,7 +337,6 @@ def main():
     total = len(results)
 
     for test_name, success in results:
-        status = "✅ ПРОЙДЕН" if success else "❌ ПРОВАЛЕН"
         print("40")
         if success:
             passed += 1

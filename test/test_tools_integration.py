@@ -407,7 +407,7 @@ class TestToolsPatternRecognition:
             assert "Рекомендации" in api_recommendations
 
             # Ищем задачи по паттернам
-            api_tasks = learning_tool.find_similar_tasks("api")
+            learning_tool.find_similar_tasks("api")
             assert len([t for t in learning_tool._load_experience()['tasks'] if 'api' in t.get('patterns', [])]) > 0
 
     def test_context_driven_learning(self):

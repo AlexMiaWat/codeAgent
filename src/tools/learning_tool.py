@@ -407,6 +407,7 @@ class LearningTool(BaseTool):
             return
 
         try:
+            cache_file_path = self.experience_dir / self.cache_file
             cache_data = {
                 'query_cache': self._query_cache,
                 'stats': self._cache_stats,

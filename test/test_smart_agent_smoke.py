@@ -38,7 +38,7 @@ class TestSmartAgentCreation:
 
             assert agent.role == "Custom Smart Agent"
             assert agent.goal == "Custom goal"
-            assert agent.verbose == False
+            assert not agent.verbose
 
     def test_smart_agent_tools_initialization(self):
         """Тест инициализации инструментов smart agent"""
@@ -65,7 +65,7 @@ class TestSmartAgentCreation:
             mock_code_tool_class.return_value = mock_code_tool_instance
 
             with tempfile.TemporaryDirectory() as temp_dir:
-                agent = create_smart_agent(
+                create_smart_agent(
                     project_dir=Path(temp_dir),
                     use_docker=True,
                     use_llm=False
@@ -84,7 +84,7 @@ class TestSmartAgentCreation:
         mock_docker_check.return_value = False
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            agent = create_smart_agent(
+            create_smart_agent(
                 project_dir=Path(temp_dir),
                 use_docker=False,
                 use_llm=False
@@ -221,10 +221,10 @@ from flask import Flask
             tool = ContextAnalyzerTool(project_dir=temp_dir)
 
             # Поиск связанных файлов с Unicode
-            result = tool.find_related_files("документация")
+            tool.find_related_files("документация")
             # Функция должна корректно обработать Unicode
 
-            result = tool.get_task_context("тест документации")
+            tool.get_task_context("тест документации")
             # Функция должна корректно обработать Unicode
 
 

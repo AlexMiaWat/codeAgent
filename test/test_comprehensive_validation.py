@@ -203,7 +203,7 @@ def test_file_permissions(results: TestResults):
         status_manager = StatusManager(status_file)
         # Пробуем прочитать статус
         try:
-            status = status_manager.read_status()
+            status_manager.read_status()
             results.add_pass("Работа StatusManager")
         except PermissionError as e:
             results.add_fail("Работа StatusManager", f"Ошибка прав доступа: {e}")
@@ -426,7 +426,7 @@ def test_error_handling(results: TestResults):
             
             try:
                 config = ConfigLoader("config/config.yaml")
-                project_dir = config.get_project_dir()
+                config.get_project_dir()
                 # Если валидация прошла, значит PROJECT_DIR был в .env
                 results.add_warning("Обработка отсутствующего PROJECT_DIR", "PROJECT_DIR найден в .env")
             except (ValueError, FileNotFoundError) as e:
