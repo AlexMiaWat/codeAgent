@@ -38,6 +38,9 @@ from .task_logger import TaskLogger, ServerLogger, TaskPhase, Colors
 from .session_tracker import SessionTracker
 from .checkpoint_manager import CheckpointManager
 from .git_utils import auto_push_after_commit
+from .core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+
+# ServerCore logic is now extracted into separate ServerCore component
 
 
 # Настройка кодировки для Windows консоли
@@ -269,7 +272,40 @@ class CodeAgentServer:
         if self.auto_todo_enabled:
             logger.info(f"Автоматическая генерация TODO включена (макс. {self.max_todo_generations} раз за сессию)")
         logger.info("Checkpoint система активирована для защиты от сбоев")
-    
+
+        # Создание ServerCore для управления циклом выполнения
+        self._create_server_core()
+
+    def _create_server_core(self):
+        """
+        Создание экземпляра ServerCore для управления циклом выполнения задач
+        """
+        try:
+            # Создаем обработчики для ServerCore - передаем callable объекты вместо протоколов
+            task_executor = self._execute_task
+            revision_executor = self._execute_revision
+            todo_generator = self._generate_new_todo_list
+
+            # Создаем ServerCore
+            self.server_core = ServerCore(
+                todo_manager=self.todo_manager,
+                checkpoint_manager=self.checkpoint_manager,
+                status_manager=self.status_manager,
+                server_logger=self.server_logger,
+                task_executor=task_executor,
+                revision_executor=revision_executor,
+                todo_generator=todo_generator,
+                config=self.config.config_data,
+                auto_todo_enabled=self.auto_todo_enabled,
+                task_delay=self.task_delay
+            )
+
+            logger.info("ServerCore успешно инициализирован")
+
+        except Exception as e:
+            logger.error(f"Ошибка при создании ServerCore: {e}", exc_info=True)
+            raise
+
     def _validate_config(self):
         """
         Валидация конфигурации при инициализации сервера
@@ -3479,177 +3515,241 @@ class CodeAgentServer:
         )
         
         return wait_result.get("success", False)
-    
+
+    def _sync_todos_with_checkpoint(self):
+        """
+        Синхронизация TODO задач с checkpoint - помечает задачи как выполненные в TODO файле,
+        если они помечены как completed в checkpoint
+        """
+        try:
+            # Получаем все задачи из TODO
+            all_todo_items = self.todo_manager.get_all_tasks()
+
+            # Получаем все завершенные задачи из checkpoint
+            completed_tasks_in_checkpoint = [
+                task for task in self.checkpoint_manager.checkpoint_data.get("tasks", [])
+                if task.get("state") == "completed"
+            ]
+
+            # Создаем словарь завершенных задач для быстрого поиска
+            completed_task_texts = set()
+            for task in completed_tasks_in_checkpoint:
+                task_text = task.get("task_text", "")
+                if task_text:
+                    completed_task_texts.add(task_text)
+
+            # Синхронизируем: помечаем задачи как done в TODO, если они completed в checkpoint
+            synced_count = 0
+            for todo_item in all_todo_items:
+                if not todo_item.done and todo_item.text in completed_task_texts:
+                    # Задача выполнена в checkpoint, но не отмечена в TODO файле
+                    todo_item.done = True
+                    synced_count += 1
+                    logger.debug(f"Синхронизация: задача '{todo_item.text}' помечена как выполненная в TODO")
+
+            # Сохраняем изменения в TODO файл
+            if synced_count > 0:
+                self.todo_manager._save_todos()
+                logger.info(f"Синхронизация TODO с checkpoint: {synced_count} задач помечено как выполненные")
+            else:
+                logger.debug("Синхронизация TODO с checkpoint: изменений не требуется")
+
+        except Exception as e:
+            logger.error(f"Ошибка при синхронизации TODO с checkpoint: {e}", exc_info=True)
+
+    def _filter_completed_tasks(self, tasks: List[TodoItem]) -> List[TodoItem]:
+        """
+        Фильтрация задач: исключает задачи, которые уже выполнены в checkpoint
+
+        Args:
+            tasks: Список задач для фильтрации
+
+        Returns:
+            Отфильтрованный список задач
+        """
+        try:
+            # Получаем все завершенные задачи из checkpoint
+            completed_tasks_in_checkpoint = [
+                task for task in self.checkpoint_manager.checkpoint_data.get("tasks", [])
+                if task.get("state") == "completed"
+            ]
+
+            # Создаем множество текстов завершенных задач для быстрого поиска
+            completed_task_texts = set()
+            for task in completed_tasks_in_checkpoint:
+                task_text = task.get("task_text", "")
+                if task_text:
+                    completed_task_texts.add(task_text)
+
+            # Фильтруем задачи
+            filtered_tasks = []
+            for task in tasks:
+                if task.text not in completed_task_texts:
+                    filtered_tasks.append(task)
+                else:
+                    logger.debug(f"Задача '{task.text}' уже выполнена в checkpoint, пропускаем")
+
+            filtered_count = len(tasks) - len(filtered_tasks)
+            if filtered_count > 0:
+                logger.info(f"Отфильтровано {filtered_count} уже выполненных задач из checkpoint")
+
+            return filtered_tasks
+
+        except Exception as e:
+            logger.error(f"Ошибка при фильтрации выполненных задач: {e}", exc_info=True)
+            return tasks  # Возвращаем исходный список в случае ошибки
+
+    def _handle_no_tasks_scenario(self) -> bool:
+        """
+        Обработка сценария отсутствия задач
+
+        Returns:
+            True если есть новые задачи после обработки, False иначе
+        """
+        logger.info("Все задачи выполнены")
+
+        self.status_manager.append_status(
+            f"Все задачи выполнены. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            level=2
+        )
+
+        # Выполняем ревизию проекта если она еще не выполнялась в этой сессии
+        if not self._revision_done:
+            logger.info("=" * 80)
+            logger.info("ВЫПОЛНЕНИЕ РЕВИЗИИ ПРОЕКТА (все задачи выполнены)")
+            logger.info("=" * 80)
+
+            revision_success = self._execute_revision()
+
+            if revision_success:
+                self._revision_done = True
+                logger.info("Ревизия проекта успешно завершена")
+
+                # После ревизии перезагружаем задачи
+                self._reload_todos_and_check_for_new_tasks()
+                return True  # Есть новые задачи после ревизии
+            else:
+                logger.warning("Ревизия не завершена полностью, но продолжаем работу")
+                self._reload_todos_and_check_for_new_tasks()
+                return True
+        else:
+            logger.info("Ревизия уже выполнена в этой сессии, пропускаем")
+            self._reload_todos_and_check_for_new_tasks()
+            return True
+
+        # Если после ревизии все еще нет задач, пробуем сгенерировать новый TODO
+        if not self._has_pending_tasks_after_reload():
+            if self.auto_todo_enabled:
+                logger.info("=" * 80)
+                logger.info("ГЕНЕРАЦИЯ НОВОГО TODO ЛИСТА (все todo выполнены и ревизия завершена)")
+                logger.info("=" * 80)
+
+                generation_success = self._generate_new_todo_list()
+
+                if generation_success:
+                    logger.info("Новый TODO лист успешно сгенерирован, перезагрузка задач")
+                    self._reload_todos_and_check_for_new_tasks()
+                    return True
+                else:
+                    logger.warning("Генерация TODO не выполнена")
+                    return False
+            else:
+                logger.info("Генерация TODO отключена")
+                return False
+
+        return False
+
+    def _reload_todos_and_check_for_new_tasks(self):
+        """
+        Перезагрузка TODO и проверка на наличие новых задач
+        """
+        # Перезагружаем менеджер задач
+        todo_format = self.config.get('project', {}).get('todo_format', 'txt')
+        self.todo_manager = TodoManager(self.todo_manager.project_dir, todo_format=todo_format)
+
+        # Синхронизируем с checkpoint после перезагрузки
+        self._sync_todos_with_checkpoint()
+
+    def _has_pending_tasks_after_reload(self) -> bool:
+        """
+        Проверка наличия ожидающих задач после перезагрузки
+
+        Returns:
+            True если есть ожидающие задачи
+        """
+        pending_tasks = self.todo_manager.get_pending_tasks()
+        pending_tasks = self._filter_completed_tasks(pending_tasks)
+        return len(pending_tasks) > 0
+
     def run_iteration(self, iteration: int = 1):
         """
-        Выполнение одной итерации цикла
-        
+        Выполнение одной итерации цикла с интегрированной логикой ServerCore
+
         Args:
             iteration: Номер итерации
+
+        Returns:
+            True если есть еще задачи для выполнения, False иначе
         """
         logger.info(f"Начало итерации {iteration}")
-        
-        # Увеличиваем счетчик итераций в checkpoint
-        self.checkpoint_manager.increment_iteration()
-        
-        # ВАЖНО: Синхронизируем TODO с checkpoint перед получением задач
-        # Это помечает задачи как done в TODO, если они уже выполнены в checkpoint
-        self._sync_todos_with_checkpoint()
-        
-        # Получаем непройденные задачи
-        pending_tasks = self.todo_manager.get_pending_tasks()
-        
-        # Дополнительная фильтрация: исключаем задачи, которые уже выполнены в checkpoint
-        # (на случай, если они не были синхронизированы)
-        pending_tasks = self._filter_completed_tasks(pending_tasks)
-        
-        if not pending_tasks:
-            logger.info("Все задачи выполнены")
-            self.status_manager.append_status(
-                f"Все задачи выполнены. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                level=2
-            )
-            
-            # ВАЖНО: Сначала выполняем ревизию проекта
-            # Проверяем, была ли уже выполнена ревизия в этой сессии
-            with self._revision_lock:
-                revision_done = self._revision_done
-            
-            # Инициализируем pending_tasks для случая, когда ревизия уже выполнена
-            pending_tasks_after_revision = []
-            
-            if not revision_done:
-                logger.info("=" * 80)
-                logger.info("ВЫПОЛНЕНИЕ РЕВИЗИИ ПРОЕКТА (все задачи выполнены)")
-                logger.info("=" * 80)
-                
-                revision_success = self._execute_revision()
-                
-                if revision_success:
-                    # Отмечаем, что ревизия выполнена
-                    with self._revision_lock:
-                        self._revision_done = True
-                    logger.info("Ревизия проекта успешно завершена")
-                    
-                    # После ревизии перезагружаем задачи (может появиться новый todo)
-                    self.todo_manager = TodoManager(self.project_dir, todo_format=self.config.get('project.todo_format', 'txt'))
-                    # Синхронизируем TODO с checkpoint после перезагрузки
-                    self._sync_todos_with_checkpoint()
-                    pending_tasks_after_revision = self.todo_manager.get_pending_tasks()
-                    # Фильтруем выполненные задачи
-                    pending_tasks_after_revision = self._filter_completed_tasks(pending_tasks_after_revision)
-                    
-                    if pending_tasks_after_revision:
-                        logger.info(f"После ревизии найдено {len(pending_tasks_after_revision)} новых задач, продолжаем выполнение")
-                        # Продолжаем выполнение с новыми задачами
-                    else:
-                        logger.info("После ревизии задач не найдено, переходим к генерации нового TODO")
-                        # Нет задач - переходим к empty_todo
-                else:
-                    logger.warning("Ревизия не завершена полностью, но продолжаем работу")
-                    # Продолжаем даже если ревизия не завершена полностью
-                    # Перезагружаем задачи на всякий случай
-                    self.todo_manager = TodoManager(self.project_dir, todo_format=self.config.get('project.todo_format', 'txt'))
-                    # Синхронизируем TODO с checkpoint после перезагрузки
-                    self._sync_todos_with_checkpoint()
-                    pending_tasks_after_revision = self.todo_manager.get_pending_tasks()
-                    # Фильтруем выполненные задачи
-                    pending_tasks_after_revision = self._filter_completed_tasks(pending_tasks_after_revision)
-            else:
-                logger.info("Ревизия уже выполнена в этой сессии, пропускаем")
-                # Перезагружаем задачи на всякий случай
-                self.todo_manager = TodoManager(self.project_dir, todo_format=self.config.get('project.todo_format', 'txt'))
-                # Синхронизируем TODO с checkpoint после перезагрузки
-                self._sync_todos_with_checkpoint()
-                pending_tasks_after_revision = self.todo_manager.get_pending_tasks()
-                # Фильтруем выполненные задачи
-                pending_tasks_after_revision = self._filter_completed_tasks(pending_tasks_after_revision)
-            
-            # Если после ревизии все еще нет задач, используем empty_todo для генерации нового TODO
-            if not pending_tasks_after_revision:
-                if self.auto_todo_enabled:
-                    logger.info("=" * 80)
-                    logger.info("ГЕНЕРАЦИЯ НОВОГО TODO ЛИСТА (все todo выполнены и ревизия завершена)")
-                    logger.info("=" * 80)
-                    generation_success = self._generate_new_todo_list()
-                    
-                    if generation_success:
-                        logger.info("Новый TODO лист успешно сгенерирован, перезагрузка задач")
-                        # Перезагружаем задачи
-                        self.todo_manager = TodoManager(self.project_dir, todo_format=self.config.get('project.todo_format', 'txt'))
-                        # Синхронизируем TODO с checkpoint после перезагрузки
-                        self._sync_todos_with_checkpoint()
-                        pending_tasks_after_revision = self.todo_manager.get_pending_tasks()
-                        # Фильтруем выполненные задачи
-                        pending_tasks_after_revision = self._filter_completed_tasks(pending_tasks_after_revision)
-                        
-                        if pending_tasks_after_revision:
-                            logger.info(f"Загружено {len(pending_tasks_after_revision)} новых задач")
-                            # Продолжаем выполнение с новыми задачами
-                            pending_tasks = pending_tasks_after_revision
-                        else:
-                            logger.warning("После генерации TODO задачи не найдены")
-                            return False
-                    else:
-                        logger.info("Генерация TODO не выполнена (лимит или отключена)")
-                        return False
-                else:
-                    return False  # Нет задач для выполнения
-            else:
-                # Есть задачи после ревизии, продолжаем выполнение
-                pending_tasks = pending_tasks_after_revision
-        
-        # Логируем начало итерации
-        self.server_logger.log_iteration_start(iteration, len(pending_tasks))
-        logger.info(f"Найдено непройденных задач: {len(pending_tasks)}")
-        
-        # Выполняем каждую задачу в отдельной сессии
-        total_tasks = len(pending_tasks)
-        for idx, todo_item in enumerate(pending_tasks, start=1):
-            # Проверяем запрос на остановку перед каждой задачей
-            with self._stop_lock:
-                if self._should_stop:
-                    logger.warning(f"Получен запрос на остановку перед выполнением задачи {idx}/{total_tasks}")
-                    break
-            
-            # Проверяем необходимость перезапуска перед задачей
-            if self._check_reload_needed():
-                logger.warning(f"Обнаружено изменение кода перед выполнением задачи {idx}/{total_tasks}")
-                raise ServerReloadException("Перезапуск из-за изменения кода перед выполнением задачи")
-            
-            self.status_manager.add_separator()
-            task_result = self._execute_task(todo_item, task_number=idx, total_tasks=total_tasks)
-            
-            # Проверяем запрос на остановку после выполнения задачи
-            with self._stop_lock:
-                if self._should_stop:
-                    logger.warning(f"Получен запрос на остановку после выполнения задачи {idx}/{total_tasks}")
-                    break
-            
-            # Если задача завершилась из-за критической ошибки Cursor, проверяем флаг остановки
-            if task_result is False:
-                with self._stop_lock:
-                    if self._should_stop:
-                        logger.warning("Задача завершилась из-за критической ошибки Cursor - прерывание итерации")
-                        break
-            
-            # Проверяем необходимость перезапуска после задачи
-            if self._check_reload_needed():
-                logger.warning(f"Обнаружено изменение кода после выполнения задачи {idx}/{total_tasks}")
-                raise ServerReloadException("Перезапуск из-за изменения кода после выполнения задачи")
-            
-            # Задержка между задачами
-            if self.task_delay > 0:
-                # Проверяем остановку и перезапуск во время задержки
-                for _ in range(self.task_delay):
+
+        # Проверяем запрос на остановку перед началом итерации
+        with self._stop_lock:
+            if self._should_stop:
+                logger.warning("Получен запрос на остановку перед началом итерации")
+                return False
+
+        # Проверяем необходимость перезапуска перед итерацией
+        if self._check_reload_needed():
+            logger.warning("Обнаружено изменение кода перед началом итерации")
+            raise ServerReloadException("Перезапуск из-за изменения кода перед началом итерации")
+
+        try:
+            # Используем ServerCore для выполнения итерации
+            has_more_tasks, pending_tasks = self.server_core.execute_iteration(iteration)
+
+            # Если есть задачи для выполнения, выполняем их с контролем остановки
+            if pending_tasks:
+                # Выполняем задачи с контролем остановки и перезапуска
+                total_tasks = len(pending_tasks)
+                for idx, todo_item in enumerate(pending_tasks, start=1):
+                    # Проверяем запрос на остановку перед каждой задачей
                     with self._stop_lock:
                         if self._should_stop:
+                            logger.warning(f"Получен запрос на остановку перед выполнением задачи {idx}/{total_tasks}")
                             break
+
+                    # Проверяем необходимость перезапуска перед задачей
                     if self._check_reload_needed():
-                        raise ServerReloadException("Перезапуск из-за изменения кода во время задержки")
-                    time.sleep(1)
-        
-        return True  # Есть еще задачи
+                        logger.warning(f"Обнаружено изменение кода перед выполнением задачи {idx}/{total_tasks}")
+                        raise ServerReloadException("Перезапуск из-за изменения кода перед выполнением задачи")
+
+                    # Выполняем задачу через ServerCore
+                    success = self.server_core.execute_single_task(todo_item, task_number=idx, total_tasks=total_tasks)
+
+                    # Проверяем запрос на остановку после выполнения задачи
+                    with self._stop_lock:
+                        if self._should_stop:
+                            logger.warning(f"Получен запрос на остановку после выполнения задачи {idx}/{total_tasks}")
+                            break
+
+                    # Если задача завершилась из-за критической ошибки Cursor, проверяем флаг остановки
+                    if not success:
+                        with self._stop_lock:
+                            if self._should_stop:
+                                logger.warning("Задача завершилась из-за критической ошибки Cursor - прерывание итерации")
+                                break
+
+                    # Проверяем необходимость перезапуска после задачи
+                    if self._check_reload_needed():
+                        logger.warning(f"Обначен код после выполнения задачи {idx}/{total_tasks}")
+                        raise ServerReloadException("Перезапуск из-за изменения кода после выполнения задачи")
+
+            return has_more_tasks
+
+        except Exception as e:
+            logger.error(f"Ошибка выполнения итерации {iteration}: {e}", exc_info=True)
+            return False
     
     def _check_port_in_use(self, port: int) -> bool:
         """

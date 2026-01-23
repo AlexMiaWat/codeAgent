@@ -206,6 +206,8 @@ test_execution_summary.md
 *_test_results.txt
 test_full_task_*.md
 test_results_task_*.md
+docs/results/test_full_task_*.md
+docs/results/test_results_task_*.md
 
 # Test output and temporary files
 test/output/

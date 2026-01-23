@@ -5,16 +5,13 @@ llm:
   retry_attempts: 1
   strategy: best_of_two
   model_roles:
-    # Автоматический выбор: система выбирает оптимальные модели для каждой роли
-    # primary: [] - выбираются 2-3 самые производительные модели (с "wizard", "gpt", "claude" в имени)
-    # duplicate: [] - выбираются модели среднего класса (избегая слишком маленьких/больших)
-    primary: []        # Автоматический выбор производительных моделей
-    duplicate: []      # Автоматический выбор моделей среднего класса
-    reserve:           # Явно указанные резервные модели (надежные и с кредитами)
+    primary: []
+    duplicate: []
+    reserve:
     - kwaipilot/kat-coder-pro:free
-    fallback:          # Явно указанные модели последнего шанса
-    - undi95/remm-slerp-l2-13b
-    - microsoft/wizardlm-2-8x22b
+    fallback:
+    - kwaipilot/kat-coder-pro:free
+    - meta-llama/llama-3.2-3b-instruct
   parallel:
     enabled: true
     models:
@@ -28,10 +25,10 @@ llm:
     - efficiency
     parallel_timeout: 90
     evaluation_timeout: 30
-  _last_updated: '2026-01-22T21:05:01.819254'
+  _last_updated: '2026-01-23T09:24:32.497880'
   _update_source: auto_test_results
   _stats:
-    total_tested: 4
+    total_tested: 7
     working_count: 0
     fastest_model: null
 providers:

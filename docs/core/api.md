@@ -2,6 +2,142 @@
 
 ## Модули Code Agent
 
+### core
+
+#### ServerCore (`src/core/server_core.py`)
+
+Базовый компонент цикла выполнения задач.
+
+```python
+from src.core.server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+
+# Создание обработчиков (протоколы)
+def task_executor(todo_item, task_number, total_tasks):
+    # Логика выполнения задачи
+    return True
+
+def revision_executor():
+    # Логика ревизии проекта
+    return True
+
+def todo_generator():
+    # Логика генерации TODO
+    return True
+
+# Инициализация ServerCore
+server_core = ServerCore(
+    todo_manager=todo_manager,
+    checkpoint_manager=checkpoint_manager,
+    status_manager=status_manager,
+    server_logger=server_logger,
+    task_executor=task_executor,
+    revision_executor=revision_executor,
+    todo_generator=todo_generator,
+    config=config_dict,
+    auto_todo_enabled=True,
+    task_delay=5
+)
+
+# Выполнение итерации
+success, tasks_completed = server_core.execute_iteration()
+```
+
+**Методы:**
+
+- `__init__(todo_manager, checkpoint_manager, status_manager, server_logger, task_executor, revision_executor, todo_generator, config, auto_todo_enabled, task_delay)` - Инициализация
+- `execute_iteration() -> tuple[bool, list]` - Выполнение полной итерации цикла
+- `execute_single_task() -> bool` - Выполнение отдельной задачи
+- `sync_revision_state(revision_done: bool)` - Синхронизация состояния ревизии
+
+**Протоколы:**
+
+- `TaskExecutor(todo_item, task_number, total_tasks) -> bool` - Выполнение задачи
+- `RevisionExecutor() -> bool` - Выполнение ревизии проекта
+- `TodoGenerator() -> bool` - Генерация нового TODO списка
+
+---
+
+#### Абстрактные базовые классы (`src/core/abstract_base.py`)
+
+```python
+from src.core.abstract_base import BaseComponent, ConfigurableComponent, MetricsEnabledComponent
+
+class MyComponent(BaseComponent):
+    """Пример реализации базового компонента"""
+
+    def get_component_name(self) -> str:
+        return "MyComponent"
+
+    def get_component_version(self) -> str:
+        return "1.0.0"
+
+    def initialize(self) -> bool:
+        # Инициализация компонента
+        return True
+
+    def shutdown(self) -> bool:
+        # Завершение работы компонента
+        return True
+```
+
+**Классы:**
+
+- `BaseComponent` - Наследует `IServerComponent`, предоставляет базовую функциональность
+- `ConfigurableComponent` - Добавляет поддержку конфигурации через `IConfigurable`
+- `MetricsEnabledComponent` - Добавляет поддержку сбора метрик через `IMetricsCollector`
+
+---
+
+#### Интерфейсы (`src/core/interfaces.py`)
+
+```python
+from src.core.interfaces import IServerComponent, IConfigurable, IMetricsCollector
+
+class MyService(IServerComponent):
+    """Пример реализации интерфейса компонента"""
+
+    def get_component_name(self) -> str:
+        return "MyService"
+
+    def get_component_version(self) -> str:
+        return "1.0.0"
+
+    def initialize(self) -> bool:
+        return True
+
+    def shutdown(self) -> bool:
+        return True
+```
+
+**Интерфейсы:**
+
+- `IServerComponent` - Базовый интерфейс всех серверных компонентов
+- `IConfigurable` - Интерфейс конфигурируемых компонентов
+- `IMetricsCollector` - Интерфейс сборщиков метрик производительности
+
+---
+
+#### ConfigurationManager (`src/core/configuration_manager.py`)
+
+Управление конфигурацией системы.
+
+```python
+from src.core.configuration_manager import ConfigurationManager
+
+config_manager = ConfigurationManager(config_dict)
+value = config_manager.get('server.port', default=3456)
+config_manager.validate_config()
+```
+
+**Методы:**
+
+- `__init__(config: dict)` - Инициализация с конфигурацией
+- `get(key: str, default: Any)` - Получение значения
+- `validate_config()` - Валидация конфигурации
+- `reload_config(new_config: dict)` - Перезагрузка конфигурации
+
+---
+
 ### config_loader
 
 #### `ConfigLoader`

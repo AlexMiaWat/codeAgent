@@ -1,6 +1,6 @@
 # Makefile for Code Agent project
 
-.PHONY: help install install-dev install-test test test-unit test-integration test-slow test-coverage test-watch test-openrouter test-api test-cursor test-llm test-list clean lint format check
+.PHONY: help install install-dev install-test test test-unit test-integration test-slow test-coverage test-watch test-openrouter test-api test-cursor test-llm test-core test-list clean lint format check
 
 help:
 	@echo "Code Agent - Makefile commands:"
@@ -14,6 +14,7 @@ help:
 	@echo "  make test             - Run all tests (pytest)"
 	@echo "  make test-all         - Run all tests via unified runner"
 	@echo "  make test-list        - List all available test categories"
+	@echo "  make test-core        - Run Core components tests"
 	@echo "  make test-openrouter  - Run OpenRouter API tests"
 	@echo "  make test-api         - Run HTTP API server tests"
 	@echo "  make test-cursor      - Run Cursor integration tests"
@@ -88,6 +89,9 @@ test-cursor:
 
 test-llm:
 	python test/run_tests.py --llm
+
+test-core:
+	python test/run_tests.py --core
 
 test-validation:
 	python test/run_tests.py --validation

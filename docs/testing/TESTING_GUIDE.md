@@ -1,7 +1,7 @@
 # Полное руководство по тестированию Code Agent
 
 **Дата обновления:** 2026-01-23
-**Версия:** 2.3
+**Версия:** 2.4
 
 ---
 
@@ -74,7 +74,38 @@ python test/run_tests.py [опции]
 
 ## Запуск тестов по блокам
 
-### 1. OpenRouter API тесты
+### 1. Core компоненты тесты
+
+**Описание:** Статические тесты архитектурных компонентов ядра системы, интерфейсов и абстрактных базовых классов.
+
+**Запуск:**
+```bash
+python test/run_tests.py --core
+# или
+make test-core
+```
+
+**Включает:**
+- `test_core_abstract_base_static.py` - Тесты абстрактных базовых классов и наследования
+- `test_core_components_smoke.py` - Дымовые тесты компонентов ядра
+- `test_core_integration.py` - Интеграционные тесты компонентов
+- `test_core_interfaces_static.py` - Статические тесты интерфейсов
+- `test_core_types_static.py` - Тесты типов данных
+
+**Требования:**
+- Python 3.8+
+- pytest
+
+**Пример вывода:**
+```
+[OK] Тест пройден: test_core_abstract_base_static.py (0.12s)
+[OK] Тест пройден: test_core_components_smoke.py (0.08s)
+[OK] Тест пройден: test_core_interfaces_static.py (0.05s)
+```
+
+---
+
+### 2. OpenRouter API тесты
 
 **Описание:** Тестирование OpenRouter API, обнаружение моделей через OpenRouter API, CrewAI сценарии.
 
@@ -103,7 +134,7 @@ make test-openrouter
 
 ---
 
-### 2. HTTP API Server тесты
+### 3. HTTP API Server тесты
 
 **Описание:** Тестирование HTTP API сервера и endpoints.
 
@@ -139,7 +170,7 @@ python main.py
 
 ---
 
-### 3. Cursor Integration тесты
+### 4. Cursor Integration тесты
 
 **Описание:** Тестирование интеграции с Cursor IDE.
 
@@ -189,7 +220,7 @@ docker stop cursor-agent-life
 
 ---
 
-### 4. LLM Core тесты
+### 5. LLM Core тесты
 
 **Описание:** Тестирование базовой функциональности LLM.
 
@@ -208,7 +239,7 @@ make test-llm
 
 ---
 
-### 5. Validation тесты
+### 6. Validation тесты
 
 **Описание:** Тестирование валидации конфигурации и безопасности.
 
@@ -231,7 +262,7 @@ make test-validation
 
 ---
 
-### 6. Checkpoint тесты
+### 7. Checkpoint тесты
 
 **Описание:** Тестирование системы checkpoint.
 
@@ -253,7 +284,7 @@ make test-checkpoint
 
 ---
 
-### 7. Smart Agent тесты
+### 8. Smart Agent тесты
 
 **Описание:** Комплексное тестирование Smart Agent с учетом последних оптимизаций (2026-01-22).
 
@@ -314,7 +345,7 @@ pytest test/test_tools_integration.py -v       # Интеграционные т
 
 ---
 
-### 8. Full Cycle тесты
+### 9. Full Cycle тесты
 
 **Описание:** Полный цикл работы агента.
 

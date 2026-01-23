@@ -236,8 +236,8 @@ llm:
     reserve:                       # Резервные модели
       - kwaipilot/kat-coder-pro:free
     fallback:                      # Fallback модели
-      - undi95/remm-slerp-l2-13b
-      - microsoft/wizardlm-2-8x22b
+      - kwaipilot/kat-coder-pro:free
+      - meta-llama/llama-3.2-3b-instruct
 
   parallel:                        # Параллельная обработка
     enabled: true
@@ -252,6 +252,23 @@ llm:
       - efficiency
     parallel_timeout: 90           # Таймаут параллельной обработки (сек)
     evaluation_timeout: 30         # Таймаут оценки ответа (сек)
+
+  _last_updated: '2026-01-23T09:24:32.497880'  # Время последнего обновления
+  _update_source: auto_test_results             # Источник обновления
+  _stats:                                      # Статистика тестирования
+    total_tested: 7                             # Всего протестировано моделей
+    working_count: 0                            # Количество рабочих моделей
+    fastest_model: null                         # Самая быстрая модель
+```
+
+**Служебные поля (автоматически обновляются):**
+
+- `_last_updated` - время последнего автоматического обновления конфигурации
+- `_update_source` - источник последнего обновления (auto_test_results, manual, etc.)
+- `_stats` - статистика тестирования моделей:
+  - `total_tested` - общее количество протестированных моделей
+  - `working_count` - количество моделей, прошедших тестирование успешно
+  - `fastest_model` - модель с минимальным временем отклика
 
 **Логика автоматического выбора моделей:**
 
