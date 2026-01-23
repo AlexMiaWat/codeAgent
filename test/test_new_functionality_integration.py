@@ -6,11 +6,8 @@ new components: Smart Agent with Docker, HTTP server, auto-reload,
 thread-safe LearningTool, and Unicode improvements.
 """
 
-import pytest
 import tempfile
 import threading
-import time
-import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 

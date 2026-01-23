@@ -1,7 +1,6 @@
 """
 Быстрый тест гибридного интерфейса
 """
-import sys
 from pathlib import Path
 
 from src.hybrid_cursor_interface import (

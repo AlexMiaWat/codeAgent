@@ -29,16 +29,14 @@ except ImportError:
     WATCHDOG_AVAILABLE = False
 
 from .config_loader import ConfigLoader
-from .status_manager import StatusManager
-from .todo_manager import TodoManager, TodoItem
+from .todo_manager import TodoItem
 from .agents.executor_agent import create_executor_agent
 from .cursor_cli_interface import CursorCLIInterface, create_cursor_cli_interface
 from .cursor_file_interface import CursorFileInterface
-from .task_logger import TaskLogger, ServerLogger, TaskPhase, Colors
+from .task_logger import TaskLogger, TaskPhase, Colors
 from .session_tracker import SessionTracker
-from .checkpoint_manager import CheckpointManager
 from .git_utils import auto_push_after_commit
-from .core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator, DIContainer, create_default_container
+from .core import ServerCore, create_default_container
 
 # ServerCore logic is now extracted into separate ServerCore component
 
@@ -297,6 +295,7 @@ class CodeAgentServer:
         """
         try:
             from .core.interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger
+            from .verification.interfaces import IMultiLevelVerificationManager
 
             # Создаем обработчики для ServerCore - передаем callable объекты вместо протоколов
             task_executor = self._execute_task
@@ -314,6 +313,7 @@ class CodeAgentServer:
                 todo_generator=todo_generator,
                 config=self.config.config,
                 project_dir=self.project_dir,
+                verification_manager=self.di_container.resolve(IMultiLevelVerificationManager),
                 auto_todo_enabled=self.auto_todo_enabled,
                 task_delay=self.task_delay
             )
@@ -3702,7 +3702,7 @@ class CodeAgentServer:
         pending_tasks = self._filter_completed_tasks(pending_tasks)
         return len(pending_tasks) > 0
 
-    def run_iteration(self, iteration: int = 1):
+    async def run_iteration(self, iteration: int = 1):
         """
         Выполнение одной итерации цикла с делегированием полного контроля ServerCore
 
@@ -3724,7 +3724,7 @@ class CodeAgentServer:
 
         try:
             # Делегируем полный контроль выполнения итерации ServerCore
-            has_more_tasks, executed_tasks = self.server_core.execute_full_iteration(
+            has_more_tasks, executed_tasks = await self.server_core.execute_full_iteration(
                 iteration=iteration,
                 should_stop_callback=should_stop,
                 should_reload_callback=should_reload,
@@ -4380,7 +4380,7 @@ class CodeAgentServer:
                 return True
             return False
     
-    def start(self):
+    async def start(self):
         """Запуск сервера агента в бесконечном цикле"""
         logger.info("Запуск Code Agent Server")
         logger.info("Инициализация завершена, начинаем запуск HTTP сервера...")
@@ -4398,11 +4398,14 @@ class CodeAgentServer:
         # Отмечаем запуск в checkpoint
         session_id = self.session_tracker.current_session_id
         self.checkpoint_manager.mark_server_start(session_id)
-        
+
         self.status_manager.append_status(
             f"Code Agent Server запущен. Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             level=1
         )
+
+        # Запускаем основной цикл сервера
+        await self._run_server_loop()
 
     def _log_system_status(self):
         """Логирует статус компонентов системы для пользователя"""
@@ -4464,7 +4467,9 @@ class CodeAgentServer:
         logger.info("   - Настройте API ключи для LLM в .env файле")
         logger.info("   - Убедитесь, что Cursor установлен и доступен")
         logger.info("=" * 60)
-        
+
+    async def _run_server_loop(self):
+        """Основной цикл работы сервера"""
         # Получаем начальную итерацию из checkpoint (для восстановления)
         iteration = self.checkpoint_manager.get_iteration_count()
         self._current_iteration = iteration
@@ -4520,7 +4525,7 @@ class CodeAgentServer:
                 
                 # Выполняем итерацию
                 try:
-                    has_tasks = self.run_iteration(iteration)
+                    has_tasks = await self.run_iteration(iteration)
                 except ServerReloadException:
                     # Перезапуск из-за изменений в коде во время выполнения итерации
                     logger.warning("Перезапуск сервера во время выполнения итерации")
@@ -4706,14 +4711,16 @@ class CodeAgentServer:
                 pass
 
 
-def main():
-    """Точка входа в программу"""
+def run_server():
+    """Запуск сервера (используется из main.py)"""
     # Создаем директорию для логов
     Path('logs').mkdir(exist_ok=True)
-    
+
     # Создаем и запускаем сервер
     server = CodeAgentServer()
-    server.start()
+    # Для совместимости с main.py, вызываем start как обычный метод
+    import asyncio
+    asyncio.run(server.start())
 
 
 if __name__ == "__main__":

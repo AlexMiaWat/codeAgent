@@ -2,11 +2,9 @@
 Test integration of ServerCore with TaskType system
 """
 
-import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, AsyncMock
-from collections import defaultdict
+from unittest.mock import Mock
 
 from src.core.server_core import ServerCore
 from src.todo_manager import TodoItem

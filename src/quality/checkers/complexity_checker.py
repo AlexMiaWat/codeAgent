@@ -2,10 +2,9 @@
 Проверка сложности кода
 """
 
-import asyncio
 import logging
 import os
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
 from pathlib import Path
 
 from ..interfaces import IQualityChecker

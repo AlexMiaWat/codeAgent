@@ -5,7 +5,6 @@
 import asyncio
 import logging
 import os
-import subprocess
 import sys
 import tempfile
 from typing import Dict, Any, Optional

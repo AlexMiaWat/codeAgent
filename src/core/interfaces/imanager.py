@@ -6,7 +6,7 @@ must implement, ensuring consistency and testability.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 
 class IManager(ABC):

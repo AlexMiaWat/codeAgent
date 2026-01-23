@@ -148,7 +148,7 @@ def test_path_validation(results: TestResults):
         print("\n2.2. Проверка защиты от path traversal...")
         try:
             # Пробуем создать путь с множественными ..
-            test_path = Path("../../../../etc/passwd")
+            test_path = Path("../../../../invalid/path/for/testing")
             validated = config._validate_path(test_path, "test_path")
             # Если валидация прошла, это проблема безопасности
             if ".." in str(validated):

@@ -1,190 +1,287 @@
 """
 Static tests for core interfaces
 
-This module contains static tests that verify interface definitions
-and method signatures without requiring concrete implementations.
+This module contains static tests that verify core interface
+definitions, abstract methods, and inheritance without
+requiring runtime instantiation.
 """
 
-import pytest
 import inspect
 from abc import ABC
 from typing import get_type_hints
 
 from src.core.interfaces import (
-    IConfigurable, IErrorHandler, IMetricsCollector,
-    IServerComponent, ITaskOrchestrator, IFileWatcher
+    IAgent, IServer, ITaskManager, ITodoManager,
+    IStatusManager, ICheckpointManager, ILogger, IManager
 )
 
 
-class TestInterfaceDefinitions:
-    """Test interface class definitions"""
+class TestCoreInterfacesStatic:
+    """Static tests for core interfaces"""
 
-    def test_interfaces_are_abstract(self):
-        """Test that all interfaces are abstract base classes"""
-        interfaces = [
-            IConfigurable, IErrorHandler, IMetricsCollector,
-            IServerComponent, ITaskOrchestrator, IFileWatcher
-        ]
+    def test_i_agent_is_abstract(self):
+        """Test IAgent is abstract base class"""
+        assert issubclass(IAgent, ABC)
+
+    def test_i_server_is_abstract(self):
+        """Test IServer is abstract base class"""
+        assert issubclass(IServer, ABC)
+
+    def test_i_task_manager_is_abstract(self):
+        """Test ITaskManager is abstract base class"""
+        assert issubclass(ITaskManager, ABC)
+
+    def test_i_todo_manager_is_abstract(self):
+        """Test ITodoManager is abstract base class"""
+        assert issubclass(ITodoManager, ABC)
+
+    def test_i_status_manager_is_abstract(self):
+        """Test IStatusManager is abstract base class"""
+        assert issubclass(IStatusManager, ABC)
+
+    def test_i_checkpoint_manager_is_abstract(self):
+        """Test ICheckpointManager is abstract base class"""
+        assert issubclass(ICheckpointManager, ABC)
+
+    def test_i_logger_is_abstract(self):
+        """Test ILogger is abstract base class"""
+        assert issubclass(ILogger, ABC)
+
+    def test_i_manager_is_abstract(self):
+        """Test IManager is abstract base class"""
+        assert issubclass(IManager, ABC)
+
+
+class TestIAgentMethods:
+    """Test IAgent interface methods"""
+
+    def test_i_agent_methods_exist(self):
+        """Test IAgent has expected abstract methods"""
+        methods = [name for name, _ in inspect.getmembers(
+            IAgent, predicate=inspect.isfunction) if not name.startswith('_')]
+
+        expected_methods = ['execute_task', 'configure', 'get_status']
+        for method in expected_methods:
+            assert method in methods, f"IAgent missing {method}"
+
+    def test_i_agent_execute_task_signature(self):
+        """Test execute_task method signature"""
+        sig = inspect.signature(IAgent.execute_task)
+        expected_params = ['todo_item', 'task_number', 'total_tasks']
+        for param in expected_params:
+            assert param in sig.parameters
+
+    def test_i_agent_configure_signature(self):
+        """Test configure method signature"""
+        sig = inspect.signature(IAgent.configure)
+        expected_params = ['config']
+        for param in expected_params:
+            assert param in sig.parameters
+
+    def test_i_agent_get_status_signature(self):
+        """Test get_status method signature"""
+        sig = inspect.signature(IAgent.get_status)
+        assert len(sig.parameters) == 1  # self only
+
+
+class TestIServerMethods:
+    """Test IServer interface methods"""
+
+    def test_i_server_methods_exist(self):
+        """Test IServer has expected abstract methods"""
+        methods = [name for name, _ in inspect.getmembers(
+            IServer, predicate=inspect.isfunction) if not name.startswith('_')]
+
+        expected_methods = ['start', 'stop', 'get_status', 'configure']
+        for method in expected_methods:
+            assert method in methods, f"IServer missing {method}"
+
+    def test_i_server_start_signature(self):
+        """Test start method signature"""
+        sig = inspect.signature(IServer.start)
+        assert len(sig.parameters) == 1  # self only
+
+    def test_i_server_stop_signature(self):
+        """Test stop method signature"""
+        sig = inspect.signature(IServer.stop)
+        assert len(sig.parameters) == 1  # self only
+
+    def test_i_server_get_status_signature(self):
+        """Test get_status method signature"""
+        sig = inspect.signature(IServer.get_status)
+        assert len(sig.parameters) == 1  # self only
+
+    def test_i_server_configure_signature(self):
+        """Test configure method signature"""
+        sig = inspect.signature(IServer.configure)
+        expected_params = ['config']
+        for param in expected_params:
+            assert param in sig.parameters
+
+
+class TestITaskManagerMethods:
+    """Test ITaskManager interface methods"""
+
+    def test_i_task_manager_methods_exist(self):
+        """Test ITaskManager has expected abstract methods"""
+        methods = [name for name, _ in inspect.getmembers(
+            ITaskManager, predicate=inspect.isfunction) if not name.startswith('_')]
+
+        expected_methods = ['execute_task', 'get_status', 'configure']
+        for method in expected_methods:
+            assert method in methods, f"ITaskManager missing {method}"
+
+    def test_i_task_manager_execute_task_signature(self):
+        """Test execute_task method signature"""
+        sig = inspect.signature(ITaskManager.execute_task)
+        expected_params = ['todo_item', 'task_number', 'total_tasks']
+        for param in expected_params:
+            assert param in sig.parameters
+
+
+class TestITodoManagerMethods:
+    """Test ITodoManager interface methods"""
+
+    def test_i_todo_manager_methods_exist(self):
+        """Test ITodoManager has expected abstract methods"""
+        methods = [name for name, _ in inspect.getmembers(
+            ITodoManager, predicate=inspect.isfunction) if not name.startswith('_')]
+
+        expected_methods = ['get_pending_tasks', 'mark_completed', 'mark_failed', 'add_task', 'get_all_tasks']
+        for method in expected_methods:
+            assert method in methods, f"ITodoManager missing {method}"
+
+    def test_i_todo_manager_get_pending_tasks_signature(self):
+        """Test get_pending_tasks method signature"""
+        sig = inspect.signature(ITodoManager.get_pending_tasks)
+        assert len(sig.parameters) == 1  # self only
+
+    def test_i_todo_manager_mark_completed_signature(self):
+        """Test mark_completed method signature"""
+        sig = inspect.signature(ITodoManager.mark_completed)
+        expected_params = ['task_id']
+        for param in expected_params:
+            assert param in sig.parameters
+
+    def test_i_todo_manager_add_task_signature(self):
+        """Test add_task method signature"""
+        sig = inspect.signature(ITodoManager.add_task)
+        expected_params = ['todo_item']
+        for param in expected_params:
+            assert param in sig.parameters
+
+
+class TestIStatusManagerMethods:
+    """Test IStatusManager interface methods"""
+
+    def test_i_status_manager_methods_exist(self):
+        """Test IStatusManager has expected abstract methods"""
+        methods = [name for name, _ in inspect.getmembers(
+            IStatusManager, predicate=inspect.isfunction) if not name.startswith('_')]
+
+        expected_methods = ['update_status', 'get_current_status', 'get_task_history', 'configure']
+        for method in expected_methods:
+            assert method in methods, f"IStatusManager missing {method}"
+
+    def test_i_status_manager_update_status_signature(self):
+        """Test update_status method signature"""
+        sig = inspect.signature(IStatusManager.update_status)
+        expected_params = ['task_id', 'status', 'message']
+        for param in expected_params:
+            assert param in sig.parameters
+
+
+class TestICheckpointManagerMethods:
+    """Test ICheckpointManager interface methods"""
+
+    def test_i_checkpoint_manager_methods_exist(self):
+        """Test ICheckpointManager has expected abstract methods"""
+        methods = [name for name, _ in inspect.getmembers(
+            ICheckpointManager, predicate=inspect.isfunction) if not name.startswith('_')]
+
+        expected_methods = ['save_checkpoint', 'load_checkpoint', 'list_checkpoints', 'configure']
+        for method in expected_methods:
+            assert method in methods, f"ICheckpointManager missing {method}"
+
+    def test_i_checkpoint_manager_save_checkpoint_signature(self):
+        """Test save_checkpoint method signature"""
+        sig = inspect.signature(ICheckpointManager.save_checkpoint)
+        expected_params = ['task_id', 'data']
+        for param in expected_params:
+            assert param in sig.parameters
+
+
+class TestILoggerMethods:
+    """Test ILogger interface methods"""
+
+    def test_i_logger_methods_exist(self):
+        """Test ILogger has expected abstract methods"""
+        methods = [name for name, _ in inspect.getmembers(
+            ILogger, predicate=inspect.isfunction) if not name.startswith('_')]
+
+        expected_methods = ['info', 'warning', 'error', 'debug', 'configure']
+        for method in expected_methods:
+            assert method in methods, f"ILogger missing {method}"
+
+    def test_i_logger_info_signature(self):
+        """Test info method signature"""
+        sig = inspect.signature(ILogger.info)
+        expected_params = ['message', 'extra']
+        for param in expected_params:
+            assert param in sig.parameters
+
+
+class TestIManagerMethods:
+    """Test IManager interface methods"""
+
+    def test_i_manager_methods_exist(self):
+        """Test IManager has expected abstract methods"""
+        methods = [name for name, _ in inspect.getmembers(
+            IManager, predicate=inspect.isfunction) if not name.startswith('_')]
+
+        expected_methods = ['configure', 'get_status']
+        for method in expected_methods:
+            assert method in methods, f"IManager missing {method}"
+
+
+class TestTypeHints:
+    """Test type hints for interface methods"""
+
+    def test_i_agent_method_hints(self):
+        """Test IAgent methods have type hints"""
+        methods_to_check = ['execute_task', 'configure', 'get_status']
+        for method_name in methods_to_check:
+            method = getattr(IAgent, method_name)
+            hints = get_type_hints(method)
+            assert hints, f"{method_name} should have type hints"
+
+    def test_i_server_method_hints(self):
+        """Test IServer methods have type hints"""
+        methods_to_check = ['start', 'stop', 'get_status', 'configure']
+        for method_name in methods_to_check:
+            method = getattr(IServer, method_name)
+            hints = get_type_hints(method)
+            assert hints, f"{method_name} should have type hints"
+
+    def test_i_task_manager_method_hints(self):
+        """Test ITaskManager methods have type hints"""
+        methods_to_check = ['execute_task', 'get_status', 'configure']
+        for method_name in methods_to_check:
+            method = getattr(ITaskManager, method_name)
+            hints = get_type_hints(method)
+            assert hints, f"{method_name} should have type hints"
+
+
+class TestClassHierarchy:
+    """Test class hierarchy"""
+
+    def test_no_multiple_inheritance_conflicts(self):
+        """Test that interface hierarchies don't have conflicts"""
+        interfaces = [IAgent, IServer, ITaskManager, ITodoManager,
+                     IStatusManager, ICheckpointManager, ILogger, IManager]
 
         for interface in interfaces:
-            assert issubclass(interface, ABC), f"{interface.__name__} should be abstract"
-
-    def test_interface_method_signatures(self):
-        """Test that interfaces have expected abstract methods"""
-        # Test IConfigurable
-        configurable_methods = [name for name, method in inspect.getmembers(
-            IConfigurable, predicate=inspect.isfunction)]
-        expected_configurable = ['configure', 'get_config', 'validate_config']
-        for method in expected_configurable:
-            assert method in configurable_methods, f"IConfigurable missing {method}"
-
-        # Test IErrorHandler
-        error_handler_methods = [name for name, method in inspect.getmembers(
-            IErrorHandler, predicate=inspect.isfunction)]
-        expected_error_handler = ['handle_error', 'should_recover', 'get_error_history']
-        for method in expected_error_handler:
-            assert method in error_handler_methods, f"IErrorHandler missing {method}"
-
-        # Test IMetricsCollector
-        metrics_methods = [name for name, method in inspect.getmembers(
-            IMetricsCollector, predicate=inspect.isfunction)]
-        expected_metrics = ['collect_metric', 'get_metrics', 'export_metrics']
-        for method in expected_metrics:
-            assert method in metrics_methods, f"IMetricsCollector missing {method}"
-
-        # Test IServerComponent
-        server_methods = [name for name, method in inspect.getmembers(
-            IServerComponent, predicate=inspect.isfunction)]
-        expected_server = ['initialize', 'start', 'stop', 'get_health', 'is_ready']
-        for method in expected_server:
-            assert method in server_methods, f"IServerComponent missing {method}"
-
-
-class TestMethodSignatures:
-    """Test method signatures and type hints"""
-
-    def test_configurable_method_signatures(self):
-        """Test IConfigurable method signatures"""
-        from src.core.types import ServerConfig
-        from typing import Dict, Any
-
-        # Check configure method
-        configure_sig = inspect.signature(IConfigurable.configure)
-        assert 'config' in configure_sig.parameters
-        # Type hints might not be available in all Python versions, so we'll skip strict checking
-
-        # Check get_config method
-        get_config_sig = inspect.signature(IConfigurable.get_config)
-        assert get_config_sig.return_annotation is not None
-
-        # Check validate_config method
-        validate_config_sig = inspect.signature(IConfigurable.validate_config)
-        assert validate_config_sig.return_annotation is not None
-
-    def test_error_handler_method_signatures(self):
-        """Test IErrorHandler method signatures"""
-        from src.core.types import ErrorInfo
-        from typing import Optional, Dict, Any
-
-        # Check handle_error method
-        handle_error_sig = inspect.signature(IErrorHandler.handle_error)
-        assert 'error' in handle_error_sig.parameters
-        assert 'context' in handle_error_sig.parameters
-
-        # Check should_recover method
-        should_recover_sig = inspect.signature(IErrorHandler.should_recover)
-        assert 'error_info' in should_recover_sig.parameters
-
-    def test_metrics_collector_method_signatures(self):
-        """Test IMetricsCollector method signatures"""
-        from typing import Optional, List
-
-        # Check collect_metric method
-        collect_sig = inspect.signature(IMetricsCollector.collect_metric)
-        assert 'name' in collect_sig.parameters
-        assert 'value' in collect_sig.parameters
-        assert 'tags' in collect_sig.parameters
-
-        # Check get_metrics method
-        get_metrics_sig = inspect.signature(IMetricsCollector.get_metrics)
-        assert 'component' in get_metrics_sig.parameters
-
-        # Check export_metrics method
-        export_sig = inspect.signature(IMetricsCollector.export_metrics)
-        assert 'format' in export_sig.parameters
-
-    def test_server_component_method_signatures(self):
-        """Test IServerComponent method signatures"""
-        from src.core.types import ComponentHealth
-
-        # Check get_health method
-        get_health_sig = inspect.signature(IServerComponent.get_health)
-        # Return type should be ComponentHealth
-
-        # Check is_ready method
-        is_ready_sig = inspect.signature(IServerComponent.is_ready)
-        # Should return bool
-
-
-class TestInterfaceInheritance:
-    """Test interface inheritance relationships"""
-
-    def test_no_circular_inheritance(self):
-        """Test that interfaces don't have circular inheritance"""
-        interfaces = [
-            IConfigurable, IErrorHandler, IMetricsCollector,
-            IServerComponent, ITaskOrchestrator, IFileWatcher
-        ]
-
-        for interface in interfaces:
-            # Check MRO (Method Resolution Order) for circular references
             mro = interface.__mro__
-            assert len(mro) >= 2  # At least ABC and the interface itself
-            assert ABC in mro
-
-    def test_interface_separation(self):
-        """Test that interfaces are properly separated"""
-        # Each interface should have its own distinct methods
-        configurable_methods = set([name for name, _ in inspect.getmembers(
-            IConfigurable, predicate=inspect.isfunction)])
-        error_methods = set([name for name, _ in inspect.getmembers(
-            IErrorHandler, predicate=inspect.isfunction)])
-        metrics_methods = set([name for name, _ in inspect.getmembers(
-            IMetricsCollector, predicate=inspect.isfunction)])
-        server_methods = set([name for name, _ in inspect.getmembers(
-            IServerComponent, predicate=inspect.isfunction)])
-
-        # Check that interfaces have some unique methods
-        assert len(configurable_methods - error_methods - metrics_methods - server_methods) > 0
-        assert len(error_methods - configurable_methods - metrics_methods - server_methods) > 0
-        assert len(metrics_methods - configurable_methods - error_methods - server_methods) > 0
-        assert len(server_methods - configurable_methods - error_methods - metrics_methods) > 0
-
-
-class TestAbstractMethods:
-    """Test that interfaces define abstract methods correctly"""
-
-    def test_all_methods_are_abstract(self):
-        """Test that all interface methods are abstract"""
-        interfaces = [
-            IConfigurable, IErrorHandler, IMetricsCollector,
-            IServerComponent, ITaskOrchestrator, IFileWatcher
-        ]
-
-        for interface in interfaces:
-            for name, method in inspect.getmembers(interface, predicate=inspect.isfunction):
-                if not name.startswith('_'):  # Skip private methods
-                    # In Python 3.8+, we can check __isabstractmethod__
-                    if hasattr(method, '__isabstractmethod__'):
-                        assert method.__isabstractmethod__, f"{interface.__name__}.{name} should be abstract"
-
-    def test_interfaces_cannot_be_instantiated(self):
-        """Test that interfaces cannot be instantiated directly"""
-        interfaces = [
-            IConfigurable, IErrorHandler, IMetricsCollector,
-            IServerComponent, ITaskOrchestrator, IFileWatcher
-        ]
-
-        for interface in interfaces:
-            with pytest.raises(TypeError):
-                interface()  # Should raise TypeError because it's abstract
+            # Should have ABC and object in MRO
+            assert ABC in mro, f"{interface.__name__} should inherit from ABC"
+            assert object in mro[-1], f"{interface.__name__} MRO should end with object"

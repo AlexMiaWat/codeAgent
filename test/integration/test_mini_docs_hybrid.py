@@ -1,8 +1,8 @@
 """
 Тест создания mini_docs_for_user.md через гибридный интерфейс
 """
-import sys
 import time
+import os
 from pathlib import Path
 
 from src.hybrid_cursor_interface import (
@@ -96,7 +96,8 @@ print("Таймаут: 300 секунд (5 минут)")
 print()
 
 print("ВАЖНО: Для выполнения этой задачи:")
-print("1. Откройте Cursor в проекте d:/Space/life")
+target_project = os.environ.get("TEST_TARGET_PROJECT", "/tmp/test_project")
+print(f"1. Откройте Cursor в проекте {target_project}")
 print("2. Следите за файлом инструкции в cursor_commands/")
 print("3. Выполните инструкцию в Cursor")
 print("4. Сохраните результат в cursor_results/")

@@ -2,14 +2,12 @@
 Task Type Checker - проверка корректности типов задач
 """
 
-import asyncio
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 from ..interfaces.iquality_checker import IQualityChecker
 from ..models.quality_result import QualityResult, QualityCheckType, QualityStatus
-from ...core.types import TaskType
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,6 @@ requiring runtime instantiation.
 
 import inspect
 from abc import ABC
-from typing import get_type_hints
 
 from src.core.abstract_base import (
     BaseComponent, ConfigurableComponent, MetricsEnabledComponent
@@ -110,7 +109,6 @@ class TestMethodSignatures:
 
     def test_configurable_configure_signature(self):
         """Test ConfigurableComponent.configure signature"""
-        from src.core.types import ServerConfig
 
         configure_sig = inspect.signature(ConfigurableComponent.configure)
         assert 'config' in configure_sig.parameters

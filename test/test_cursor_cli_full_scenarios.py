@@ -9,6 +9,7 @@
 import sys
 import logging
 import time
+import os
 from pathlib import Path
 
 from src.cursor_cli_interface import create_cursor_cli_interface
@@ -17,6 +18,9 @@ from src.cursor_cli_interface import create_cursor_cli_interface
 # Добавляем корень проекта в путь
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
+# Используем переменную окружения для пути к проекту
+project_dir = os.environ.get("TEST_PROJECT_DIR", "/tmp/test_project")
 
 # Настройка логирования
 logging.basicConfig(
@@ -35,7 +39,7 @@ def test_scenario_1_new_chat():
     
     cli = create_cursor_cli_interface(
         cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
+        project_dir=project_dir,
         agent_role="Project Executor Agent",
         timeout=1000
     )
@@ -77,7 +81,7 @@ def test_scenario_2_continue_dialog():
     
     cli = create_cursor_cli_interface(
         cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
+        project_dir=project_dir,
         agent_role="Project Executor Agent",
         timeout=1000
     )
@@ -142,7 +146,7 @@ def test_scenario_3_complex_russian():
     
     cli = create_cursor_cli_interface(
         cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
+        project_dir=project_dir,
         agent_role="Project Executor Agent",
         timeout=1000
     )
@@ -182,7 +186,7 @@ def test_scenario_3_complex_russian():
         print(f"  Ошибки:\n{result.stderr[:500]}")
     
     # Проверяем, создан ли файл
-    output_file = Path("d:/Space/life/docs/results/mini_docs_for_user.md")
+    output_file = Path(project_dir) / "docs" / "results" / "mini_docs_for_user.md"
     if output_file.exists():
         print(f"\n[OK] Файл создан: {output_file}")
         print(f"   Размер: {output_file.stat().st_size} байт")
@@ -203,7 +207,7 @@ def test_scenario_4_list_chats():
     
     cli = create_cursor_cli_interface(
         cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
+        project_dir=project_dir,
         agent_role="Project Executor Agent",
         timeout=1000
     )
@@ -235,7 +239,7 @@ def test_scenario_5_resume_chat():
     
     cli = create_cursor_cli_interface(
         cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
+        project_dir=project_dir,
         agent_role="Project Executor Agent",
         timeout=1000
     )
@@ -282,7 +286,7 @@ def main():
     print("\n" + "="*80)
     print("ТЕСТИРОВАНИЕ ВСЕХ СЦЕНАРИЕВ CURSOR CLI")
     print("="*80)
-    print("Целевой проект: d:/Space/life")
+    print(f"Целевой проект: {project_dir}")
     print("Интерфейс: Docker (cursor-agent-life)")
     print("="*80)
     

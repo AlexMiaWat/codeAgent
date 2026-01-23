@@ -6,9 +6,8 @@ import asyncio
 import json
 import logging
 import os
-import subprocess
 import tempfile
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from pathlib import Path
 
 from ..interfaces import IQualityChecker

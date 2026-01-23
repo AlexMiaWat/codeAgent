@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, List
 from ..interfaces import IQualityReporter
-from ..models.quality_result import QualityResult, QualityGateResult, QualityStatus
+from ..models.quality_result import QualityResult, QualityGateResult
 
 logger = logging.getLogger(__name__)
 

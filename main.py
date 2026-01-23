@@ -10,7 +10,7 @@ import subprocess
 import socket
 import time
 from pathlib import Path
-from src.server import CodeAgentServer, _setup_logging, ServerReloadException
+from src.server import CodeAgentServer, _setup_logging, ServerReloadException, run_server
 
 
 def stop_server_processes():
@@ -232,7 +232,7 @@ def check_and_free_port(port: int) -> bool:
     return True
 
 
-def main():
+async def main():
     """Главная функция для запуска сервера"""
     # Очищаем логи перед стартом
     cleanup_logs()
@@ -266,7 +266,7 @@ def main():
     while restart_count < max_restarts:
         try:
             server = CodeAgentServer()
-            server.start()
+            await server.start()  # start is now async
             
             # Если дошли сюда, значит сервер завершился нормально
             # (не из-за перезапуска)
@@ -306,4 +306,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

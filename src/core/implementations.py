@@ -5,7 +5,6 @@ These implementations provide actual functionality instead of mock implementatio
 """
 
 from typing import Dict, Any, Optional, List, TYPE_CHECKING
-from pathlib import Path
 from datetime import datetime
 
 from .interfaces import IServer, IAgent, ITaskManager, TaskExecutionState
@@ -14,6 +13,7 @@ from ..todo_manager import TodoItem
 
 if TYPE_CHECKING:
     from crewai import Agent
+    from ..server import CodeAgentServer
 
 
 class ServerImpl(IServer, MetricsManager):

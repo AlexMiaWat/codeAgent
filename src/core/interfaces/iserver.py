@@ -6,8 +6,7 @@ coordinating components, and handling requests.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List
-from pathlib import Path
+from typing import Dict, Any, List
 
 from .imanager import IManager
 

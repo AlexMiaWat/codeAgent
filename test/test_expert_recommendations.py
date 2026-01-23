@@ -33,9 +33,11 @@ def test_expert_recommendations():
     print("ТЕСТ: Применение рекомендаций экспертов")
     print("="*80)
     
+    import os
+    project_dir = os.environ.get("TEST_PROJECT_DIR", "/tmp/test_project")
     cli = create_cursor_cli_interface(
         cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
+        project_dir=project_dir,
         agent_role="Project Executor Agent",
         timeout=2000
     )
@@ -118,7 +120,8 @@ def test_expert_recommendations():
     print("РЕКОМЕНДАЦИЯ #4: Post-check для side-effects")
     print("-"*80)
     
-    output_file = Path("d:/Space/life/test_expert_recommendations.txt")
+    project_dir = os.environ.get("TEST_PROJECT_DIR", "/tmp/test_project")
+    output_file = Path(project_dir) / "test_expert_recommendations.txt"
     
     print(f"[POST-CHECK] Проверка файла: {output_file}")
     
@@ -157,7 +160,8 @@ if __name__ == "__main__":
     print("\n" + "="*80)
     print("ТЕСТ: Применение рекомендаций экспертов на целевом проекте")
     print("="*80)
-    print("Проект: d:/Space/life")
+    project_dir = os.environ.get("TEST_PROJECT_DIR", "/tmp/test_project")
+    print(f"Проект: {project_dir}")
     print("Интерфейс: Docker (cursor-agent-life)")
     print("="*80)
     

@@ -3,11 +3,9 @@
 Интеграционные тесты для Quality Gates framework с ServerCore
 """
 
-import asyncio
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
-from typing import Dict, Any
 
 # Добавляем src в путь
 import sys

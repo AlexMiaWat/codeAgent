@@ -23,7 +23,7 @@ from src.hybrid_cursor_interface import create_hybrid_cursor_interface
 # Создание интерфейса
 hybrid = create_hybrid_cursor_interface(
     cli_path="docker-compose-agent",  # или None для автопоиска
-    project_dir="d:/Space/life"
+    project_dir=os.environ.get("PROJECT_DIR", "/path/to/your/project")
 )
 
 # Выполнение задачи
@@ -301,6 +301,97 @@ A: Проверьте логи, убедитесь что `verify_side_effects=T
 
 **Q: Можно ли использовать только файловый интерфейс?**  
 A: Да, установите `prefer_cli=False` и все сложные задачи пойдут через файловый интерфейс.
+
+---
+
+## 🆕 Новые возможности
+
+### Многоуровневая верификация результатов
+
+Система теперь включает комплексную верификацию выполнения задач:
+
+```python
+from src.verification import MultiLevelVerificationManager
+
+# Создание менеджера верификации
+verification_manager = MultiLevelVerificationManager()
+
+# Запуск верификации задачи
+verification_result = await verification_manager.run_verification_pipeline(
+    task_id="task_001",
+    context={
+        'execution_result': execution_data,
+        'analysis_data': code_changes
+    }
+)
+
+if verification_result.is_successful:
+    print(f"✅ Верификация пройдена: скор {verification_result.overall_score:.2f}")
+else:
+    print(f"❌ Верификация провалена")
+```
+
+**Уровни верификации:**
+- **Pre-execution**: Проверка качества кода перед выполнением
+- **In-execution**: Мониторинг выполнения в реальном времени
+- **Post-execution**: Валидация результатов после выполнения
+- **AI-validation**: Анализ через LLM
+- **Cross-validation**: Проверка согласованности
+
+### Расширенные Quality Gates
+
+Добавлены новые чекеры качества:
+
+```python
+from src.quality.quality_gate_manager import QualityGateManager
+
+# Создание менеджера качества
+quality_manager = QualityGateManager()
+
+# Запуск всех проверок
+result = await quality_manager.run_all_gates(context={
+    'project_path': '/path/to/project',
+    'execution_data': execution_info
+})
+
+print(f"Качество кода: {result.overall_status}")
+print(f"Пройдено проверок: {result.passed_checks}/{result.total_checks}")
+```
+
+**Новые чекеры:**
+- **DependencyChecker**: Проверка зависимостей проекта
+- **ResourceChecker**: Мониторинг системных ресурсов
+- **ProgressChecker**: Контроль прогресса выполнения
+
+### Docker интеграция
+
+Обновленная конфигурация Docker для гибкого монтирования проектов:
+
+```yaml
+# docker/docker-compose.agent.yml
+services:
+  agent:
+    volumes:
+      # Переменная PROJECT_DIR для гибкого монтирования
+      - ${PROJECT_DIR:-../../life}:/workspace:rw
+```
+
+**Использование:**
+```bash
+# Установка PROJECT_DIR
+export PROJECT_DIR="/path/to/your/project"
+
+# Запуск агента
+docker compose -f docker/docker-compose.agent.yml up agent
+```
+
+---
+
+## 📚 Обновленная документация
+
+- **Система верификации:** `docs/core/verification_system.md`
+- **Архитектура:** `docs/core/architecture.md`
+- **Quality Gates:** Обновлена секция в `docs/core/architecture.md`
 
 ---
 

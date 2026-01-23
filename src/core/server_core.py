@@ -14,16 +14,21 @@ ServerCore - базовый компонент для цикла выполне�
 
 import logging
 import time
+import asyncio
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Callable, Protocol
+from typing import List, Optional, Dict, Any, Callable, Protocol, TYPE_CHECKING
 from datetime import datetime
 from collections import defaultdict
 
 from ..core.interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger
-from ..todo_manager import TodoItem
 from ..quality import QualityGateManager
-from ..quality.models.quality_result import QualityGateResult, QualityCheckType
+from ..quality.models.quality_result import QualityCheckType
 from ..core.types import TaskType
+from ..verification.verification_manager import MultiLevelVerificationManager
+from ..verification.interfaces import IMultiLevelVerificationManager
+
+if TYPE_CHECKING:
+    from ..todo_manager import TodoItem
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +53,7 @@ class QualityGateException(Exception):
 class TaskExecutor(Protocol):
     """Протокол для выполнения задач"""
 
-    def __call__(self, todo_item: TodoItem, task_number: int, total_tasks: int) -> bool:
+    def __call__(self, todo_item: 'TodoItem', task_number: int, total_tasks: int) -> bool:
         """
         Выполнить задачу
 
@@ -115,6 +120,7 @@ class ServerCore:
         config: Dict[str, Any],
         project_dir: Path,
         quality_gate_manager: Optional[QualityGateManager] = None,
+        verification_manager: Optional[IMultiLevelVerificationManager] = None,
         auto_todo_enabled: bool = True,
         task_delay: int = 5
     ):
@@ -131,6 +137,8 @@ class ServerCore:
             todo_generator: Обработчик генерации TODO
             config: Конфигурация сервера
             project_dir: Директория проекта
+            quality_gate_manager: Менеджер quality gates
+            verification_manager: Менеджер многоуровневой верификации
             auto_todo_enabled: Включена ли автоматическая генерация TODO
             task_delay: Задержка между задачами в секундах
         """
@@ -144,6 +152,7 @@ class ServerCore:
         self.todo_generator = todo_generator
         self.config = config
         self.quality_gate_manager = quality_gate_manager or QualityGateManager(self.config.get('quality_gates', {}))
+        self.verification_manager = verification_manager or MultiLevelVerificationManager(self.config.get('verification', {}))
         self.auto_todo_enabled = auto_todo_enabled
         self.task_delay = task_delay
 
@@ -198,9 +207,9 @@ class ServerCore:
 
         return True, pending_tasks
 
-    def execute_single_task(self, todo_item: TodoItem, task_number: int, total_tasks: int) -> bool:
+    async def execute_single_task(self, todo_item: 'TodoItem', task_number: int, total_tasks: int) -> tuple[bool, Dict[str, Any]]:
         """
-        Выполнить отдельную задачу
+        Выполнить отдельную задачу с многоуровневой верификацией
 
         Args:
             todo_item: Задача для выполнения
@@ -208,82 +217,124 @@ class ServerCore:
             total_tasks: Общее количество задач
 
         Returns:
-            True если выполнение успешно
+            Кортеж (success, verification_result):
+            - success: True если выполнение успешно
+            - verification_result: Результаты верификации
         """
         self.status_manager.add_separator()
 
-        # Валидация типа задачи перед выполнением
-        if not self._validate_task_type(todo_item):
-            logger.warning(f"Пропускаем выполнение задачи без определенного типа: {todo_item.text}")
-            return False
+        verification_context = {
+            'task_id': todo_item.id,
+            'task_type': todo_item.category or 'default',
+            'task_description': todo_item.text,
+            'project_path': str(self.project_dir),
+            'todo_manager': self.todo_manager,
+            'iteration_context': {
+                'task_number': task_number,
+                'total_tasks': total_tasks
+            }
+        }
 
-        # Проверка Quality Gates перед выполнением задачи (с учетом типа задачи)
-        if self._should_apply_quality_gates(todo_item):
-            try:
-                # Определяем, какие чекеры запускать для этой задачи
-                gates_to_run = self._get_quality_gates_for_task(todo_item)
+        # Инициализируем результат верификации
+        verification_result = {
+            'task_id': todo_item.id,
+            'verification_passed': True,
+            'levels_executed': [],
+            'scores': {},
+            'execution_result': {},
+            'decisions': []
+        }
 
-                if gates_to_run:
-                    import asyncio
-                    try:
-                        # Check if we're already in an event loop
-                        loop = asyncio.get_running_loop()
-                        # If we are, create a task instead
-                        gate_result = loop.create_task(self.quality_gate_manager.run_specific_gates(
-                            gates_to_run,
-                            context={
-                                'task_type': todo_item.category or 'default',
-                                'task_id': todo_item.id,
-                                'project_path': str(self.project_dir),
-                                'todo_manager': self.todo_manager
-                            }
-                        ))
-                        # For simplicity, we'll run it synchronously in this context
-                        import concurrent.futures
-                        with concurrent.futures.ThreadPoolExecutor() as executor:
-                            future = executor.submit(asyncio.run, gate_result)
-                            gate_result = future.result()
-                    except RuntimeError:
-                        # No running event loop, use asyncio.run
-                        gate_result = asyncio.run(self.quality_gate_manager.run_specific_gates(
-                            gates_to_run,
-                            context={
-                                'task_type': todo_item.category or 'default',
-                                'task_id': todo_item.id,
-                                'project_path': str(self.project_dir),
-                                'todo_manager': self.todo_manager
-                            }
-                        ))
+        try:
+            # Валидация типа задачи перед выполнением
+            if not self._validate_task_type(todo_item):
+                logger.warning(f"Пропускаем выполнение задачи без определенного типа: {todo_item.text}")
+                verification_result['verification_passed'] = False
+                verification_result['decisions'].append('task_validation_failed')
+                return False, verification_result
 
-                    logger.info(f"Quality gates check completed for task {todo_item.id}: {gate_result.overall_status.value}")
+            # Уровень 1: Pre-execution verification
+            logger.info(f"Running pre-execution verification for task {todo_item.id}")
+            pre_result = await self.verification_manager.run_pre_execution_checks(
+                todo_item.id, verification_context
+            )
+            verification_result['levels_executed'].append('pre_execution')
+            verification_result['scores']['pre_execution'] = pre_result.overall_score
 
-                    # Проверяем нужно ли блокировать выполнение
-                    if self.quality_gate_manager.should_block_execution(gate_result):
-                        error_msg = f"Quality gates failed for task {todo_item.id}: {gate_result.overall_status.value}"
-                        logger.error(error_msg)
-                        raise QualityGateException(error_msg, gate_result)
-                else:
-                    logger.debug(f"No quality gates to run for task {todo_item.id}")
+            # Проверяем порог для pre-execution
+            if pre_result.overall_score is not None and pre_result.overall_score < 0.7:
+                logger.warning(f"Pre-execution verification failed for task {todo_item.id}: score {pre_result.overall_score}")
+                verification_result['verification_passed'] = False
+                verification_result['decisions'].append('pre_execution_threshold_not_met')
+                return False, verification_result
 
-            except QualityGateException:
-                raise  # Перебрасываем исключение дальше
-            except Exception as e:
-                logger.error(f"Error during quality gates check for task {todo_item.id}: {e}")
-                # В случае ошибки проверки качества - продолжаем выполнение (fail-open)
-                logger.warning("Continuing execution despite quality gates error (fail-open policy)")
+            # Уровень 2: In-execution monitoring (запускаем параллельно с выполнением)
+            logger.info(f"Starting in-execution monitoring for task {todo_item.id}")
+            in_execution_task = asyncio.create_task(
+                self.verification_manager.run_in_execution_monitoring(todo_item.id, verification_context)
+            )
 
-        # Выполнение задачи
-        success = self.task_executor(todo_item, task_number=task_number, total_tasks=total_tasks)
+            # Выполнение задачи
+            logger.info(f"Executing task {todo_item.id}: {todo_item.text}")
+            success = self.task_executor(todo_item, task_number=task_number, total_tasks=total_tasks)
+            verification_result['execution_result'] = {'success': success}
 
-        # Применяем задержку между задачами (учитывая тип задачи)
-        if success and task_number < total_tasks and self.task_delay > 0:
-            task_delay = self._calculate_task_delay(todo_item)
-            logger.debug(f"Задержка между задачами: {task_delay} сек (тип: {todo_item.effective_task_type.display_name if todo_item.effective_task_type else 'неизвестный'})")
-            time.sleep(task_delay)
+            # Ждем завершения in-execution мониторинга
+            in_result = await in_execution_task
+            verification_result['levels_executed'].append('in_execution')
+            verification_result['scores']['in_execution'] = in_result.overall_score
 
-        return success
+            # Уровень 3: Post-execution validation
+            logger.info(f"Running post-execution validation for task {todo_item.id}")
+            post_result = await self.verification_manager.run_post_execution_validation(
+                todo_item.id, verification_result['execution_result'], verification_context
+            )
+            verification_result['levels_executed'].append('post_execution')
+            verification_result['scores']['post_execution'] = post_result.overall_score
 
-    async def execute_tasks_batch(self, pending_tasks: List[TodoItem], iteration: int) -> bool:
+            # Уровень 4: AI validation (если есть данные для анализа)
+            analysis_data = self._prepare_analysis_data(todo_item, verification_result)
+            if analysis_data:
+                logger.info(f"Running AI validation for task {todo_item.id}")
+                ai_result = await self.verification_manager.run_ai_validation(
+                    todo_item.id, analysis_data, verification_context
+                )
+                verification_result['levels_executed'].append('ai_validation')
+                verification_result['scores']['ai_validation'] = ai_result.overall_score
+            else:
+                logger.debug(f"No analysis data available for AI validation of task {todo_item.id}")
+
+            # Принимаем решение на основе результатов верификации
+            decision = self._make_verification_decision(verification_result)
+            verification_result['decisions'].append(decision)
+
+            if decision == 'block_execution':
+                logger.error(f"Task {todo_item.id} blocked due to verification results")
+                verification_result['verification_passed'] = False
+                success = False
+            elif decision == 'warn_but_continue':
+                logger.warning(f"Task {todo_item.id} has verification warnings but continuing")
+                verification_result['verification_passed'] = True
+            else:  # approve_execution
+                logger.info(f"Task {todo_item.id} passed all verification levels")
+                verification_result['verification_passed'] = True
+
+            # Применяем задержку между задачами (учитывая тип задачи)
+            if success and task_number < total_tasks and self.task_delay > 0:
+                task_delay = self._calculate_task_delay(todo_item)
+                logger.debug(f"Задержка между задачами: {task_delay} сек (тип: {todo_item.effective_task_type.display_name if todo_item.effective_task_type else 'неизвестный'})")
+                await asyncio.sleep(task_delay)
+
+            return success, verification_result
+
+        except Exception as e:
+            logger.error(f"Error during task execution and verification for {todo_item.id}: {e}")
+            verification_result['verification_passed'] = False
+            verification_result['decisions'].append('execution_error')
+            verification_result['error'] = str(e)
+            return False, verification_result
+
+    async def execute_tasks_batch(self, pending_tasks: List['TodoItem'], iteration: int) -> bool:
         """
         Выполнить пакет задач в рамках одной итерации с учетом стратегий выполнения
 
@@ -314,7 +365,11 @@ class ServerCore:
 
                 for idx_in_batch, todo_item in enumerate(batch, start=1):
                     global_idx = batch_start_idx + idx_in_batch - 1
-                    success = self.execute_single_task(todo_item, task_number=global_idx, total_tasks=len(tasks))
+                    success, verification_result = await self.execute_single_task(todo_item, task_number=global_idx, total_tasks=len(tasks))
+
+                    # Логируем результаты верификации
+                    logger.info(f"Task {todo_item.id} verification: passed={verification_result.get('verification_passed', False)}, "
+                               f"levels={verification_result.get('levels_executed', [])}")
 
                     if not success:
                         logger.warning(f"Задача {global_idx}/{len(tasks)} типа {task_type.display_name} завершилась с ошибкой")
@@ -324,7 +379,7 @@ class ServerCore:
                     if idx_in_batch < len(batch) and self.task_delay > 0:
                         task_delay = self._calculate_task_delay(todo_item)
                         logger.debug(f"Задержка между задачами типа {task_type.display_name}: {task_delay} сек")
-                        time.sleep(task_delay)
+                        await asyncio.sleep(task_delay)
 
         return True  # Итерация завершена успешно
 
@@ -426,7 +481,7 @@ class ServerCore:
         except Exception as e:
             logger.error(f"Ошибка при синхронизации TODO с checkpoint: {e}", exc_info=True)
 
-    def _filter_completed_tasks(self, tasks: List[TodoItem]) -> List[TodoItem]:
+    def _filter_completed_tasks(self, tasks: List['TodoItem']) -> List['TodoItem']:
         """
         Фильтрация задач: исключает задачи, которые уже выполнены в checkpoint
 
@@ -530,6 +585,15 @@ class ServerCore:
         """
         return self.quality_gate_manager
 
+    def get_verification_manager(self) -> IMultiLevelVerificationManager:
+        """
+        Получить менеджер многоуровневой верификации
+
+        Returns:
+            MultiLevelVerificationManager instance
+        """
+        return self.verification_manager
+
     def configure_quality_gates(self, config: Dict[str, Any]):
         """
         Настроить quality gates
@@ -539,6 +603,24 @@ class ServerCore:
         """
         self.quality_gate_manager.configure(config)
         logger.info("Quality gates configured")
+
+    def configure_verification(self, config: Dict[str, Any]):
+        """
+        Настроить многоуровневую верификацию
+
+        Args:
+            config: Конфигурация верификации
+        """
+        if hasattr(self.verification_manager, 'config'):
+            self.verification_manager.config.update(config)
+            # Пересоздаем компоненты с новой конфигурацией
+            from ..verification.execution_monitor import ExecutionMonitor
+            from ..verification.llm_validator import LLMValidator
+            self.verification_manager.execution_monitor = ExecutionMonitor(config.get('execution_monitor', {}))
+            self.verification_manager.llm_validator = LLMValidator(config=config.get('llm_validator', {}))
+            self.verification_manager.level_configs = config.get('levels', self.verification_manager.level_configs)
+            self.verification_manager.overall_threshold = config.get('overall_threshold', self.verification_manager.overall_threshold)
+        logger.info("Multi-level verification configured")
 
     def _is_quality_gates_enabled(self) -> bool:
         """
@@ -606,7 +688,7 @@ class ServerCore:
             }
         }
 
-    def _prioritize_tasks(self, tasks: List[TodoItem]) -> List[TodoItem]:
+    def _prioritize_tasks(self, tasks: List['TodoItem']) -> List['TodoItem']:
         """
         Приоритизация задач на основе их типов
 
@@ -616,7 +698,7 @@ class ServerCore:
         Returns:
             Отсортированный список задач по приоритету
         """
-        def get_task_priority(task: TodoItem) -> int:
+        def get_task_priority(task: 'TodoItem') -> int:
             task_type = task.effective_task_type
             if task_type and task_type in self._execution_strategies:
                 return self._execution_strategies[task_type]['priority']
@@ -626,7 +708,7 @@ class ServerCore:
         # Сортируем по приоритету (меньше число = выше приоритет)
         return sorted(tasks, key=get_task_priority)
 
-    def _get_execution_strategy(self, task: TodoItem) -> Dict[str, Any]:
+    def _get_execution_strategy(self, task: 'TodoItem') -> Dict[str, Any]:
         """
         Получить стратегию выполнения для задачи
 
@@ -649,7 +731,7 @@ class ServerCore:
                 'max_failures': 3,
             }
 
-    def _should_apply_quality_gates(self, task: TodoItem) -> bool:
+    def _should_apply_quality_gates(self, task: 'TodoItem') -> bool:
         """
         Определить, нужно ли применять quality gates для задачи
 
@@ -667,7 +749,7 @@ class ServerCore:
         strategy = self._get_execution_strategy(task)
         return strategy.get('quality_gates_required', False)
 
-    def _get_quality_gates_for_task(self, task: TodoItem) -> List[QualityCheckType]:
+    def _get_quality_gates_for_task(self, task: 'TodoItem') -> List[QualityCheckType]:
         """
         Определить, какие quality gates применять для задачи
 
@@ -702,7 +784,7 @@ class ServerCore:
 
         return gates_to_run
 
-    def _calculate_task_delay(self, task: TodoItem) -> int:
+    def _calculate_task_delay(self, task: 'TodoItem') -> int:
         """
         Рассчитать задержку между задачами с учетом типа задачи
 
@@ -716,7 +798,7 @@ class ServerCore:
         multiplier = strategy.get('delay_multiplier', 1.0)
         return int(self.task_delay * multiplier)
 
-    def _validate_task_type(self, task: TodoItem) -> bool:
+    def _validate_task_type(self, task: 'TodoItem') -> bool:
         """
         Валидация типа задачи перед выполнением
 
@@ -738,7 +820,67 @@ class ServerCore:
         logger.debug(f"Задача типа {task_type.display_name}: {task.text}")
         return True
 
-    def execute_full_iteration(
+    def _prepare_analysis_data(self, todo_item: 'TodoItem', verification_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Подготовка данных для AI анализа
+
+        Args:
+            todo_item: Задача
+            verification_result: Результаты верификации
+
+        Returns:
+            Данные для анализа
+        """
+        analysis_data = {
+            'task_description': todo_item.text,
+            'task_type': todo_item.category,
+            'execution_result': verification_result.get('execution_result', {})
+        }
+
+        # Добавляем информацию об изменениях в коде если доступна
+        if hasattr(todo_item, 'code_changes') and todo_item.code_changes:
+            analysis_data['code_changes'] = todo_item.code_changes
+
+        # Добавляем метрики выполнения если доступны
+        if 'execution_metrics' in verification_result.get('execution_result', {}):
+            analysis_data['execution_metrics'] = verification_result['execution_result']['execution_metrics']
+
+        return analysis_data
+
+    def _make_verification_decision(self, verification_result: Dict[str, Any]) -> str:
+        """
+        Принятие решения на основе результатов верификации
+
+        Args:
+            verification_result: Результаты верификации
+
+        Returns:
+            Решение: 'approve_execution', 'warn_but_continue', 'block_execution'
+        """
+        scores = verification_result.get('scores', {})
+
+        # Критические пороги
+        pre_threshold = 0.7
+        in_threshold = 0.8
+        post_threshold = 0.75
+        ai_threshold = 0.6
+
+        # Проверяем критические уровни
+        if scores.get('pre_execution', 1.0) < pre_threshold:
+            return 'block_execution'
+        if scores.get('in_execution', 1.0) < in_threshold:
+            return 'block_execution'
+        if scores.get('post_execution', 1.0) < post_threshold:
+            return 'block_execution'
+
+        # Проверяем AI валидацию если доступна
+        if 'ai_validation' in scores and scores['ai_validation'] < ai_threshold:
+            return 'warn_but_continue'
+
+        # Все проверки пройдены
+        return 'approve_execution'
+
+    async def execute_full_iteration(
         self,
         iteration: int,
         should_stop_callback: Optional[Callable[[], bool]] = None,
@@ -757,7 +899,7 @@ class ServerCore:
         Returns:
             Кортеж (has_more_tasks, executed_tasks):
             - has_more_tasks: True если есть еще задачи для выполнения
-            - executed_tasks: Список выполненных задач в формате [(task, success), ...]
+            - executed_tasks: Список выполненных задач в формате [(task, success, verification_result), ...]
         """
         logger.info(f"Начало полной итерации {iteration} в ServerCore")
 
@@ -796,8 +938,8 @@ class ServerCore:
                         break
 
                     # Выполняем задачу
-                    success = self.execute_single_task(todo_item, task_number=idx, total_tasks=total_tasks)
-                    executed_tasks.append((todo_item, success))
+                    success, verification_result = await self.execute_single_task(todo_item, task_number=idx, total_tasks=total_tasks)
+                    executed_tasks.append((todo_item, success, verification_result))
 
                     # Проверяем запрос на остановку после выполнения задачи
                     if should_stop_callback and should_stop_callback():

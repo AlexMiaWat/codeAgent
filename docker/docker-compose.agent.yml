@@ -4,7 +4,8 @@
 #   Выполнение команды: docker compose -f docker/docker-compose.agent.yml exec agent -p "instruction"
 #   Остановка: docker compose -f docker/docker-compose.agent.yml down
 #
-# Переменные окружения загружаются из .env файла в корне проекта (d:\Space\codeAgent\.env)
+# Переменные окружения загружаются из .env файла в корне проекта
+# PROJECT_DIR - путь к целевому проекту (по умолчанию ../../life)
 
 services:
   agent:
@@ -14,8 +15,8 @@ services:
     image: cursor-agent:latest
     container_name: cursor-agent-life  # Имя контейнера для целевого проекта
     volumes:
-      # Монтируем целевую директорию проекта (D:\Space\life)
-      - ../../life:/workspace:rw
+      # Монтируем целевую директорию проекта (PROJECT_DIR)
+      - ${PROJECT_DIR:-../../life}:/workspace:rw
       # Монтируем домашнюю директорию для сохранения конфигурации agent
       - agent-home:/root
       # Монтируем SSH-ключи для доступа к GitHub (git push на этапе 8)

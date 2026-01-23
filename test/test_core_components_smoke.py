@@ -8,14 +8,12 @@ of core components can be instantiated and basic operations work.
 import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock
 
 from src.core.abstract_base import (
     BaseComponent, ConfigurableComponent, MetricsEnabledComponent
 )
 from src.core.types import (
-    ComponentStatus, ServerConfig, ErrorSeverity,
-    TaskStatus, ComponentHealth
+    ComponentStatus, ServerConfig, ComponentHealth
 )
 
 

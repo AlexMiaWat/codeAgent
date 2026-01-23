@@ -6,7 +6,6 @@ of new components without deep testing. Tests cover: Docker support,
 HTTP server, auto-reload, thread-safe LearningTool, and Unicode improvements.
 """
 
-import pytest
 import tempfile
 import threading
 from pathlib import Path

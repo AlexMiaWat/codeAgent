@@ -1,8 +1,8 @@
 """
 Реальный тест гибридного интерфейса с выполнением задачи
 """
-import sys
 import time
+import os
 from pathlib import Path
 
 from src.hybrid_cursor_interface import (
@@ -95,7 +95,8 @@ if output_path.exists():
     print()
 
 print("ВАЖНО: Для выполнения этого теста требуется:")
-print("1. Открыть Cursor в проекте d:/Space/life")
+target_project = os.environ.get("TEST_TARGET_PROJECT", "/tmp/test_project")
+print(f"1. Открыть Cursor в проекте {target_project}")
 print("2. Следить за появлением файла инструкции в cursor_commands/")
 print("3. Выполнить инструкцию вручную")
 print("4. Сохранить результат в cursor_results/")

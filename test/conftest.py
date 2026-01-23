@@ -6,7 +6,7 @@ import os
 import sys
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # Add src to path for imports
 project_root = Path(__file__).parent.parent
@@ -124,9 +124,11 @@ def test_config_path(project_root_path):
 @pytest.fixture
 def mock_config():
     """Return a mock configuration object."""
+    # Используем переменную окружения или путь к тестовому проекту
+    test_project_dir = os.environ.get("TEST_PROJECT_DIR", "/tmp/test_project")
     config = {
         "project": {
-            "base_dir": "D:\\Space\\test_project",
+            "base_dir": test_project_dir,
             "docs_dir": "docs",
             "status_file": "test_codeAgentProjectStatus.md",  # Используем test_ префикс
             "todo_format": "md",  # Формат по умолчанию
@@ -367,6 +369,116 @@ def auto_start_server(request):
     if server_started:
         print(f"\n[INFO] Останавливаем сервер после теста '{request.node.name}'...")
         tester.stop_server()
+
+
+@pytest.fixture(autouse=True)
+def mock_external_dependencies():
+    """
+    Автоматический mock внешних зависимостей для всех тестов.
+
+    Mock-ирует:
+    - crewai: основной фреймворк для AI агентов
+    - flask: веб-фреймворк для HTTP сервера
+    - watchdog: мониторинг файловой системы
+    """
+    # Mock crewai
+    with patch.dict('sys.modules', {
+        'crewai': MagicMock(),
+        'crewai.agents': MagicMock(),
+        'crewai.tasks': MagicMock(),
+        'crewai.crews': MagicMock(),
+        'crewai.tools': MagicMock(),
+        'crewai_tools': MagicMock(),
+    }):
+        # Mock flask
+        flask_mock = MagicMock()
+        flask_mock.Flask = MagicMock()
+        flask_mock.jsonify = MagicMock()
+        flask_mock.request = MagicMock()
+        flask_mock.Response = MagicMock()
+
+        # Mock watchdog
+        watchdog_mock = MagicMock()
+        watchdog_mock.observers = MagicMock()
+        watchdog_mock.observers.Observer = MagicMock()
+        watchdog_mock.events = MagicMock()
+        watchdog_mock.events.FileSystemEventHandler = MagicMock()
+
+        with patch.dict('sys.modules', {
+            'flask': flask_mock,
+            'watchdog': watchdog_mock,
+        }):
+            yield
+
+
+@pytest.fixture
+def mock_crewai():
+    """Mock для CrewAI зависимостей."""
+    crewai_mock = MagicMock()
+
+    # Mock основных классов CrewAI
+    crewai_mock.Agent = MagicMock()
+    crewai_mock.Task = MagicMock()
+    crewai_mock.Crew = MagicMock()
+    crewai_mock.Process = MagicMock()
+    crewai_mock.LLM = MagicMock()
+
+    # Mock crewai_tools
+    crewai_tools_mock = MagicMock()
+    crewai_tools_mock.BaseTool = MagicMock()
+    crewai_tools_mock.FileReadTool = MagicMock()
+    crewai_tools_mock.DirectoryReadTool = MagicMock()
+
+    with patch.dict('sys.modules', {
+        'crewai': crewai_mock,
+        'crewai_tools': crewai_tools_mock,
+    }):
+        yield crewai_mock
+
+
+@pytest.fixture
+def mock_flask():
+    """Mock для Flask зависимостей."""
+    flask_mock = MagicMock()
+
+    # Mock основных компонентов Flask
+    flask_mock.Flask = MagicMock()
+    flask_mock.jsonify = MagicMock(return_value=MagicMock())
+    flask_mock.request = MagicMock()
+    flask_mock.Response = MagicMock()
+
+    # Mock для blueprints и routing
+    flask_mock.Blueprint = MagicMock()
+
+    with patch.dict('sys.modules', {
+        'flask': flask_mock,
+    }):
+        yield flask_mock
+
+
+@pytest.fixture
+def mock_watchdog():
+    """Mock для Watchdog зависимостей."""
+    watchdog_mock = MagicMock()
+
+    # Mock наблюдателя файловой системы
+    observer_mock = MagicMock()
+    observer_mock.Observer = MagicMock()
+    observer_mock.start = MagicMock()
+    observer_mock.stop = MagicMock()
+    observer_mock.join = MagicMock()
+
+    # Mock обработчика событий
+    events_mock = MagicMock()
+    events_mock.FileSystemEventHandler = MagicMock()
+
+    watchdog_mock.observers = observer_mock
+    watchdog_mock.events = events_mock
+
+    with patch.dict('sys.modules', {
+        'watchdog': watchdog_mock,
+    }):
+        yield watchdog_mock
 
 
 # Skip tests based on availability

@@ -5,10 +5,9 @@ This module contains tests for the newly implemented interfaces
 to ensure they follow the correct patterns and can be used in DI.
 """
 
-import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
 from src.core.interfaces import IServer, IAgent, ITaskManager, TaskExecutionState
 from src.core.mock_implementations import MockServer, MockAgentManager, MockTaskManager

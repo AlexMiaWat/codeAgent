@@ -12,11 +12,11 @@ import pytest
 import tempfile
 from pathlib import Path
 from typing import Dict, Any
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
 from src.core.di_container import DIContainer, ServiceLifetime, create_default_container
 from src.core.interfaces import (
-    IManager, ITodoManager, IStatusManager, ICheckpointManager, ILogger, ITaskLogger
+    ITodoManager, IStatusManager, ICheckpointManager, ILogger
 )
 
 

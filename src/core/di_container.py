@@ -7,7 +7,7 @@ Follows SOLID principles and enables loose coupling between components.
 """
 
 import logging
-from typing import Dict, Any, Type, TypeVar, Optional, Callable, Union, List, get_origin, get_args
+from typing import Dict, Any, Type, TypeVar, Optional, Callable, Union, get_origin, get_args
 from enum import Enum
 from pathlib import Path
 
@@ -361,17 +361,17 @@ def create_default_container(project_dir: Path, config: Dict[str, Any], status_f
         from ..task_logger import ServerLogger
         from ..quality.interfaces import IQualityGateManager
         from ..quality.quality_gate_manager import QualityGateManager
+        from ..verification.interfaces import IMultiLevelVerificationManager
     except ImportError:
         # Fallback for test environment
         import sys
-        import os
         current_dir = Path(__file__).parent
         src_dir = current_dir.parent
         if str(src_dir) not in sys.path:
             sys.path.insert(0, str(src_dir))
 
         from src.core.interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger, IServer, IAgent, ITaskManager
-        from src.core.mock_implementations import MockServer, MockAgentManager, MockTaskManager
+        from src.core.mock_implementations import MockServer
         from src.todo_manager import TodoManager
         from src.status_manager import StatusManager
         from src.checkpoint_manager import CheckpointManager
@@ -438,5 +438,12 @@ def create_default_container(project_dir: Path, config: Dict[str, Any], status_f
         return QualityGateManager(config=quality_config)
     container.register_factory(IQualityGateManager, create_quality_gate_manager)
 
-    logger.info("Default DI container created with core services including new interfaces and quality gates")
+    # Register MultiLevelVerificationManager with factory
+    def create_verification_manager():
+        from ..verification.verification_manager import MultiLevelVerificationManager
+        verification_config = config.get('verification', {})
+        return MultiLevelVerificationManager(config=verification_config)
+    container.register_factory(IMultiLevelVerificationManager, create_verification_manager)
+
+    logger.info("Default DI container created with core services including new interfaces, quality gates, and verification manager")
     return container

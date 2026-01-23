@@ -6,8 +6,7 @@ It follows the Interface Segregation Principle by focusing only on todo manageme
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, TYPE_CHECKING, Union
-from pathlib import Path
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ...todo_manager import TodoItem

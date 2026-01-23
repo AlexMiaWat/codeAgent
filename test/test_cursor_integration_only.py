@@ -403,12 +403,14 @@ def test_full_flow(config, todo_manager, todo_item, project_dir):
 
 def main():
     """Главная функция тестирования"""
+    import os
+    target_project = os.environ.get("TEST_TARGET_PROJECT", "/tmp/test_project")
     print()
     print("=" * 70)
     print("ТЕСТИРОВАНИЕ ИНТЕГРАЦИИ CODE AGENT С CURSOR")
     print("=" * 70)
     print(f"Время начала: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("Целевой проект: D:\\Space\\life")
+    print(f"Целевой проект: {target_project}")
     print()
     
     results = {}

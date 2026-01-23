@@ -8,10 +8,7 @@ and Unicode improvements in ContextAnalyzerTool.
 """
 
 import inspect
-import tempfile
-from pathlib import Path
 from typing import get_type_hints
-from unittest.mock import MagicMock, patch
 
 from src.tools.docker_utils import is_docker_available
 from src.tools.learning_tool import LearningTool, normalize_unicode_text as learning_normalize
@@ -33,8 +30,6 @@ class TestDockerUtilsStatic:
 
     def test_is_docker_available_imports(self):
         """Test that required imports are available"""
-        import subprocess
-        import logging
         # These imports should be available for the function to work
 
     def test_docker_function_type_hints(self):

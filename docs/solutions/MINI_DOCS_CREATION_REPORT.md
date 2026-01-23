@@ -21,7 +21,7 @@
 
 ### Созданный файл
 
-**Путь:** `d:/Space/life/docs/results/mini_docs_for_user.md`
+**Путь:** `<PROJECT_DIR>/docs/results/mini_docs_for_user.md`
 
 **Характеристики:**
 - ✅ Размер: 6.4 KB
@@ -190,9 +190,9 @@ pytest --cov=src --cov-report=html
 
 ## 📁 Созданные файлы
 
-1. ✅ `d:/Space/life/docs/results/mini_docs_for_user.md` - Основная документация
-2. ✅ `d:/Space/life/cursor_commands/instruction_mini_docs_1768761268_NEW_CHAT.txt` - Инструкция
-3. ✅ `d:/Space/life/cursor_results/result_mini_docs_1768761268.txt` - Результат выполнения
+1. ✅ `<PROJECT_DIR>/docs/results/mini_docs_for_user.md` - Основная документация
+2. ✅ `<PROJECT_DIR>/cursor_commands/instruction_mini_docs_1768761268_NEW_CHAT.txt` - Инструкция
+3. ✅ `<PROJECT_DIR>/cursor_results/result_mini_docs_1768761268.txt` - Результат выполнения
 4. ✅ `d:/Space/codeAgent/test_mini_docs_hybrid.py` - Тестовый скрипт
 5. ✅ `d:/Space/codeAgent/docs/MINI_DOCS_CREATION_REPORT.md` - Этот отчет
 

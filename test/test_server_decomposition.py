@@ -5,14 +5,12 @@ This module tests that ServerCore has been properly extracted from CodeAgentServ
 with real logic implementation, and that the decomposition maintains correct functionality.
 """
 
-import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 from src.server import CodeAgentServer
 from src.core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
-from src.config_loader import ConfigLoader
 
 
 class TestServerCoreExtraction:
@@ -40,7 +38,6 @@ class TestServerCoreExtraction:
 
     def test_servercore_protocols_exist(self):
         """Test that ServerCore protocols are properly defined"""
-        from src.core import TaskExecutor, RevisionExecutor, TodoGenerator
         assert TaskExecutor is not None
         assert RevisionExecutor is not None
         assert TodoGenerator is not None
@@ -200,7 +197,6 @@ class TestServerCoreWithDI:
         """Test that ServerCore can be created and used through DI container"""
         import tempfile
         from pathlib import Path
-        from unittest.mock import Mock
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
@@ -239,7 +235,6 @@ class TestServerCoreWithDI:
         """Test that ServerCore properly handles scenario with no tasks using DI"""
         import tempfile
         from pathlib import Path
-        from unittest.mock import Mock
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)

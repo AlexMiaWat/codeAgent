@@ -5,7 +5,7 @@ Integration tests for TaskType system integration with existing codebase.
 import pytest
 import asyncio
 from pathlib import Path
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock
 
 from src.core.types import TaskType
 from src.todo_manager import TodoManager, TodoItem
@@ -535,7 +535,7 @@ class TestTaskTypeSystemIntegration:
             return False  # Never reload
 
         # Execute full iteration
-        has_more_tasks, executed_task_results = server_core.execute_full_iteration(
+        has_more_tasks, executed_task_results = await server_core.execute_full_iteration(
             iteration=1,
             should_stop_callback=should_stop,
             should_reload_callback=should_reload

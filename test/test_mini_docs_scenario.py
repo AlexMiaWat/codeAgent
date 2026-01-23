@@ -29,9 +29,11 @@ def test_mini_docs_creation():
     print("ТЕСТ: Создание mini_docs_for_user.md")
     print("="*80)
     
+    import os
+    project_dir = os.environ.get("TEST_PROJECT_DIR", "/tmp/test_project")
     cli = create_cursor_cli_interface(
         cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
+        project_dir=project_dir,
         agent_role="Project Executor Agent",
         timeout=2000  # Увеличенный таймаут для сложной задачи
     )
@@ -92,7 +94,8 @@ def test_mini_docs_creation():
         print(f"  {'-'*76}")
     
     # Проверяем, создан ли файл
-    output_file = Path("d:/Space/life/docs/results/mini_docs_for_user.md")
+    project_dir = os.environ.get("TEST_PROJECT_DIR", "/tmp/test_project")
+    output_file = Path(project_dir) / "docs" / "results" / "mini_docs_for_user.md"
     
     print(f"\n[CHECK] Проверка файла: {output_file}")
     
@@ -153,7 +156,7 @@ if __name__ == "__main__":
     print("\n" + "="*80)
     print("ДЕТАЛЬНЫЙ ТЕСТ: Создание mini_docs_for_user.md")
     print("="*80)
-    print("Проект: d:/Space/life")
+    print(f"Проект: {project_dir}")
     print("Интерфейс: Docker (cursor-agent-life)")
     print("="*80)
     

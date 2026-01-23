@@ -6,10 +6,14 @@
 """
 
 import sys
+import os
 from pathlib import Path
 import time
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Используем переменную окружения для пути к проекту
+project_dir = os.environ.get("TEST_PROJECT_DIR", "/tmp/test_project")
 
 from src.cursor_cli_interface import create_cursor_cli_interface
 from src.prompt_formatter import PromptFormatter
@@ -31,7 +35,7 @@ def test_chat_lifecycle_fixed():
     
     cli = create_cursor_cli_interface(
         cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
+        project_dir=project_dir,
         agent_role="Project Executor Agent",
         timeout=2000
     )
@@ -106,7 +110,7 @@ def test_chat_lifecycle_fixed():
     
     # Post-check
     print("\n[POST-CHECK] Проверка файла")
-    output_file = Path("d:/Space/life/test_chat_lifecycle.txt")
+    output_file = Path(project_dir) / "test_chat_lifecycle.txt"
     
     if output_file.exists():
         content = output_file.read_text(encoding='utf-8', errors='ignore')

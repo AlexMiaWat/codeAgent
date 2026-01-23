@@ -9,7 +9,10 @@ from datetime import datetime
 
 from .interfaces import IQualityGateManager
 from .models.quality_result import QualityGateResult, QualityResult, QualityCheckType, QualityStatus
-from .checkers import CoverageChecker, ComplexityChecker, SecurityChecker, StyleChecker, TaskTypeChecker
+from .checkers import (
+    CoverageChecker, ComplexityChecker, SecurityChecker, StyleChecker, TaskTypeChecker,
+    DependencyChecker, ResourceChecker, ProgressChecker
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +40,10 @@ class QualityGateManager(IQualityGateManager):
             QualityCheckType.COMPLEXITY: ComplexityChecker(),
             QualityCheckType.SECURITY: SecurityChecker(),
             QualityCheckType.STYLE: StyleChecker(),
-            QualityCheckType.TASK_TYPE: TaskTypeChecker()
+            QualityCheckType.TASK_TYPE: TaskTypeChecker(),
+            QualityCheckType.DEPENDENCY: DependencyChecker(),
+            QualityCheckType.RESOURCE: ResourceChecker(),
+            QualityCheckType.PROGRESS: ProgressChecker()
         }
 
         # Настройка по умолчанию
@@ -73,6 +79,23 @@ class QualityGateManager(IQualityGateManager):
                     'max_untyped_percentage': 0.3,
                     'min_typed_percentage': 0.7,
                     'check_distribution': True
+                },
+                'dependency': {
+                    'enabled': True,
+                    'check_imports': True,
+                    'check_requirements': True,
+                    'check_conflicts': True
+                },
+                'resource': {
+                    'enabled': True,
+                    'min_cpu_percent': 10.0,
+                    'min_memory_percent': 20.0,
+                    'min_disk_percent': 10.0
+                },
+                'progress': {
+                    'enabled': True,
+                    'max_execution_time': 300,
+                    'progress_timeout': 60
                 }
             }
         }

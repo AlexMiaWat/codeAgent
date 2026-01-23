@@ -6,14 +6,13 @@ enum values, and data structure integrity without requiring
 runtime instantiation.
 """
 
-import pytest
 from pathlib import Path
 from datetime import datetime
 
 from src.core.types import (
     ErrorSeverity, TaskStatus, ComponentStatus,
     ServerConfig, TaskResult, MetricsData,
-    ErrorInfo, ComponentHealth, TaskId
+    ErrorInfo, ComponentHealth
 )
 
 
@@ -129,7 +128,6 @@ class TestDataClasses:
 
     def test_component_health_creation(self):
         """Test ComponentHealth can be created"""
-        from src.core.types import ComponentHealth
 
         health = ComponentHealth(
             component_name="test_component",

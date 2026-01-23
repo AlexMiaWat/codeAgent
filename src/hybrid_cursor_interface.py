@@ -471,9 +471,11 @@ if __name__ == "__main__":
     )
     
     # Создаем гибридный интерфейс
+    import os
+    project_dir = os.environ.get("PROJECT_DIR", "/tmp/example_project")
     hybrid = create_hybrid_cursor_interface(
         cli_path="docker-compose-agent",
-        project_dir="d:/Space/life",
+        project_dir=project_dir,
         prefer_cli=False,  # Не предпочитать CLI для сложных задач
         verify_side_effects=True
     )

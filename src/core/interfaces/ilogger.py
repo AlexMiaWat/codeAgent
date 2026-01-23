@@ -7,7 +7,6 @@ It ensures consistent logging across all components with proper abstraction.
 
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
-from pathlib import Path
 
 
 class ILogger(ABC):

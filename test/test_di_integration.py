@@ -10,7 +10,7 @@ import pytest
 import tempfile
 from pathlib import Path
 from typing import Callable, Dict, Any, List
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock
 
 from src.core.di_container import DIContainer, ServiceLifetime, create_default_container, DependencyInjectionException
 from src.core.interfaces import (
@@ -198,7 +198,6 @@ class TestInterfaceImplementationIntegration:
 
     def test_manager_interfaces_have_common_base(self):
         """Test that manager interfaces share common functionality"""
-        from src.core.interfaces import IManager
 
         # All manager interfaces should be related to IManager conceptually
         # (though not necessarily inheriting directly)

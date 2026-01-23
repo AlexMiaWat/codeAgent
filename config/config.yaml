@@ -808,6 +808,64 @@ quality_gates:
       enabled: true
       tools: ["ruff", "mypy", "bandit"]
 
+# Настройки многоуровневой верификации результатов
+verification:
+  # Включить систему многоуровневой верификации
+  enabled: true
+
+  # Общий порог для прохождения всех уровней верификации
+  overall_threshold: 0.7
+
+  # Настройки уровней верификации
+  levels:
+    pre_execution:
+      enabled: true
+      weight: 0.2
+      required_score: 0.7
+      description: "Проверки перед выполнением задачи"
+
+    in_execution:
+      enabled: true
+      weight: 0.3
+      required_score: 0.8
+      description: "Мониторинг выполнения задачи"
+
+    post_execution:
+      enabled: true
+      weight: 0.3
+      required_score: 0.75
+      description: "Валидация результатов после выполнения"
+
+    ai_validation:
+      enabled: true
+      weight: 0.2
+      required_score: 0.6
+      description: "AI анализ качества выполнения"
+
+    cross_validation:
+      enabled: true
+      weight: 0.0  # Не влияет на общий скор
+      required_score: 0.0
+      description: "Кросс-проверка между уровнями"
+
+  # Настройки компонентов верификации
+  quality_gates:
+    enabled: true
+    strict_mode: false
+
+  execution_monitor:
+    enabled: true
+    resource_check_interval: 5  # секунд
+    max_memory_usage: 80  # проценты
+    max_cpu_usage: 90     # проценты
+    timeout_warning: 300  # секунд
+
+  llm_validator:
+    enabled: true
+    model: "auto"  # использовать основную модель
+    analysis_timeout: 120  # секунд
+    max_analysis_length: 5000  # символов
+
 # Настройки тестирования
 testing:
   enabled: false
