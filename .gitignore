@@ -268,3 +268,6 @@ nul
 .codeagent_fallback_state.json
 .codeagent_fallback_state.json
 scripts/*.bat
+config/config.yaml
+gemini_env/*
+.gemini/oauth_creds.json

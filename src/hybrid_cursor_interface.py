@@ -146,6 +146,18 @@ class HybridCursorInterface:
         
         logger.info(f"  Сложность: {complexity.value}")
         
+        # Специальная логика для задач, требующих создания файлов результатов
+        requires_file = self._requires_file_result(instruction, task_id)
+        logger.debug(f"  Требует файл результата: {requires_file} (task_id: {task_id}, instruction_preview: {instruction[:50]}...)")
+        if requires_file:
+            logger.info(f"  Задача требует создания файла результата - используем файловый интерфейс")
+            return self._execute_via_file(
+                instruction=instruction,
+                task_id=task_id,
+                control_phrase=control_phrase,
+                timeout=timeout
+            )
+
         # Выбираем метод выполнения
         if complexity == TaskComplexity.SIMPLE and self.cli.is_available():
             # Простые задачи - через CLI
@@ -172,6 +184,50 @@ class HybridCursorInterface:
                 timeout=timeout
             )
     
+    def _requires_file_result(self, instruction: str, task_id: str) -> bool:
+        """
+        Определяет, требует ли задача создания файла результата
+
+        Такие задачи должны всегда использовать файловый интерфейс,
+        даже если они кажутся простыми.
+
+        Args:
+            instruction: Инструкция для анализа
+            task_id: ID задачи
+
+        Returns:
+            True если задача требует создания файла результата
+        """
+        instruction_lower = instruction.lower()
+
+        # Задачи, которые явно требуют создания файлов результатов
+        file_result_indicators = [
+            'plan_result_',  # Файлы типа plan_result_task_xxx.md
+            'docs/results/',  # Ссылки на директорию результатов
+            'сохрани результат',  # Русские фразы
+            'save result',
+            'create report',
+            'создай отчет',
+            'task_',  # ID задач часто содержат task_
+            'интеграция',  # Задачи интеграции часто требуют результатов
+            'интеллектуальная',  # Эта конкретная задача
+            'llm интеграция'  # Эта конкретная задача
+        ]
+
+        for indicator in file_result_indicators:
+            if indicator in instruction_lower or indicator in task_id.lower():
+                return True
+
+        # Задачи с ссылками на docs/planning/ часто требуют создания результатов
+        if 'docs/planning/' in instruction_lower:
+            return True
+
+        # Задачи сервера Code Agent всегда требуют файлов результатов
+        if 'code agent' in instruction_lower or 'интеллектуальная' in instruction_lower:
+            return True
+
+        return False
+
     def _determine_complexity(self, instruction: str) -> TaskComplexity:
         """
         Автоматическое определение сложности задачи

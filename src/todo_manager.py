@@ -8,14 +8,36 @@ import yaml
 import re
 import logging
 import os
+from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+
+class TaskType(Enum):
+    """Типы задач в проекте"""
+    CODE = "code"           # Разработка кода
+    DOCS = "docs"           # Документация
+    REFACTOR = "refactor"   # Рефакторинг
+    TEST = "test"           # Тестирование
+    RELEASE = "release"     # Релиз и развертывание
+    DEVOPS = "devops"       # DevOps и инфраструктура
+
+    @classmethod
+    def from_string(cls, value: str) -> Optional['TaskType']:
+        """Создать TaskType из строки"""
+        try:
+            return cls(value.lower())
+        except ValueError:
+            return None
+
+    def __str__(self) -> str:
+        return self.value
 
 
 class TodoItem:
     """Элемент todo-листа"""
 
-    def __init__(self, text: str, level: int = 0, done: bool = False, skipped: bool = False, parent: Optional['TodoItem'] = None, comment: Optional[str] = None):
+    def __init__(self, text: str, level: int = 0, done: bool = False, skipped: bool = False, parent: Optional['TodoItem'] = None, comment: Optional[str] = None, task_type: Optional[TaskType] = None):
         """
         Инициализация элемента todo
 
@@ -26,6 +48,7 @@ class TodoItem:
             skipped: Пропущена ли задача (не выполнена по решению, а не из-за невыполнения)
             parent: Родительский элемент
             comment: Комментарий к задаче (например, причина пропуска или краткое описание выполнения)
+            task_type: Тип задачи (code, docs, refactor, test, release, devops)
         """
         self.text = text.strip()
         self.level = level
@@ -34,6 +57,7 @@ class TodoItem:
         self.parent = parent
         self.children: List['TodoItem'] = []
         self.comment = comment
+        self.task_type = task_type
     
     def __repr__(self) -> str:
         if self.done:
@@ -42,8 +66,10 @@ class TodoItem:
             status = "[SKIP]"
         else:
             status = "[TODO]"
+
+        type_indicator = f"[{self.task_type.value}]" if self.task_type else ""
         indent = "  " * self.level
-        return f"{indent}{status} {self.text}"
+        return f"{indent}{status} {type_indicator} {self.text}".strip()
 
 
 class TodoManager:
@@ -627,7 +653,9 @@ class TodoManager:
                         done = item_data.get('done', False)
                         skipped = item_data.get('skipped', False)
                         comment = item_data.get('comment', None)
-                        items.append(TodoItem(text, level=level, done=done, skipped=skipped, comment=comment))
+                        task_type_str = item_data.get('task_type', item_data.get('type', None))
+                        task_type = TaskType.from_string(task_type_str) if task_type_str else None
+                        items.append(TodoItem(text, level=level, done=done, skipped=skipped, comment=comment, task_type=task_type))
 
                         # Рекурсивно обрабатываем подзадачи
                         children = item_data.get('children', item_data.get('items', []))
@@ -1019,14 +1047,20 @@ class TodoManager:
         else:
             logger.warning("Не удалось загрузить ни один файл todo, используем пустой список задач")
 
-    def get_pending_tasks(self) -> List[TodoItem]:
+    def get_pending_tasks(self, task_type: Optional[TaskType] = None) -> List[TodoItem]:
         """
         Получение непройденных задач
+
+        Args:
+            task_type: Фильтр по типу задачи (опционально)
 
         Returns:
             Список невыполненных задач (исключая пропущенные)
         """
-        return [item for item in self.items if not item.done and not item.skipped]
+        pending_tasks = [item for item in self.items if not item.done and not item.skipped]
+        if task_type:
+            pending_tasks = [item for item in pending_tasks if item.task_type == task_type]
+        return pending_tasks
     
     def get_all_tasks(self) -> List[TodoItem]:
         """
@@ -1037,6 +1071,23 @@ class TodoManager:
         """
         return self.items
     
+    def add_task(self, text: str, task_type: Optional[TaskType] = None, level: int = 0) -> TodoItem:
+        """
+        Добавление новой задачи
+
+        Args:
+            text: Текст задачи
+            task_type: Тип задачи
+            level: Уровень вложенности
+
+        Returns:
+            Созданная задача TodoItem
+        """
+        item = TodoItem(text, level=level, task_type=task_type)
+        self.items.append(item)
+        self._save_todos()
+        return item
+
     def mark_task_done(self, task_text: str, comment: Optional[str] = None) -> bool:
         """
         Отметка задачи как выполненной
@@ -1203,6 +1254,8 @@ class TodoManager:
                 task_data["level"] = item.level
             if item.comment:
                 task_data["comment"] = item.comment
+            if item.task_type:
+                task_data["task_type"] = item.task_type.value
             tasks.append(task_data)
         
         data = {"tasks": tasks}
@@ -1210,6 +1263,36 @@ class TodoManager:
         
         self.todo_file.write_text(content, encoding='utf-8')
     
+    def get_tasks_by_type(self, task_type: TaskType) -> List[TodoItem]:
+        """
+        Получение задач определенного типа
+
+        Args:
+            task_type: Тип задач для фильтрации
+
+        Returns:
+            Список задач указанного типа
+        """
+        return [item for item in self.items if item.task_type == task_type]
+
+    def set_task_type(self, task_text: str, task_type: TaskType) -> bool:
+        """
+        Установка типа задачи
+
+        Args:
+            task_text: Текст задачи для поиска
+            task_type: Новый тип задачи
+
+        Returns:
+            True если задача найдена и тип установлен
+        """
+        for item in self.items:
+            if item.text == task_text or item.text.startswith(task_text):
+                item.task_type = task_type
+                self._save_todos()
+                return True
+        return False
+
     def get_task_hierarchy(self) -> Dict[str, Any]:
         """
         Получение иерархии задач
@@ -1220,14 +1303,32 @@ class TodoManager:
             - 'pending': количество невыполненных задач
             - 'completed': количество выполненных задач
             - 'skipped': количество пропущенных задач
+            - 'by_type': статистика по типам задач
             - 'items': список словарей с информацией о каждой задаче
         """
+        # Статистика по типам
+        type_stats = {}
+        for task_type in TaskType:
+            tasks_of_type = self.get_tasks_by_type(task_type)
+            type_stats[task_type.value] = {
+                'total': len(tasks_of_type),
+                'pending': len([t for t in tasks_of_type if not t.done and not t.skipped]),
+                'completed': len([t for t in tasks_of_type if t.done]),
+                'skipped': len([t for t in tasks_of_type if t.skipped])
+            }
+
         # Простая реализация - можно расширить для построения дерева
         return {
             'total': len(self.items),
             'pending': len(self.get_pending_tasks()),
             'completed': len([i for i in self.items if i.done]),
             'skipped': len([i for i in self.items if i.skipped]),
-            'items': [{'text': item.text, 'level': item.level, 'done': item.done, 'skipped': item.skipped}
-                     for item in self.items]
+            'by_type': type_stats,
+            'items': [{
+                'text': item.text,
+                'level': item.level,
+                'done': item.done,
+                'skipped': item.skipped,
+                'task_type': item.task_type.value if item.task_type else None
+            } for item in self.items]
         }
