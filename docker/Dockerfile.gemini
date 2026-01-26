@@ -1,0 +1,65 @@
+# Dockerfile для установки Gemini CLI
+# Основан на Python slim-buster для эффективности
+FROM mirror.gcr.io/python:3.11-slim-bookworm
+
+# Установка необходимых системных зависимостей
+# git, openssh-client для работы с репозиториями
+# curl, bash для выполнения скриптов
+# ca-certificates для HTTPS
+RUN apt-get update && apt-get install -y \
+    git \
+    openssh-client \
+    curl \
+    bash \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Создание рабочей директории
+WORKDIR /workspace
+
+# Копируем файл с учетными данными для Google API
+RUN mkdir -p /root/.gemini
+# COPY .gemini/oauth_creds.json /root/.gemini/
+# RUN chmod 600 /root/.gemini/oauth_creds.json
+
+# Копируем скрипт реального Gemini агента
+COPY src/agents/gemini_agent/gemini_agent_cli.py /usr/local/bin/gemini_agent_cli.py
+RUN chmod +x /usr/local/bin/gemini_agent_cli.py
+
+# Установка Gemini CLI
+# Предполагаем, что Gemini CLI доступен как Python пакет.
+# Если это не так, этот шаг будет скорректирован.
+RUN pip install google-generativeai google-auth python-dotenv
+
+# Добавление ~/.local/bin в PATH (если pip устанавливает скрипты туда)
+ENV PATH="${PATH}:/root/.local/bin"
+
+# Переменные окружения для работы контейнера
+ENV AGENT_WORKING_DIR=/workspace
+ENV AGENT_HOME=/root
+ENV PYTHONUNBUFFERED=1
+
+# Настройка SSH для GitHub (если SSH-ключи монтируются из хоста)
+# Это нужно, если Gemini CLI будет выполнять git операции в целевом проекте.
+RUN mkdir -p /root/.ssh && \
+    chmod 700 /root/.ssh && \
+    touch /root/.ssh/config && \
+    chmod 600 /root/.ssh/config && \
+    echo "Host github.com" >> /root/.ssh/config && \
+    echo "  StrictHostKeyChecking no" >> /root/.ssh/config && \
+    echo "  UserKnownHostsFile=/dev/null" >> /root/.ssh/config
+
+# Скрипт запуска для обработки SSH прав и других инициализаций
+RUN cat > /start.sh << 'EOF'
+#!/bin/sh
+echo "Starting container..."
+echo "Container ID: $(hostname)"
+tail -f /dev/null
+EOF
+
+RUN chmod +x /start.sh && \
+    ls -la /start.sh
+
+# HEALTHCHECK (optional, depending on actual Gemini CLI functionality)
+# CMD будет переопределен в docker-compose.gemini.yml
+CMD ["/start.sh"]

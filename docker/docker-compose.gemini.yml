@@ -1,0 +1,46 @@
+# docker-compose.gemini.yml для Gemini CLI
+# Использование:
+#   Запуск постоянного контейнера: docker compose -f docker/docker-compose.gemini.yml up -d
+#   Выполнение команды: docker compose -f docker/docker-compose.gemini.yml exec gemini-agent <your-gemini-cli-command>
+#   Остановка: docker compose -f docker/docker-compose.gemini.yml down
+#
+# Переменные окружения загружаются из .env файла в корне проекта (d:\Space\codeAgent\.env)
+
+services:
+  gemini-agent:
+    build:
+      context: ..  # Контекст - корень проекта (D:\Space\codeAgent)
+      dockerfile: docker/Dockerfile.gemini
+    image: gemini-agent:latest
+    container_name: gemini-agent  # Имя контейнера для Gemini CLI
+    volumes:
+      # Монтируем целевую директорию проекта (путь берется из .env)
+      - ${TARGET_PROJECT_PATH:-D:\Space\cli}:/workspace
+      # Монтируем домашнюю диреторию для сохранения конфигурации (если Gemini CLI ее использует)
+      - gemini-home:/root
+      # Монтируем SSH-ключи для доступа к GitHub (если необходимы Git операции)
+      # Windows путь: C:\Users\<username>\.ssh -> /root/.ssh в контейнере
+      - ${HOME}/.ssh:/root/.ssh:rw
+    working_dir: /workspace
+    command: ["bash", "-c", "sleep infinity"]
+    environment:
+      - AGENT_WORKING_DIR=/workspace
+      - AGENT_HOME=/root
+      # Загрузка API ключа из переменной окружения
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      # Установка UTF-8 локали
+      - LANG=C.utf8
+      - LC_ALL=C.utf8
+      - PYTHONUNBUFFERED=1 # Отключает буферизацию вывода Python
+    stdin_open: false
+    tty: false
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped    
+
+volumes:
+  gemini-home:
+    driver: local

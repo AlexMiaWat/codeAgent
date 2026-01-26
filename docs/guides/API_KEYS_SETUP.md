@@ -8,6 +8,52 @@ API ключи должны храниться только в:
 - Переменных окружения
 - Файле `.env` (который в `.gitignore`)
 
+## Настройка Google Gemini API
+
+### 1. Получение API ключа
+
+1. Перейдите в [Google AI Studio](https://aistudio.google.com/app/apikey)
+2. Войдите в свой Google аккаунт
+3. Нажмите "Create API key"
+4. Скопируйте созданный ключ (начинается с `AIza...`)
+
+### 2. Установка API ключа
+
+#### Вариант A: Через переменную окружения (рекомендуется)
+
+**Linux/macOS:**
+```bash
+export GOOGLE_API_KEY=AIzaSy...
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:GOOGLE_API_KEY="AIzaSy..."
+```
+
+**Windows (CMD):**
+```cmd
+set GOOGLE_API_KEY=AIzaSy...
+```
+
+#### Вариант B: Через .env файл (рекомендуется для разработки)
+
+Создайте файл `.env` в корне проекта:
+
+```env
+GOOGLE_API_KEY=AIzaSy...
+```
+
+### 3. Проверка настройки
+
+Запустите тест:
+
+```bash
+PYTHONPATH=. python test/test_gemini_agent_docker.py
+```
+
+Если все настроено правильно, агент должен успешно выполнить генерацию todo-списка.
+
 ## Настройка OpenRouter API
 
 ### 1. Получение API ключа
