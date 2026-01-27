@@ -168,6 +168,15 @@ class SessionTracker:
         
         return generation_info
     
+    def record_todo_generation_attempt(self, success: bool):
+        """
+        Записать попытку генерации TODO (успешную или нет).
+        (Placeholder implementation for now)
+        """
+        logger.debug(f"Записана попытка генерации TODO: успех={success}")
+        # Более сложная логика может быть добавлена сюда
+
+    
     def get_session_statistics(self) -> Dict[str, Any]:
         """
         Получить статистику по текущей сессии
