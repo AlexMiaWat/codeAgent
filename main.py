@@ -270,6 +270,44 @@ def check_and_free_port(port: int) -> bool:
     return True
 
 
+def start_docker_services():
+    """Запускает Docker-сервисы, определенные в docker-compose файлах."""
+    logger = logging.getLogger(__name__)
+    docker_dir = Path("docker")
+    compose_files = ["docker-compose.agent.yml", "docker-compose.gemini.yml"]
+
+    for file in compose_files:
+        compose_path = docker_dir / file
+        if compose_path.exists():
+            logger.info(f"Запуск сервисов из {compose_path}...")
+            try:
+                # Проверяем доступность Docker
+                subprocess.run(["docker", "--version"], check=True, capture_output=True, text=True, timeout=5)
+                
+                # Запускаем сервисы
+                result = subprocess.run(
+                    ["docker", "compose", "-f", str(compose_path), "up", "-d"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=True
+                )
+                logger.info(f"Сервисы из {file} успешно запущены.")
+                if result.stdout:
+                    logger.debug(f"Docker compose stdout: {result.stdout}")
+            except FileNotFoundError:
+                logger.error("Команда 'docker' не найдена. Убедитесь, что Docker установлен и находится в PATH.")
+                break
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Ошибка при запуске сервисов из {file}:")
+                logger.error(f"Stderr: {e.stderr}")
+                # Не прерываем, если один из файлов не сработал
+            except subprocess.TimeoutExpired:
+                logger.error(f"Таймаут при запуске сервисов из {file}.")
+            except Exception as e:
+                logger.error(f"Неожиданная ошибка при запуске Docker сервисов: {e}")
+
+
 def main():
     """Главная функция для запуска сервера"""
     # Очищаем логи перед стартом
@@ -283,6 +321,9 @@ def main():
 
     # Импортируем logger после настройки логирования
     logger = logging.getLogger(__name__)
+
+    # Запускаем Docker-сервисы
+    start_docker_services()
     
     # Загружаем конфигурацию для получения порта и настроек перезапуска
     from src.config_loader import ConfigLoader

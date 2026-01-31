@@ -18,8 +18,8 @@ def get_test_config_values() -> Dict[str, Any]:
     Returns:
         Словарь с настройками для тестов
     """
-    # Загружаем PROJECT_DIR из переменных окружения (приоритет TARGET_PROJECT_PATH)
-    project_dir = os.getenv("TARGET_PROJECT_PATH")
+    # Загружаем PROJECT_DIR из переменных окружения (приоритет PROJECT_DIR)
+    project_dir = os.getenv("PROJECT_DIR")
     if not project_dir:
         project_dir = os.getenv("PROJECT_DIR")
     

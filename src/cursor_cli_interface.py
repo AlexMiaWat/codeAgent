@@ -126,7 +126,7 @@ class CursorCLIInterface:
                 self.cli_available = True
                 logger.info(f"Cursor CLI найден по указанному пути: {cli_path}")
             else:
-                logger.warning(f"Указанный путь к Cursor CLI недоступен: {cli_path}")
+                logger.warning(f"Указанный путь к Agent CLI недоступен: {cli_path}")
         else:
             # Поиск в PATH
             self.cli_command, self.cli_available = self._find_cli_in_path()
@@ -609,7 +609,7 @@ This agent role is used for automated project tasks execution.
             Список chat_id или пустой список при ошибке
         """
         if not self.cli_available:
-            logger.warning("Cursor CLI недоступен для list_chats")
+            logger.warning("Agent CLI недоступен для list_chats")
             return []
         
         try:
@@ -741,7 +741,7 @@ This agent role is used for automated project tasks execution.
             True если остановка выполнена успешно
         """
         if not self.cli_available:
-            logger.warning("Cursor CLI недоступен для остановки чатов")
+            logger.warning("Agent CLI недоступен для остановки чатов")
             return False
         
         try:
@@ -838,7 +838,7 @@ This agent role is used for automated project tasks execution.
             True если очистка выполнена успешно
         """
         if not self.cli_available:
-            logger.warning("Cursor CLI недоступен для очистки очереди")
+            logger.warning("Agent CLI недоступен для очистки очереди")
             return False
         
         try:
@@ -1028,7 +1028,7 @@ This agent role is used for automated project tasks execution.
                 stderr="",
                 return_code=-1,
                 cli_available=False,
-                error_message="Cursor CLI недоступен в системе"
+                error_message="Agent CLI недоступен в системе"
             )
         
         # Формируем команду согласно официальной документации
@@ -1615,7 +1615,7 @@ This agent role is used for automated project tasks execution.
                 stderr="",
                 return_code=-1,
                 cli_available=False,
-                error_message="Cursor CLI недоступен в системе"
+                error_message="Agent CLI недоступен в системе"
             )
         
         # Определяем рабочую директорию
@@ -1905,7 +1905,7 @@ This agent role is used for automated project tasks execution.
                 stderr="",
                 return_code=-1,
                 cli_available=False,
-                error_message="Cursor CLI недоступен в системе"
+                error_message="Agent CLI недоступен в системе"
             )
         
         # Определяем рабочую директорию

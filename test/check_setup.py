@@ -61,7 +61,7 @@ try:
         version = cli.check_version()
         print(f"   [OK] Cursor CLI доступен: {version or 'версия не определена'}")
     else:
-        print("   [WARNING] Cursor CLI недоступен (будет использоваться fallback)")
+        print("   [WARNING] Agent CLI недоступен (будет использоваться fallback)")
 except Exception as e:
     print(f"   [ERROR] Ошибка проверки CLI: {e}")
 print()

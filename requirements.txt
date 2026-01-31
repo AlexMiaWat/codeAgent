@@ -1,0 +1,40 @@
+# Main dependencies for Code Agent
+# Generated from pyproject.toml
+
+# CrewAI framework
+crewai>=0.1.0,<2.0.0
+crewai-tools>=0.1.0,<2.0.0
+
+# YAML and configuration
+pyyaml>=6.0,<7.0
+
+# Environment variables
+# Restricted to <1.2.0 for Python 3.8 compatibility
+python-dotenv>=1.0.0,<1.2.0
+
+# Gemini API
+google-genai>=1.0.0,<2.0.0
+
+# Cursor IDE UI automation
+pyautogui>=0.9.54,<1.0.0
+pytesseract>=0.3.10,<0.4.0
+Pillow>=10.0.0,<11.0.0
+opencv-python>=4.8.0,<5.0.0
+mss>=9.0.1,<10.0.0
+pygetwindow>=0.0.9,<1.0.0
+
+# File system and reports
+# Restricted to <5.0.0 for Python 3.8 compatibility
+watchdog>=3.0.0,<5.0.0
+aiofiles>=23.2.0,<24.0.0
+
+# Git
+GitPython>=3.1.40,<4.0.0
+
+# Logging and UI
+colorlog>=6.8.0,<7.0.0
+rich>=13.7.0,<14.0.0
+
+# HTTP Server
+# Restricted to <3.1.0 for Python 3.8 compatibility
+flask>=2.3.0,<3.1.0

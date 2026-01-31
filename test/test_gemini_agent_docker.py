@@ -43,17 +43,17 @@ def setup_and_teardown_gemini_agent():
         pytest.fail(f"   [FAIL] .env файл не найден по пути: {env_file}. Создайте его из .env.example и настройте.")
     
     env_content = env_file.read_text(encoding='utf-8')
-    target_project_path_set = False
+    PROJECT_DIR_set = False
     for line in env_content.split('\n'):
-        if line.startswith("TARGET_PROJECT_PATH="):
+        if line.startswith("PROJECT_DIR="):
             if line.split('=')[1].strip():
-                target_project_path_set = True
+                PROJECT_DIR_set = True
             break
     
-    if not target_project_path_set:
-        pytest.fail("   [FAIL] TARGET_PROJECT_PATH не установлен в .env. Укажите абсолютный путь к целевому проекту.")
+    if not PROJECT_DIR_set:
+        pytest.fail("   [FAIL] PROJECT_DIR не установлен в .env. Укажите абсолютный путь к целевому проекту.")
     else:
-        print("   [OK] TARGET_PROJECT_PATH установлен в .env")
+        print("   [OK] PROJECT_DIR установлен в .env")
 
     # Убедимся, что контейнер не запущен от предыдущих сессий
     run_docker_compose_command(["down", "-v", "--remove-orphans"], timeout=120)
@@ -122,7 +122,7 @@ def test_gemini_agent_file_creation():
     
     project_dir = get_project_dir()
     if not project_dir:
-        pytest.fail("TARGET_PROJECT_PATH (PROJECT_DIR) не установлен. Невозможно проверить создание файла.")
+        pytest.fail("PROJECT_DIR (PROJECT_DIR) не установлен. Невозможно проверить создание файла.")
 
     test_filename = "gemini_test_file.txt"
     test_content = "This is a test file created by gemini-agent."

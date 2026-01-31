@@ -25,7 +25,7 @@ from src.cursor_cli_interface import CursorCLIInterface, create_cursor_cli_inter
 from src.cursor_file_interface import CursorFileInterface
 
 # Импорт вспомогательных функций для загрузки настроек
-from test_utils import get_container_name
+from test.test_utils import get_container_name
 
 # Настройка логирования
 logging.basicConfig(
@@ -62,10 +62,11 @@ def test_real_cursor_cli():
         print("=" * 70)
         print()
         
-        cli = create_cursor_cli_interface(timeout=600, headless=True)
+        container_name = get_container_name()
+        cli = create_cursor_cli_interface(timeout=600, headless=True, container_name=container_name)
         
         if not cli.is_available():
-            print("[FAIL] Cursor CLI недоступен!")
+            print("[FAIL] Agent CLI недоступен!")
             return False
         
         version = cli.check_version()

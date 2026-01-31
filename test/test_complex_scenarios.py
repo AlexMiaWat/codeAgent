@@ -44,7 +44,7 @@ def test_scenario_1_create_file():
     )
     
     if not cli.is_available():
-        print("[FAIL] Cursor CLI недоступен")
+        print("[FAIL] Agent CLI недоступен")
         return False
     
     # Используем строгий ACTION формат

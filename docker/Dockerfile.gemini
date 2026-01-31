@@ -1,6 +1,6 @@
 # Dockerfile для установки Gemini CLI
 # Основан на Python slim-buster для эффективности
-FROM mirror.gcr.io/python:3.11-slim-bookworm
+FROM python:3.14-slim
 
 # Установка необходимых системных зависимостей
 # git, openssh-client для работы с репозиториями
@@ -29,7 +29,7 @@ RUN chmod +x /usr/local/bin/gemini_agent_cli.py
 # Установка Gemini CLI
 # Предполагаем, что Gemini CLI доступен как Python пакет.
 # Если это не так, этот шаг будет скорректирован.
-RUN pip install google-generativeai google-auth python-dotenv
+RUN pip install google-genai==1.61.0 google-auth python-dotenv google-generativeai
 
 # Добавление ~/.local/bin в PATH (если pip устанавливает скрипты туда)
 ENV PATH="${PATH}:/root/.local/bin"

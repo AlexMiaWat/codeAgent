@@ -4,18 +4,18 @@
 #   Выполнение команды: docker compose -f docker/docker-compose.gemini.yml exec gemini-agent <your-gemini-cli-command>
 #   Остановка: docker compose -f docker/docker-compose.gemini.yml down
 #
-# Переменные окружения загружаются из .env файла в корне проекта (d:\Space\codeAgent\.env)
+# Переменные окружения загружаются из .env файла в корне проекта
 
 services:
   gemini-agent:
     build:
-      context: ..  # Контекст - корень проекта (D:\Space\codeAgent)
+      context: ..  # Контекст - корень проекта
       dockerfile: docker/Dockerfile.gemini
     image: gemini-agent:latest
     container_name: gemini-agent  # Имя контейнера для Gemini CLI
     volumes:
       # Монтируем целевую директорию проекта (путь берется из .env)
-      - ${TARGET_PROJECT_PATH:-D:\Space\cli}:/workspace
+      - ${PROJECT_DIR}:/workspace
       # Монтируем домашнюю диреторию для сохранения конфигурации (если Gemini CLI ее использует)
       - gemini-home:/root
       # Монтируем SSH-ключи для доступа к GitHub (если необходимы Git операции)

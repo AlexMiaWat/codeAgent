@@ -271,3 +271,5 @@ scripts/*.bat
 config/config.yaml
 gemini_env/*
 .gemini/oauth_creds.json
+.env.openai
+results/*

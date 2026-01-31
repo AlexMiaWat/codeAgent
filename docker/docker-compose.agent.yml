@@ -4,18 +4,18 @@
 #   Выполнение команды: docker compose -f docker/docker-compose.agent.yml exec agent -p "instruction"
 #   Остановка: docker compose -f docker/docker-compose.agent.yml down
 #
-# Переменные окружения загружаются из .env файла в корне проекта (d:\Space\codeAgent\.env)
+# Переменные окружения загружаются из .env файла в корне проекта
 
 services:
   agent:
     build:
-      context: ..  # Контекст - корень проекта (D:\Space\codeAgent)
+      context: ..  # Контекст - корень проекта
       dockerfile: docker/Dockerfile.agent
     image: cursor-agent:latest
     container_name: cursor-agent  # Имя контейнера для целевого проекта
     volumes:
-      # Монтируем целевую директорию проекта (укажите путь к вашему проекту)
-      - ../../smartAgent:/workspace:rw
+      # Монтируем целевую директорию проекта (путь берется из .env)
+      - ${PROJECT_DIR}:/workspace:rw
       # Монтируем домашнюю директорию для сохранения конфигурации agent
       - agent-home:/root
       # Монтируем SSH-ключи для доступа к GitHub (git push на этапе 8)

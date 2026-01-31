@@ -1,86 +1,106 @@
 llm:
-  default_provider: openrouter
+  _last_updated: '2026-01-31T22:19:08.547834'
+  cli_interface: gemini
   default_model: meta-llama/llama-3.2-1b-instruct
-  timeout: 200
-  retry_attempts: 1
-  strategy: best_of_two
+  default_provider: openrouter
   model_roles:
     primary:
-    - nvidia/nemotron-3-nano-30b-a3b:free
-    - mistralai/devstral-2512:free
-    - allenai/molmo-2-8b:free
-    duplicate:
-    - xiaomi/mimo-v2-flash:free
+    - arcee-ai/trinity-large-preview:free
+    duplicate: []
     reserve:
-    - liquid/lfm-2.5-1.2b-thinking:free
-    - liquid/lfm-2.5-1.2b-instruct:free
+    - kwaipilot/kat-coder-pro:free
     fallback:
+    - allenai/molmo-2-8b:free
     - arcee-ai/trinity-mini:free
-    - tngtech/tng-r1t-chimera:free
   parallel:
     enabled: true
-    models:
-    - nvidia/nemotron-3-nano-30b-a3b:free
-    - mistralai/devstral-2512:free
     evaluator_model: allenai/molmo-2-8b:free
+    models:
+    - meta-llama/llama-3.2-1b-instruct
+    - arcee-ai/trinity-large-preview:free
     selection_criteria:
     - relevance
     - completeness
     - quality
-  _last_updated: '2026-01-22T15:12:25.214949'
+  retry_attempts: 1
+  strategy: best_of_two
+  timeout: 200
   _update_source: auto_test_results
   _stats:
     total_tested: 3
     working_count: 1
-    fastest_model: xiaomi/mimo-v2-flash:free
+    fastest_model: arcee-ai/trinity-large-preview:free
 providers:
+  google:
+    models:
+      google:
+      - context_window: 1000000
+        max_tokens: 8192
+        name: gemini-1.5-flash
+        temperature: 0.7
+        top_p: 0.95
+      - context_window: 2000000
+        max_tokens: 8192
+        name: gemini-1.5-pro
+        temperature: 0.7
+        top_p: 0.95
+      - context_window: 1000000
+        max_tokens: 8192
+        name: gemini-2.0-flash-exp
+        temperature: 0.7
+        top_p: 0.95
   openrouter:
     base_url: https://openrouter.ai/api/v1
     models:
       allenai:
-      - name: allenai/molmo-2-8b:free
+      - context_window: 4096
         max_tokens: 1024
-        context_window: 4096
-        temperature: 0.7
-        top_p: 1.0
-      xiaomi:
-      - name: xiaomi/mimo-v2-flash:free
-        max_tokens: 1024
-        context_window: 4096
-        temperature: 0.7
-        top_p: 1.0
-      liquid:
-      - name: liquid/lfm-2.5-1.2b-instruct:free
-        max_tokens: 1024
-        context_window: 4096
-        temperature: 0.7
-        top_p: 1.0
-      - name: liquid/lfm-2.5-1.2b-thinking:free
-        max_tokens: 1024
-        context_window: 4096
-        temperature: 0.7
-        top_p: 1.0
-      nvidia:
-      - name: nvidia/nemotron-3-nano-30b-a3b:free
-        max_tokens: 1024
-        context_window: 256000
-        temperature: 0.7
-        top_p: 1.0
-      mistralai:
-      - name: mistralai/devstral-2512:free
-        max_tokens: 1024
-        context_window: 262144
+        name: allenai/molmo-2-8b:free
         temperature: 0.7
         top_p: 1.0
       arcee-ai:
-      - name: arcee-ai/trinity-mini:free
+      - context_window: 131072
         max_tokens: 1024
-        context_window: 131072
+        name: arcee-ai/trinity-mini:free
+        temperature: 0.7
+        top_p: 1.0
+      - context_window: 131072
+        max_tokens: 1024
+        name: arcee-ai/trinity-large-preview:free
+        temperature: 0.7
+        top_p: 1.0
+      liquid:
+      - context_window: 4096
+        max_tokens: 1024
+        name: liquid/lfm-2.5-1.2b-instruct:free
+        temperature: 0.7
+        top_p: 1.0
+      - context_window: 4096
+        max_tokens: 1024
+        name: liquid/lfm-2.5-1.2b-thinking:free
+        temperature: 0.7
+        top_p: 1.0
+      meta-llama:
+      - context_window: 4096
+        max_tokens: 1024
+        name: meta-llama/llama-3.2-1b-instruct
+        temperature: 0.7
+        top_p: 1.0
+      nvidia:
+      - context_window: 256000
+        max_tokens: 1024
+        name: nvidia/nemotron-3-nano-30b-a3b:free
         temperature: 0.7
         top_p: 1.0
       tngtech:
-      - name: tngtech/tng-r1t-chimera:free
+      - context_window: 163840
         max_tokens: 1024
-        context_window: 163840
+        name: tngtech/tng-r1t-chimera:free
+        temperature: 0.7
+        top_p: 1.0
+      upstage:
+      - context_window: 4096
+        max_tokens: 1024
+        name: upstage/solar-pro-3:free
         temperature: 0.7
         top_p: 1.0

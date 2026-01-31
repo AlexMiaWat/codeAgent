@@ -93,7 +93,7 @@ def test_cursor_cli_availability():
             print(f"[OK] Cursor CLI доступен: {cli_interface.cli_command}")
             return True
         else:
-            print(f"[FAIL] Cursor CLI недоступен")
+            print(f"[FAIL] Agent CLI недоступен")
             return False
 
     except Exception as e:

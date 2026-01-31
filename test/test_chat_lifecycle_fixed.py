@@ -16,7 +16,7 @@ from src.prompt_formatter import PromptFormatter
 import logging
 
 # Импорт вспомогательных функций для загрузки настроек
-from test_utils import get_cli_path, get_project_dir, get_agent_role
+from test.test_utils import get_cli_path, get_project_dir, get_agent_role
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,7 +40,7 @@ def test_chat_lifecycle_fixed():
     )
     
     if not cli.is_available():
-        print("[FAIL] Cursor CLI недоступен")
+        print("[FAIL] Agent CLI недоступен")
         return False
     
     print(f"[OK] CLI доступен: {cli.cli_command}")

@@ -63,14 +63,16 @@ echo ""
 
 # Тест создания файла
 echo "5. Тест создания файла:"
+# Путь к файлу в смонтированной директории
+TEST_FILE_PATH="${PROJECT_DIR:-../../your-project}/docker_test3.txt"
 docker compose -f docker-compose.agent.yml run --rm -e CURSOR_API_KEY agent -p "Create file docker_test3.txt with content 'Test from script'" 2>&1 | tail -n 1
 
-if [ -f "../../your-project/docker_test3.txt" ]; then
+if [ -f "$TEST_FILE_PATH" ]; then
     echo "   [OK] Файл создан успешно"
-    CONTENT=$(cat ../../your-project/docker_test3.txt)
+    CONTENT=$(cat "$TEST_FILE_PATH")
     echo "   [OK] Содержимое: $CONTENT"
 else
-    echo "   [FAIL] Файл не создан"
+    echo "   [FAIL] Файл не создан (ожидался в $TEST_FILE_PATH)"
 fi
 
 echo ""

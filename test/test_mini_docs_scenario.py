@@ -40,7 +40,7 @@ def test_mini_docs_creation():
     )
     
     if not cli.is_available():
-        print("[FAIL] Cursor CLI недоступен")
+        print("[FAIL] Agent CLI недоступен")
         return False
     
     print(f"[OK] CLI доступен: {cli.cli_command}")

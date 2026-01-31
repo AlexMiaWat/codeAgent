@@ -101,6 +101,8 @@ class TodoManager:
         Returns:
             Список путей к найденным файлам todo
         """
+        logger.debug(f"Поиск файлов todo в директории проекта: {self.project_dir}")
+        logger.debug(f"Поиск файлов todo в директории проекта: {self.project_dir}")
         found_files = []
         possible_names = [
             f"todo.{self.todo_format}",
@@ -133,6 +135,8 @@ class TodoManager:
                 if file_path.exists() and file_path not in found_files:
                     found_files.append(file_path)
 
+        logger.debug(f"Найденные файлы todo: {[str(f) for f in found_files]}")
+        logger.debug(f"Найденные файлы todo: {[str(f) for f in found_files]}")
         return found_files
 
     def _find_todo_file(self) -> Optional[Path]:
@@ -682,18 +686,25 @@ class TodoManager:
 
     def _load_from_markdown_file(self, file_path: Path) -> List[TodoItem]:
         """Загрузка задач из Markdown файла"""
+        content = "" # Initialize content
         try:
-            content = file_path.read_text(encoding='utf-8')
+            content = file_path.read_text(encoding='cp1251')
+            logger.info(f"Markdown файл успешно прочитан с кодировкой cp1251: {file_path}")
         except UnicodeDecodeError:
             try:
-                content = file_path.read_text(encoding='cp1251')
-                logger.info(f"Markdown файл успешно прочитан с кодировкой cp1251: {file_path}")
-            except Exception:
-                logger.error(f"Не удалось прочитать Markdown файл с альтернативными кодировками: {file_path}")
+                content = file_path.read_text(encoding='utf-8')
+                logger.info(f"Markdown файл успешно прочитан с кодировкой utf-8: {file_path}")
+            except UnicodeDecodeError:
+                logger.error(f"Не удалось прочитать Markdown файл ни с одной из кодировок (cp1251, utf-8): {file_path}")
+                return []
+            except Exception as e:
+                logger.error(f"Ошибка чтения Markdown файла {file_path} при попытке utf-8: {e}", exc_info=True)
                 return []
         except Exception as e:
-            logger.error(f"Ошибка чтения Markdown файла {file_path}: {e}", exc_info=True)
+            logger.error(f"Ошибка чтения Markdown файла {file_path} при попытке cp1251: {e}", exc_info=True)
             return []
+
+        logger.debug(f"Начало разбора Markdown файла: {file_path}")
 
         items = []
         lines = content.split('\n')
@@ -990,7 +1001,10 @@ class TodoManager:
     async def ensure_loaded(self) -> None:
         """Обеспечивает загрузку задач"""
         if not self.items:  # Загружаем только если еще не загружено
+            logger.debug("Items не загружены, начинаем асинхронную загрузку.")
             await self._load_todos_async()
+        else:
+            logger.debug(f"Items уже загружены: {len(self.items)} задач.")
         """Асинхронная загрузка todo из всех найденных файлов с дедупликацией"""
         if not self.todo_files:
             self.items = []

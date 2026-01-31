@@ -19,7 +19,7 @@ from src.cursor_cli_interface import CursorCLIInterface, create_cursor_cli_inter
 from src.config_loader import ConfigLoader
 
 # Импорт вспомогательных функций для загрузки настроек
-from test_utils import get_container_name
+from test.test_utils import get_container_name
 
 # Настройка логирования
 logging.basicConfig(
@@ -105,7 +105,7 @@ def test_cursor_cli_execution():
             else:
                 print(f"   [INFO] Используется локальный CLI: {cli.cli_command}")
         else:
-            print(f"   [FAIL] Cursor CLI недоступен")
+            print(f"   [FAIL] Agent CLI недоступен")
             return False
     except Exception as e:
         print(f"   [FAIL] Ошибка инициализации CLI: {e}")

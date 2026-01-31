@@ -27,5 +27,4 @@
 ## 🔗 Связанные документы
 
 - **Интеграция с Cursor:** [../integration/cursor_integration.md](../integration/cursor_integration.md)
-- **Решения проблем:** [../solutions/](../solutions/)
 - **Главная документация:** [../README.md](../README.md)

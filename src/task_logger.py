@@ -175,6 +175,21 @@ class TaskLogger:
             # Игнорируем ошибки очистки - это не критично
             pass
     
+    def log_info(self, message: str):
+        """Логировать информационное сообщение"""
+        self.logger.info(Colors.colorize(f"ℹ️  {message}", Colors.BRIGHT_BLUE))
+
+    def log_warning(self, message: str):
+        """Логировать предупреждение"""
+        self.logger.warning(Colors.colorize(f"⚠️  {message}", Colors.BRIGHT_YELLOW))
+
+    def log_error(self, message: str, exception: Optional[Exception] = None):
+        """Логировать ошибку"""
+        self.logger.error(Colors.colorize(f"❌ {message}", Colors.BRIGHT_RED))
+        if exception:
+            self.logger.error(Colors.colorize(f"   Тип: {type(exception).__name__}", Colors.RED))
+            self.logger.error(Colors.colorize(f"   Детали: {str(exception)}", Colors.RED))
+    
     def _log_header(self):
         """Записать заголовок лога"""
         # Для файла - полный заголовок
@@ -281,7 +296,7 @@ ID: {self.task_id}
     
     def log_cursor_response(self, response: Dict[str, Any], brief: bool = True):
         """
-        Логировать ответ от Cursor
+        Логировать Agent CLI ответ
         
         Args:
             response: Словарь с ответом от Cursor
@@ -300,7 +315,7 @@ ID: {self.task_id}
                 status_text = "ОШИБКА"
                 color = Colors.BRIGHT_RED
             
-            response_header = Colors.colorize(f"{status_icon} Ответ от Cursor: {status_text}", color)
+            response_header = Colors.colorize(f"{status_icon} Agent CLI ответ: {status_text}", color)
             self.logger.info(response_header)
             
             # Извлекаем информацию из ответа
@@ -356,7 +371,7 @@ ID: {self.task_id}
         
         # Полный вывод в файл
         self.logger.debug("\n" + "=" * 40)
-        self.logger.debug("ОТВЕТ ОТ CURSOR:")
+        self.logger.debug("Agent CLI ответ:")
         self.logger.debug("=" * 40)
         self.logger.debug(f"Успех: {success}")
         self.logger.debug(f"Код возврата: {response.get('return_code', 'N/A')}")
@@ -453,7 +468,7 @@ ID: {self.task_id}
             # Обычный случай - показываем только время ожидания
             self.logger.info(Colors.colorize(f"{emoji('✅', '[OK]')} Результат получен (за {wait_time:.1f}с)", Colors.BRIGHT_GREEN))
         self.logger.info(f"   Файл: {file_path}")
-        
+            
         if content_preview:
             preview = content_preview[:200] + "..." if len(content_preview) > 200 else content_preview
             self.logger.info(f"   Превью: {preview}")
@@ -628,6 +643,15 @@ class ServerLogger:
         
         footer = '\n'.join(footer_lines)
         self.logger.info(footer)
+    
+    def log_info(self, message: str):
+        """
+        Логировать информационное сообщение
+
+        Args:
+            message: Текст сообщения
+        """
+        self.logger.info(Colors.colorize(f"ℹ️  {message}", Colors.BRIGHT_BLUE))
     
     def _cleanup_old_logs(self, max_logs: int = 20):
         """

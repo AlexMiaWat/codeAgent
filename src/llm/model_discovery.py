@@ -123,9 +123,10 @@ class ModelDiscovery:
                 if not model_id:
                     continue
                 
+                pricing = model.get('pricing', {})
+                
                 # Фильтр по бесплатным моделям
                 if free_only:
-                    pricing = model.get('pricing', {})
                     prompt_price = pricing.get('prompt', 0) if pricing else 0
                     completion_price = pricing.get('completion', 0) if pricing else 0
                     

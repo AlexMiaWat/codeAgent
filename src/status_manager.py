@@ -149,26 +149,78 @@ class StatusManager:
             logger.error(f"Ошибка записи в файл {self.status_file}: {e}", exc_info=True)
             raise
     
+    def add_task(self, task_id: str, task_name: str) -> None:
+        """
+        Добавление новой задачи в статус
+
+        Args:
+            task_id: ID задачи
+            task_name: Название задачи
+
+        Raises:
+            PermissionError: Если нет прав на запись файла
+            OSError: При других ошибках записи
+        """
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        message = f"**Новая задача:** {task_name}\n**ID:** {task_id}\n**Статус:** Начата"
+
+        self.append_status(message, level=3)
+
     def update_task_status(self, task_name: str, status: str, details: Optional[str] = None) -> None:
         """
         Обновление статуса конкретной задачи
-        
+
         Args:
             task_name: Название задачи
             status: Статус (например, "В процессе", "Выполнено", "Ошибка")
             details: Дополнительные детали выполнения
-        
+
         Raises:
             PermissionError: Если нет прав на запись файла
             OSError: При других ошибках записи
         """
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         message = f"**Задача:** {task_name}\n**Статус:** {status}"
-        
+
         if details:
             message += f"\n**Детали:** {details}"
-        
+
         self.append_status(message, level=3)
+    
+    def update_server_status(self, status: str, details: Optional[str] = None) -> None:
+        """
+        Обновление общего статуса сервера
+
+        Args:
+            status: Статус (например, "running", "idle", "processing", "error", "stopped")
+            details: Дополнительные детали статуса
+
+        Raises:
+            PermissionError: Если нет прав на запись файла
+            OSError: При других ошибках записи
+        """
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        message = f"**Статус сервера:** {status}"
+
+        if details:
+            message += f"\n**Детали:** {details}"
+
+        self.append_status(message, level=2)
+
+    def get_full_status(self) -> dict:
+        """
+        Получение полного статуса сервера для API
+
+        Returns:
+            Словарь с полной информацией о статусе
+        """
+        return {
+            "server_status": "running",  # TODO: реализовать динамический статус
+            "timestamp": datetime.now().isoformat(),
+            "tasks": [],  # TODO: получить список активных задач
+            "version": "1.0.0"
+        }
+
     
     def add_separator(self) -> None:
         """

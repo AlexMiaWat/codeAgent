@@ -72,9 +72,12 @@ class ConfigLoader:
                 error_msg += "\n  2. Убедитесь, что все обязательные поля присутствуют"
                 error_msg += "\n  3. Проверьте типы и значения полей"
                 error_msg += "\n  4. См. документацию: docs/guides/setup.md"
-                
+
                 logger.error(error_msg)
                 raise ValueError(error_msg) from e
+
+        # Дополнительная валидация LLM конфигурации
+        self._validate_llm_config()
     
     def _substitute_env_vars(self, obj: Any) -> Any:
         """
@@ -234,6 +237,37 @@ class ConfigLoader:
             raise
         
         return validated_path
+
+    def _validate_llm_config(self) -> None:
+        """
+        Валидация LLM конфигурации
+
+        Проверяет допустимые значения для cli_interface и других LLM настроек
+        """
+        llm_config = self.config.get('llm', {})
+
+        # Валидация cli_interface
+        cli_interface = llm_config.get('cli_interface', 'cursor').lower()
+        valid_interfaces = ['cursor', 'gemini']
+
+        if cli_interface not in valid_interfaces:
+            raise ValueError(
+                f"Недопустимое значение cli_interface: '{cli_interface}'. "
+                f"Допустимые значения: {', '.join(valid_interfaces)}\n"
+                f"Проверьте настройку в config/llm_settings.yaml"
+            )
+
+        # Валидация timeout
+        timeout = llm_config.get('timeout', 200)
+        if not isinstance(timeout, (int, float)) or timeout <= 0:
+            raise ValueError(f"Недопустимое значение timeout: {timeout}. Должно быть положительным числом.")
+
+        # Валидация retry_attempts
+        retry_attempts = llm_config.get('retry_attempts', 1)
+        if not isinstance(retry_attempts, int) or retry_attempts < 0:
+            raise ValueError(f"Недопустимое значение retry_attempts: {retry_attempts}. Должно быть неотрицательным целым числом.")
+
+        logger.debug(f"LLM конфигурация валидирована: cli_interface={cli_interface}, timeout={timeout}, retry_attempts={retry_attempts}")
     
     def get_status_file(self) -> Path:
         """

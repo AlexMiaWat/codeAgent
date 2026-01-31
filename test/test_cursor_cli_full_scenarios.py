@@ -44,7 +44,7 @@ def test_scenario_1_new_chat():
     )
     
     if not cli.is_available():
-        print("[FAIL] Cursor CLI недоступен")
+        print("[FAIL] Agent CLI недоступен")
         return False
     
     print(f"[OK] CLI доступен: {cli.cli_command}")
@@ -86,7 +86,7 @@ def test_scenario_2_continue_dialog():
     )
     
     if not cli.is_available():
-        print("[FAIL] Cursor CLI недоступен")
+        print("[FAIL] Agent CLI недоступен")
         return False
     
     # Первая команда - создаем новый чат
@@ -151,7 +151,7 @@ def test_scenario_3_complex_russian():
     )
     
     if not cli.is_available():
-        print("[FAIL] Cursor CLI недоступен")
+        print("[FAIL] Agent CLI недоступен")
         return False
     
     # Сложная инструкция на русском
@@ -212,7 +212,7 @@ def test_scenario_4_list_chats():
     )
     
     if not cli.is_available():
-        print("[FAIL] Cursor CLI недоступен")
+        print("[FAIL] Agent CLI недоступен")
         return False
     
     print("[INFO] Получаем список чатов...")
@@ -244,7 +244,7 @@ def test_scenario_5_resume_chat():
     )
     
     if not cli.is_available():
-        print("[FAIL] Cursor CLI недоступен")
+        print("[FAIL] Agent CLI недоступен")
         return False
     
     # Получаем список чатов

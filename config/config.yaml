@@ -23,6 +23,26 @@ project:
   # Формат todo-листа (txt, yaml, md)
   todo_format: md
 
+# Настройки LLM
+llm:
+  # Глобальный интерфейс по умолчанию (используется если не указано в типе задачи)
+  cli_interface: gemini  # cursor или gemini
+
+  # Пропускать LLM проверки и анализы (для ускорения выполнения задач)
+  skip_llm_checks: false
+
+  # Выбор интерфейса по типу задачи (переопределяет глобальный)
+  interface_by_task_type:
+    default: gemini        # Основные задачи - Gemini (быстрее для типовых задач)
+    testing: gemini        # Тестирование - Cursor (лучше для анализа кода)
+    documentation: gemini  # Документация - Gemini (хорошо с текстом)
+    refactoring: gemini    # Рефакторинг - Cursor (лучше для кода)
+    development: gemini    # Разработка - Cursor (основной инструмент)
+    revision: gemini       # Ревизия - Cursor (требует глубокого анализа)
+    frontend-task: gemini  # Фронтенд - Cursor (UI/UX задачи)
+    backend-task: gemini   # Бэкенд - Gemini (API/логика)
+    empty_todo: gemini     # Генерация TODO - Gemini (креативные задачи)
+
 # Настройки агента
 agent:
   # Базовая роль агента
@@ -58,6 +78,7 @@ agent:
     - "gpt-3.5-turbo"
     - "claude-haiku"
     - "llama2"
+    - "nvidia"
     - "mistral"
 
 # Настройки сервера
@@ -83,7 +104,7 @@ server:
   # Настройки автоматической генерации TODO при пустом списке
   auto_todo_generation:
     # Включить автоматическую генерацию TODO
-    enabled: true
+    enabled: false
     # Максимальное количество генераций за сессию
     max_generations_per_session: 5
     # Директория для сохранения сгенерированных TODO
@@ -123,6 +144,12 @@ logging:
   color: true
   cursor_interactions: true  # Логировать все взаимодействия с Cursor
   screenshot_on_error: true  # Сохранять скриншоты при ошибках
+
+# Настройки Gemini CLI
+gemini:
+  cli:
+    container_name: "gemini-agent"
+    timeout: 300
 
 # Настройки взаимодействия с Cursor IDE
 cursor:
@@ -508,7 +535,7 @@ instructions:
         Следуй инструкции из `docs/guides/PROJECT_REVISION_GUIDE.md`
         
         **Отчет:**
-        Создай отчет в docs/results/revision_docs_{task_id}.md:
+        Создай отчет in docs/results/revision_docs_{task_id}.md:
         - Удаленные файлы
         - Очищенные документы
         - Обновленная структура
@@ -838,7 +865,7 @@ git:
   branch: main
   remote: origin
 
-# В config/config.yaml добавить:
+# Настройки MCP серверов
 mcp_servers:
   playwright:
     enabled: true

@@ -358,6 +358,39 @@ class CheckpointManager:
         
         logger.warning(f"Задача завершена с ошибкой: {task_id} - {error_message}")
     
+    def start_task(self, todo_item: Dict[str, Any], task_id: str):
+        """
+        Совместимый метод для начала задачи (вызывается из server.py)
+        
+        Args:
+            todo_item: Объект задачи из todo-списка
+            task_id: ID задачи
+        """
+        # Извлекаем текст задачи из todo_item
+        task_text = todo_item.get("text", "") if isinstance(todo_item, dict) else str(todo_item)
+        
+        # Добавляем задачу в checkpoint если её еще нет
+        if not self._find_task(task_id):
+            metadata = {"source": "server", "type": todo_item.get("type", "unknown")} if isinstance(todo_item, dict) else {}
+            self.add_task(task_id, task_text, metadata)
+        
+        # Отмечаем начало выполнения
+        self.mark_task_start(task_id)
+    
+    def end_task(self, task_id: str, success: bool = True, error_message: Optional[str] = None):
+        """
+        Совместимый метод для завершения задачи (вызывается из server.py)
+        
+        Args:
+            task_id: ID задачи
+            success: True если задача выполнена успешно
+            error_message: Сообщение об ошибке (если success=False)
+        """
+        if success:
+            self.mark_task_completed(task_id)
+        else:
+            self.mark_task_failed(task_id, error_message or "Unknown error")
+    
     def get_current_task(self) -> Optional[Dict[str, Any]]:
         """
         Получить текущую выполняемую задачу
@@ -501,7 +534,7 @@ class CheckpointManager:
             "incomplete_tasks": incomplete_tasks,
             "failed_tasks": failed_tasks
         }
-    
+        
     def reset_interrupted_task(self):
         """
         Сбросить состояние прерванной задачи для повторного выполнения
