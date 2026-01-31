@@ -395,12 +395,20 @@ test_task_1769182234_*/
 test_full_task_1769182234_*/
 docs/results/test_full_task_1769182234_*/
 
-# Task 1769185793 specific artifacts (current testing task)
+# Task 1769185793 specific artifacts (previous testing task)
 task_1769185793_*/
 test_task_1769185793_*/
 test_full_task_1769185793_*/
 docs/results/test_full_task_1769185793_*/
 
+# Task 1769192892 specific artifacts (current testing task)
+task_1769192892_*/
+test_task_1769192892_*/
+test_full_task_1769192892_*/
+docs/results/test_full_task_1769192892_*/
+
 # ===================================
 # End of additional ignores
 # ===================================
+*.xml
+.env.openai

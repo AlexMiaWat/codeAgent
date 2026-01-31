@@ -6,12 +6,9 @@
 - [x] Создать типизированную систему задач: `TaskType(code, docs, refactor, test, release, devops)` <!-- Выполнено успешно (7/8 инструкций) - 2026-01-23 16:53:52 -->
 - [x] **Многоуровневая верификация результатов** - см. docs/planning/conceptual_improvements.md <!-- Выполнено успешно (8/8 инструкций) - 2026-01-23 18:30:27 -->
 - [x] **Архитектурная переработка LLM Manager** - см. docs/planning/implementation_roadmap.md <!-- Выполнено успешно (8/8 инструкций) - 2026-01-23 19:29:46 -->
-- [x] **Интеллектуальная LLM интеграция** - см. docs/planning/task_2_20260123_083422.md <!-- Выполняется - 2026-01-23 21:26:03 -->
-- [ ] **Интеграция enterprise-grade MCP серверов** - см. docs/planning/task_3_20260123_083422.md
-- [ ] Интегрировать Docker MCP с security scanning и vulnerability assessment
-- [ ] **Платформа плагинов и расширений** - см. docs/planning/improvements_summary.md
+- [x] **Интеграция enterprise-grade MCP серверов** - см. docs/planning/task_3_20260123_083422.md <!-- Выполнено - 2026-01-29 10:40:05 --> <!-- Выполняется - 2026-01-31 18:32:10 --> <!-- Выполняется - 2026-01-31 19:38:40 --> <!-- Выполнено успешно (8/8 инструкций) - 2026-02-01 00:52:50 -->
+- [ ] Интегрировать Docker MCP с security scanning и vulnerability assessment <!-- Выполнено - 2026-01-29 11:26:22 -->
 - [ ] **Асинхронная архитектура и concurrency** - см. docs/planning/parameter_optimization_analysis.md
-- [ ] **Интеллектуальное кэширование и оптимизация ресурсов** - см. docs/planning/revised_development_plan.md
 - [ ] **Распределенная система мониторинга** - см. docs/planning/roadmap.md (раздел мониторинга)
 - [ ] **Визуализация и operational intelligence** - см. docs/planning/conceptual_improvements.md
 - [ ] **Zero-trust security architecture** - см. docs/planning/implementation_roadmap.md
@@ -61,7 +58,6 @@
 - [ ] Внедрить security sandboxing для third-party плагинов
 - [ ] Перевести core loop на asyncio с uvloop оптимизациями
 - [ ] Реализовать асинхронный файловый I/O с aiofiles
-- [ ] Внедрить hot reload с file watching и incremental compilation
 - [ ] Оптимизировать LLM requests с connection multiplexing
 - [ ] Добавить HTTP/2 support для external APIs
 - [ ] Внедрить coroutine-based task scheduling

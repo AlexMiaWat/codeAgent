@@ -7,7 +7,18 @@ from typing import Optional
 from crewai import Agent
 
 # Импортируем инструменты
-from ..tools import LearningTool, ContextAnalyzerTool, is_docker_available
+from ..tools import (
+    LearningTool, ContextAnalyzerTool, is_docker_available,
+    MCP_TOOLS_AVAILABLE
+)
+
+# Импортируем MCP инструменты если доступны
+if MCP_TOOLS_AVAILABLE:
+    from ..tools import (
+        search_project_files, read_project_file, get_project_structure,
+        list_project_resources, call_mcp_tool, get_server_metrics,
+        analyze_code_context
+    )
 
 # Экспортируем функцию для тестирования
 __all__ = ['create_smart_agent', 'is_docker_available']
@@ -103,6 +114,23 @@ def create_smart_agent(
     except Exception as e:
         logger.error(f"Failed to initialize smart tools: {e}")
         raise  # Smart tools are critical, fail if they can't be initialized
+
+    # Добавляем MCP инструменты если доступны
+    if MCP_TOOLS_AVAILABLE:
+        try:
+            # Добавляем MCP инструменты для доступа к контексту проекта
+            mcp_tools = [
+                search_project_files,
+                read_project_file,
+                get_project_structure,
+                list_project_resources,
+                analyze_code_context,
+                get_server_metrics
+            ]
+            tools.extend(mcp_tools)
+            logger.info("MCP tools added successfully")
+        except Exception as e:
+            logger.warning(f"Failed to add MCP tools: {e}")
 
     # Настройка LLM
     import os

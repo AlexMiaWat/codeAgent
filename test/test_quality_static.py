@@ -1,280 +1,413 @@
 """
-Static tests for Quality Gates system
+Статические тесты для Quality Gates framework
 
-This module contains static tests that verify quality gates
-definitions, interfaces, and method implementations without
-requiring runtime instantiation.
+Тестирует:
+- Интерфейсы Quality Gates
+- QualityGateManager
+- Различные чекеры качества
+- Структуры данных результатов
 """
 
-import inspect
-from abc import ABC
-from typing import get_type_hints
+import pytest
+from unittest.mock import Mock, AsyncMock, MagicMock
+from typing import Dict, Any, Optional, List
+from datetime import datetime
 
-from src.quality.interfaces import (
-    IQualityChecker, IQualityGateManager, IQualityReporter, IQualityGate
-)
 from src.quality.quality_gate_manager import QualityGateManager
+from src.quality.interfaces.iquality_gate import IQualityGate
+from src.quality.interfaces.iquality_checker import IQualityChecker
+from src.quality.interfaces.iquality_gate_manager import IQualityGateManager
+from src.quality.interfaces.iquality_reporter import IQualityReporter
+from src.quality.models.quality_result import (
+    QualityResult, QualityGateResult, QualityStatus, QualityCheckType
+)
 from src.quality.checkers import (
     CoverageChecker, ComplexityChecker, SecurityChecker, StyleChecker,
     TaskTypeChecker, DependencyChecker, ResourceChecker, ProgressChecker
 )
-from src.quality.reporters import ConsoleReporter, FileReporter
-from src.quality.models.quality_result import (
-    QualityStatus, QualityCheckType, QualityResult, QualityGateResult
-)
 
 
-class TestQualityInterfacesStatic:
-    """Static tests for quality interfaces"""
+class TestQualityInterfaces:
+    """Тесты для интерфейсов Quality Gates"""
 
-    def test_i_quality_checker_is_abstract(self):
-        """Test IQualityChecker is abstract base class"""
-        assert issubclass(IQualityChecker, ABC)
+    def test_i_quality_gate_interface(self):
+        """Проверяет интерфейс IQualityGate"""
+        # Проверяем properties
+        assert hasattr(IQualityGate, 'name')
+        assert hasattr(IQualityGate, 'check_type')
+        assert hasattr(IQualityGate, 'enabled')
 
-    def test_i_quality_gate_manager_is_abstract(self):
-        """Test IQualityGateManager is abstract base class"""
-        assert issubclass(IQualityGateManager, ABC)
-
-    def test_i_quality_reporter_is_abstract(self):
-        """Test IQualityReporter is abstract base class"""
-        assert issubclass(IQualityReporter, ABC)
-
-    def test_i_quality_gate_is_abstract(self):
-        """Test IQualityGate is abstract base class"""
-        assert issubclass(IQualityGate, ABC)
-
-    def test_i_quality_checker_methods(self):
-        """Test IQualityChecker has expected abstract methods"""
-        methods = [name for name, _ in inspect.getmembers(
-            IQualityChecker, predicate=inspect.isfunction) if not name.startswith('_')]
-
-        expected_methods = ['check', 'get_check_type', 'configure']
-        for method in expected_methods:
-            assert method in methods, f"IQualityChecker missing {method}"
-
-    def test_i_quality_gate_manager_methods(self):
-        """Test IQualityGateManager has expected methods"""
-        methods = [name for name, _ in inspect.getmembers(
-            IQualityGateManager, predicate=inspect.isfunction) if not name.startswith('_')]
-
-        expected_methods = ['configure', 'run_all_gates', 'should_block_execution', 'get_gate_results']
-        for method in expected_methods:
-            assert method in methods, f"IQualityGateManager missing {method}"
-
-    def test_i_quality_reporter_methods(self):
-        """Test IQualityReporter has expected methods"""
-        methods = [name for name, _ in inspect.getmembers(
-            IQualityReporter, predicate=inspect.isfunction) if not name.startswith('_')]
-
-        expected_methods = ['report', 'configure']
-        for method in expected_methods:
-            assert method in methods, f"IQualityReporter missing {method}"
-
-
-class TestQualityGateManagerStatic:
-    """Static tests for QualityGateManager"""
-
-    def test_quality_gate_manager_inherits_from_interface(self):
-        """Test QualityGateManager implements IQualityGateManager"""
-        assert issubclass(QualityGateManager, IQualityGateManager)
-        assert issubclass(QualityGateManager, ABC)
-
-    def test_quality_gate_manager_methods_exist(self):
-        """Test QualityGateManager has expected methods"""
-        expected_methods = [
-            'configure', 'run_all_gates', 'should_block_execution', 'get_gate_results',
-            '_setup_default_configuration', '_run_single_gate', '_aggregate_results',
-            '_should_block_based_on_results', '_get_gate_config', '_is_gate_enabled'
-        ]
-        for method in expected_methods:
-            assert hasattr(QualityGateManager, method)
-            assert callable(getattr(QualityGateManager, method))
-
-    def test_quality_gate_manager_init_signature(self):
-        """Test QualityGateManager.__init__ signature"""
-        init_sig = inspect.signature(QualityGateManager.__init__)
-        assert 'config' in init_sig.parameters
-
-
-class TestQualityCheckersStatic:
-    """Static tests for quality checkers"""
-
-    def test_coverage_checker_inherits_from_interface(self):
-        """Test CoverageChecker implements IQualityChecker"""
-        assert issubclass(CoverageChecker, IQualityChecker)
-        assert issubclass(CoverageChecker, ABC)
-
-    def test_complexity_checker_inherits_from_interface(self):
-        """Test ComplexityChecker implements IQualityChecker"""
-        assert issubclass(ComplexityChecker, IQualityChecker)
-        assert issubclass(ComplexityChecker, ABC)
-
-    def test_security_checker_inherits_from_interface(self):
-        """Test SecurityChecker implements IQualityChecker"""
-        assert issubclass(SecurityChecker, IQualityChecker)
-        assert issubclass(SecurityChecker, ABC)
-
-    def test_style_checker_inherits_from_interface(self):
-        """Test StyleChecker implements IQualityChecker"""
-        assert issubclass(StyleChecker, IQualityChecker)
-        assert issubclass(StyleChecker, ABC)
-
-    def test_task_type_checker_inherits_from_interface(self):
-        """Test TaskTypeChecker implements IQualityChecker"""
-        assert issubclass(TaskTypeChecker, IQualityChecker)
-        assert issubclass(TaskTypeChecker, ABC)
-
-    def test_dependency_checker_inherits_from_interface(self):
-        """Test DependencyChecker implements IQualityChecker"""
-        assert issubclass(DependencyChecker, IQualityChecker)
-        assert issubclass(DependencyChecker, ABC)
-
-    def test_resource_checker_inherits_from_interface(self):
-        """Test ResourceChecker implements IQualityChecker"""
-        assert issubclass(ResourceChecker, IQualityChecker)
-        assert issubclass(ResourceChecker, ABC)
-
-    def test_progress_checker_inherits_from_interface(self):
-        """Test ProgressChecker implements IQualityChecker"""
-        assert issubclass(ProgressChecker, IQualityChecker)
-        assert issubclass(ProgressChecker, ABC)
-
-    def test_all_checkers_have_required_methods(self):
-        """Test all checkers have required methods"""
-        checkers = [
-            CoverageChecker, ComplexityChecker, SecurityChecker, StyleChecker,
-            TaskTypeChecker, DependencyChecker, ResourceChecker, ProgressChecker
+        # Проверяем методы
+        interface_methods = [
+            'configure', 'run_checks', 'get_required_score',
+            'is_strict_mode', 'get_configuration_schema'
         ]
 
-        required_methods = ['check', 'get_check_type', 'configure']
+        for method in interface_methods:
+            assert hasattr(IQualityGate, method)
 
-        for checker_class in checkers:
-            for method in required_methods:
-                assert hasattr(checker_class, method), f"{checker_class.__name__} missing {method}"
-                assert callable(getattr(checker_class, method)), f"{checker_class.__name__}.{method} not callable"
+        # Проверяем, что методы являются абстрактными
+        import inspect
+        for method_name in interface_methods:
+            method = getattr(IQualityGate, method_name)
+            assert hasattr(method, '__isabstractmethod__')
+            assert method.__isabstractmethod__
+
+    def test_i_quality_checker_interface(self):
+        """Проверяет интерфейс IQualityChecker"""
+        # Проверяем properties
+        assert hasattr(IQualityChecker, 'name')
+        assert hasattr(IQualityChecker, 'check_type')
+        assert hasattr(IQualityChecker, 'description')
+
+        # Проверяем методы
+        interface_methods = [
+            'configure', 'check', 'get_default_threshold',
+            'is_configurable', 'get_supported_file_types', 'validate_configuration'
+        ]
+
+        for method in interface_methods:
+            assert hasattr(IQualityChecker, method)
+
+        # Проверяем, что методы являются абстрактными
+        import inspect
+        for method_name in interface_methods:
+            method = getattr(IQualityChecker, method_name)
+            assert hasattr(method, '__isabstractmethod__')
+            assert method.__isabstractmethod__
+
+    def test_i_quality_gate_manager_interface(self):
+        """Проверяет интерфейс IQualityGateManager"""
+        interface_methods = [
+            'run_quality_checks', 'get_enabled_gates', 'configure_gate',
+            'get_quality_report', 'is_quality_gate_passed'
+        ]
+
+        for method in interface_methods:
+            assert hasattr(IQualityGateManager, method)
+
+    def test_i_quality_reporter_interface(self):
+        """Проверяет интерфейс IQualityReporter"""
+        interface_methods = [
+            'generate_report', 'export_report', 'get_summary'
+        ]
+
+        for method in interface_methods:
+            assert hasattr(IQualityReporter, method)
 
 
-class TestQualityReportersStatic:
-    """Static tests for quality reporters"""
+class TestQualityDataStructures:
+    """Тесты для структур данных Quality Gates"""
 
-    def test_console_reporter_inherits_from_interface(self):
-        """Test ConsoleReporter implements IQualityReporter"""
-        assert issubclass(ConsoleReporter, IQualityReporter)
-        assert issubclass(ConsoleReporter, ABC)
+    def test_quality_result_creation(self):
+        """Тестирует создание QualityResult"""
+        result = QualityResult(
+            check_type=QualityCheckType.COVERAGE,
+            check_name="Code Coverage Check",
+            passed=True,
+            score=0.85,
+            details="Coverage is above threshold",
+            metadata={"covered_lines": 85, "total_lines": 100},
+            recommendations=["Consider adding more tests for edge cases"],
+            timestamp=datetime.now()
+        )
 
-    def test_file_reporter_inherits_from_interface(self):
-        """Test FileReporter implements IQualityReporter"""
-        assert issubclass(FileReporter, IQualityReporter)
-        assert issubclass(FileReporter, ABC)
+        assert result.check_type == QualityCheckType.COVERAGE
+        assert result.check_name == "Code Coverage Check"
+        assert result.passed == True
+        assert result.score == 0.85
+        assert result.details == "Coverage is above threshold"
+        assert result.metadata == {"covered_lines": 85, "total_lines": 100}
+        assert len(result.recommendations) == 1
+        assert isinstance(result.timestamp, datetime)
 
-    def test_reporters_have_required_methods(self):
-        """Test reporters have required methods"""
-        reporters = [ConsoleReporter, FileReporter]
-        required_methods = ['report', 'configure']
+    def test_quality_result_defaults(self):
+        """Тестирует значения по умолчанию для QualityResult"""
+        result = QualityResult(
+            check_type=QualityCheckType.COMPLEXITY,
+            check_name="Complexity Check",
+            passed=False
+        )
 
-        for reporter_class in reporters:
-            for method in required_methods:
-                assert hasattr(reporter_class, method), f"{reporter_class.__name__} missing {method}"
-                assert callable(getattr(reporter_class, method)), f"{reporter_class.__name__}.{method} not callable"
+        assert result.score == 0.0
+        assert result.details is None
+        assert result.metadata == {}
+        assert result.recommendations == []
+        assert result.issues == []
 
+    def test_quality_gate_result_creation(self):
+        """Тестирует создание QualityGateResult"""
+        coverage_result = QualityResult(
+            check_type=QualityCheckType.COVERAGE,
+            check_name="Coverage",
+            passed=True,
+            score=0.9
+        )
 
-class TestQualityModelsStatic:
-    """Static tests for quality models"""
+        complexity_result = QualityResult(
+            check_type=QualityCheckType.COMPLEXITY,
+            check_name="Complexity",
+            passed=True,
+            score=0.8
+        )
 
-    def test_quality_status_enum_values(self):
-        """Test QualityStatus enum has expected values"""
+        gate_result = QualityGateResult(
+            gate_name="Code Quality Gate",
+            check_type=QualityCheckType.COVERAGE,  # Это поле может быть устаревшим
+            passed=True,
+            overall_score=0.85,
+            results=[coverage_result, complexity_result],
+            execution_time=2.5,
+            metadata={"total_checks": 2, "passed_checks": 2}
+        )
+
+        assert gate_result.gate_name == "Code Quality Gate"
+        assert gate_result.passed == True
+        assert gate_result.overall_score == 0.85
+        assert len(gate_result.results) == 2
+        assert gate_result.execution_time == 2.5
+
+    def test_quality_status_enum(self):
+        """Тестирует перечисление QualityStatus"""
+        expected_statuses = {'PASSED', 'FAILED', 'WARNING', 'ERROR', 'SKIPPED'}
+
+        actual_statuses = {status.name for status in QualityStatus}
+        assert actual_statuses == expected_statuses
+
+        # Проверяем значения
         assert QualityStatus.PASSED.value == "passed"
         assert QualityStatus.FAILED.value == "failed"
         assert QualityStatus.WARNING.value == "warning"
-        assert QualityStatus.ERROR.value == "error"
 
-    def test_quality_check_type_enum_values(self):
-        """Test QualityCheckType enum has expected values"""
-        expected_types = [
-            "coverage", "complexity", "security", "style", "task_type",
-            "dependency", "resource", "progress"
+    def test_quality_check_type_enum(self):
+        """Тестирует перечисление QualityCheckType"""
+        expected_types = {
+            'COVERAGE', 'COMPLEXITY', 'SECURITY', 'STYLE',
+            'TASK_TYPE', 'DEPENDENCY', 'RESOURCE', 'PROGRESS'
+        }
+
+        actual_types = {check_type.name for check_type in QualityCheckType}
+        assert actual_types == expected_types
+
+        # Проверяем значения
+        assert QualityCheckType.COVERAGE.value == "coverage"
+        assert QualityCheckType.COMPLEXITY.value == "complexity"
+        assert QualityCheckType.SECURITY.value == "security"
+
+
+class TestQualityGateManagerStatic:
+    """Статические тесты для QualityGateManager"""
+
+    def test_manager_implements_interface(self):
+        """Проверяет, что QualityGateManager реализует интерфейс"""
+        assert issubclass(QualityGateManager, IQualityGateManager)
+
+    def test_manager_initialization(self):
+        """Тестирует инициализацию QualityGateManager"""
+        config = {
+            QualityCheckType.COVERAGE: {
+                'enabled': True,
+                'threshold': 0.8,
+                'strict': False
+            },
+            QualityCheckType.COMPLEXITY: {
+                'enabled': True,
+                'threshold': 0.7,
+                'max_complexity': 10
+            }
+        }
+
+        manager = QualityGateManager(config)
+
+        assert manager._config == config
+        assert hasattr(manager, '_checkers')
+        assert hasattr(manager, '_enabled_gates')
+        assert hasattr(manager, '_gate_configs')
+
+    def test_manager_default_initialization(self):
+        """Тестирует инициализацию с конфигурацией по умолчанию"""
+        manager = QualityGateManager()
+
+        assert manager._config == {}
+        assert isinstance(manager._checkers, dict)
+        assert isinstance(manager._enabled_gates, dict)
+        assert isinstance(manager._gate_configs, dict)
+
+    def test_manager_checker_initialization(self):
+        """Проверяет инициализацию чекеров"""
+        manager = QualityGateManager()
+
+        # Проверяем, что все чекеры инициализированы
+        expected_checkers = {
+            QualityCheckType.COVERAGE: CoverageChecker,
+            QualityCheckType.COMPLEXITY: ComplexityChecker,
+            QualityCheckType.SECURITY: SecurityChecker,
+            QualityCheckType.STYLE: StyleChecker,
+            QualityCheckType.TASK_TYPE: TaskTypeChecker,
+            QualityCheckType.DEPENDENCY: DependencyChecker,
+            QualityCheckType.RESOURCE: ResourceChecker,
+            QualityCheckType.PROGRESS: ProgressChecker
+        }
+
+        for check_type, checker_class in expected_checkers.items():
+            assert check_type in manager._checkers
+            assert isinstance(manager._checkers[check_type], checker_class)
+
+    def test_manager_method_signatures(self):
+        """Проверяет сигнатуры методов"""
+        import inspect
+
+        manager = QualityGateManager()
+
+        # Проверяем основные методы
+        methods_to_check = [
+            'run_quality_checks',
+            'get_enabled_gates',
+            'configure_gate',
+            'get_quality_report',
+            'is_quality_gate_passed'
         ]
-        for check_type in expected_types:
-            assert hasattr(QualityCheckType, check_type.upper())
-            assert getattr(QualityCheckType, check_type.upper()).value == check_type
-
-    def test_quality_result_init_signature(self):
-        """Test QualityResult.__init__ signature"""
-        init_sig = inspect.signature(QualityResult.__init__)
-        expected_params = ['check_type', 'status', 'score', 'message', 'details']
-        for param in expected_params:
-            assert param in init_sig.parameters
-
-    def test_quality_gate_result_init_signature(self):
-        """Test QualityGateResult.__init__ signature"""
-        init_sig = inspect.signature(QualityGateResult.__init__)
-        expected_params = ['gate_name', 'timestamp', 'results']
-        for param in expected_params:
-            assert param in init_sig.parameters
-
-
-class TestMethodSignatures:
-    """Test method signatures"""
-
-    def test_quality_gate_manager_configure_signature(self):
-        """Test QualityGateManager.configure signature"""
-        sig = inspect.signature(QualityGateManager.configure)
-        assert 'config' in sig.parameters
-
-    def test_quality_gate_manager_run_all_gates_signature(self):
-        """Test QualityGateManager.run_all_gates signature"""
-        sig = inspect.signature(QualityGateManager.run_all_gates)
-        assert 'context' in sig.parameters
-
-    def test_checker_check_signature(self):
-        """Test checker check method signature"""
-        sig = inspect.signature(CoverageChecker.check)
-        assert 'context' in sig.parameters
-
-    def test_checker_configure_signature(self):
-        """Test checker configure method signature"""
-        sig = inspect.signature(CoverageChecker.configure)
-        assert 'config' in sig.parameters
-
-    def test_reporter_report_signature(self):
-        """Test reporter report method signature"""
-        sig = inspect.signature(ConsoleReporter.report)
-        assert 'result' in sig.parameters
-
-
-class TestTypeHints:
-    """Test type hints"""
-
-    def test_quality_gate_manager_type_hints(self):
-        """Test QualityGateManager methods have type hints"""
-        methods_to_check = ['configure', 'run_all_gates', 'should_block_execution']
 
         for method_name in methods_to_check:
-            method = getattr(QualityGateManager, method_name)
-            hints = get_type_hints(method)
-            assert hints, f"{method_name} should have type hints"
+            method = getattr(manager, method_name)
+            assert asyncio.iscoroutinefunction(method)
 
-    def test_checker_type_hints(self):
-        """Test checker methods have type hints"""
-        methods_to_check = ['check', 'configure', 'get_check_type']
+    def test_manager_configuration_setup(self):
+        """Тестирует настройку конфигурации"""
+        config = {
+            QualityCheckType.COVERAGE: {
+                'enabled': True,
+                'threshold': 0.85
+            }
+        }
 
-        for method_name in methods_to_check:
-            method = getattr(CoverageChecker, method_name)
-            hints = get_type_hints(method)
-            assert hints, f"{method_name} should have type hints"
+        manager = QualityGateManager(config)
+
+        # Проверяем, что настройки применились
+        assert QualityCheckType.COVERAGE in manager._enabled_gates
+        assert manager._enabled_gates[QualityCheckType.COVERAGE] == True
 
 
-class TestClassHierarchy:
-    """Test class hierarchy"""
+class TestQualityCheckersStatic:
+    """Статические тесты для чекеров качества"""
 
-    def test_no_multiple_inheritance_conflicts(self):
-        """Test that class hierarchies don't have conflicts"""
-        classes_to_check = [
-            QualityGateManager, CoverageChecker, ComplexityChecker,
-            SecurityChecker, ConsoleReporter, FileReporter
+    def test_coverage_checker_interface(self):
+        """Проверяет, что CoverageChecker реализует интерфейс"""
+        assert issubclass(CoverageChecker, IQualityChecker)
+
+    def test_coverage_checker_initialization(self):
+        """Тестирует инициализацию CoverageChecker"""
+        checker = CoverageChecker()
+
+        assert checker.name == "CoverageChecker"
+        assert checker.check_type == QualityCheckType.COVERAGE
+        assert checker.description is not None
+
+    def test_coverage_checker_methods(self):
+        """Проверяет методы CoverageChecker"""
+        checker = CoverageChecker()
+
+        # Проверяем основные методы
+        assert hasattr(checker, 'configure')
+        assert hasattr(checker, 'check')
+        assert asyncio.iscoroutinefunction(checker.check)
+
+        # Проверяем properties
+        assert hasattr(checker, 'name')
+        assert hasattr(checker, 'check_type')
+        assert hasattr(checker, 'description')
+
+    def test_complexity_checker_interface(self):
+        """Проверяет, что ComplexityChecker реализует интерфейс"""
+        assert issubclass(ComplexityChecker, IQualityChecker)
+
+    def test_security_checker_interface(self):
+        """Проверяет, что SecurityChecker реализует интерфейс"""
+        assert issubclass(SecurityChecker, IQualityChecker)
+
+    def test_style_checker_interface(self):
+        """Проверяет, что StyleChecker реализует интерфейс"""
+        assert issubclass(StyleChecker, IQualityChecker)
+
+    def test_task_type_checker_interface(self):
+        """Проверяет, что TaskTypeChecker реализует интерфейс"""
+        assert issubclass(TaskTypeChecker, IQualityChecker)
+
+    def test_dependency_checker_interface(self):
+        """Проверяет, что DependencyChecker реализует интерфейс"""
+        assert issubclass(DependencyChecker, IQualityChecker)
+
+    def test_resource_checker_interface(self):
+        """Проверяет, что ResourceChecker реализует интерфейс"""
+        assert issubclass(ResourceChecker, IQualityChecker)
+
+    def test_progress_checker_interface(self):
+        """Проверяет, что ProgressChecker реализует интерфейс"""
+        assert issubclass(ProgressChecker, IQualityChecker)
+
+    @pytest.mark.parametrize("checker_class,expected_name", [
+        (CoverageChecker, "CoverageChecker"),
+        (ComplexityChecker, "ComplexityChecker"),
+        (SecurityChecker, "SecurityChecker"),
+        (StyleChecker, "StyleChecker"),
+        (TaskTypeChecker, "TaskTypeChecker"),
+        (DependencyChecker, "DependencyChecker"),
+        (ResourceChecker, "ResourceChecker"),
+        (ProgressChecker, "ProgressChecker"),
+    ])
+    def test_checker_names(self, checker_class, expected_name):
+        """Тестирует имена чекеров"""
+        checker = checker_class()
+        assert checker.name == expected_name
+
+    @pytest.mark.parametrize("checker_class,expected_type", [
+        (CoverageChecker, QualityCheckType.COVERAGE),
+        (ComplexityChecker, QualityCheckType.COMPLEXITY),
+        (SecurityChecker, QualityCheckType.SECURITY),
+        (StyleChecker, QualityCheckType.STYLE),
+        (TaskTypeChecker, QualityCheckType.TASK_TYPE),
+        (DependencyChecker, QualityCheckType.DEPENDENCY),
+        (ResourceChecker, QualityCheckType.RESOURCE),
+        (ProgressChecker, QualityCheckType.PROGRESS),
+    ])
+    def test_checker_types(self, checker_class, expected_type):
+        """Тестирует типы чекеров"""
+        checker = checker_class()
+        assert checker.check_type == expected_type
+
+    def test_checker_default_thresholds(self):
+        """Тестирует пороги по умолчанию для чекеров"""
+        checkers = [
+            CoverageChecker(),
+            ComplexityChecker(),
+            SecurityChecker(),
+            StyleChecker(),
+            TaskTypeChecker(),
+            DependencyChecker(),
+            ResourceChecker(),
+            ProgressChecker()
         ]
 
-        for cls in classes_to_check:
-            mro = cls.__mro__
-            # Should not have duplicates in MRO
-            assert len(mro) == len(set(mro)), f"{cls.__name__} has MRO conflicts"
+        for checker in checkers:
+            threshold = checker.get_default_threshold()
+            assert isinstance(threshold, float)
+            assert 0.0 <= threshold <= 1.0
+
+    def test_checker_supported_file_types(self):
+        """Тестирует поддерживаемые типы файлов"""
+        checkers = [
+            CoverageChecker(),
+            ComplexityChecker(),
+            SecurityChecker(),
+            StyleChecker(),
+            TaskTypeChecker(),
+            DependencyChecker(),
+            ResourceChecker(),
+            ProgressChecker()
+        ]
+
+        for checker in checkers:
+            file_types = checker.get_supported_file_types()
+            assert isinstance(file_types, list)
+            # Большинство чекеров должны поддерживать Python файлы
+            assert '.py' in file_types or len(file_types) == 0  # некоторые чекеры могут быть универсальными

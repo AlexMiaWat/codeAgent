@@ -65,6 +65,11 @@ server:
   # Настройки HTTP сервера
   http_enabled: true  # Включить HTTP сервер
   http_port: 3456     # Порт для HTTP сервера (всегда один и тот же)
+
+  # Настройки MCP сервера
+  mcp_enabled: true   # Включить MCP сервер
+  mcp_host: localhost # Хост для MCP сервера
+  mcp_port: 3000      # Порт для MCP сервера
   
   # Настройки автоперезапуска
   auto_reload: true              # Включить автоперезапуск

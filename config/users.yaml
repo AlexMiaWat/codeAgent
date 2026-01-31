@@ -1,0 +1,26 @@
+users:
+  admin:
+    active: true
+    password_hash: c0ea36c2aa996c4788fcb759c069b6748f39c37102de4880507ad9891c088fdf
+    permissions:
+    - read
+    - write
+    - delete
+    - admin
+    role: admin
+    salt: b6fd6c2b5865e822a8bdceab632f5bbd
+  developer:
+    active: true
+    password_hash: 93e4d961aa457d62402766e0c66ad54f415b4bfc9bcc03e7a2a412343b7951e6
+    permissions:
+    - read
+    - write
+    role: developer
+    salt: c4511bc671296f3fd95ea63e06ebdeee
+  viewer:
+    active: true
+    password_hash: 19a6636540e975c4079bbb1cf3d060aa6392b98aa04f0d7be5b01c5560264291
+    permissions:
+    - read
+    role: viewer
+    salt: 9cfd116284c70589b0b9ca2c5591bb0d

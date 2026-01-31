@@ -21,6 +21,7 @@ class ComponentStatus(Enum):
     RUNNING = "running"
     STOPPING = "stopping"
     STOPPED = "stopped"
+    DISABLED = "disabled"
     ERROR = "error"
 
 

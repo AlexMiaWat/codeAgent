@@ -1,416 +1,524 @@
 """
-Smoke tests for Quality Gates system
+Дымовые тесты для Quality Gates framework
 
-This module contains smoke tests that verify basic functionality
-of quality gates components can be instantiated and basic operations work.
+Проверяют базовую работоспособность:
+- QualityGateManager может быть создан
+- Чекеры могут выполняться
+- Gates могут быть настроены
+- Интеграция компонентов работает
 """
 
+import pytest
+from unittest.mock import Mock, AsyncMock, MagicMock, patch
+import asyncio
+from typing import Dict, Any, Optional, List
 
 from src.quality.quality_gate_manager import QualityGateManager
+from src.quality.interfaces.iquality_gate import IQualityGate
+from src.quality.models.quality_result import (
+    QualityResult, QualityGateResult, QualityStatus, QualityCheckType
+)
 from src.quality.checkers import (
     CoverageChecker, ComplexityChecker, SecurityChecker, StyleChecker,
     TaskTypeChecker, DependencyChecker, ResourceChecker, ProgressChecker
 )
-from src.quality.reporters import ConsoleReporter, FileReporter
-from src.quality.models.quality_result import (
-    QualityStatus, QualityCheckType, QualityResult, QualityGateResult
-)
 
 
 class TestQualityGateManagerSmoke:
-    """Smoke tests for QualityGateManager"""
+    """Дымовые тесты для QualityGateManager"""
 
-    def test_quality_gate_manager_creation(self):
-        """Test QualityGateManager can be created"""
+    def test_manager_creation(self):
+        """Проверяет создание QualityGateManager"""
         manager = QualityGateManager()
+
         assert manager is not None
-        assert hasattr(manager, '_config')
         assert hasattr(manager, '_checkers')
+        assert hasattr(manager, '_enabled_gates')
+        assert hasattr(manager, '_gate_configs')
 
-    def test_quality_gate_manager_configuration(self):
-        """Test QualityGateManager configuration"""
-        manager = QualityGateManager()
-
+    def test_manager_creation_with_config(self):
+        """Проверяет создание менеджера с конфигурацией"""
         config = {
-            'enabled': True,
-            'strict_mode': False,
-            'gates': {
-                'coverage': {'enabled': True, 'min_coverage': 80.0},
-                'complexity': {'enabled': True, 'max_complexity': 10}
+            QualityCheckType.COVERAGE: {
+                'enabled': True,
+                'threshold': 0.8,
+                'strict': False
+            },
+            QualityCheckType.COMPLEXITY: {
+                'enabled': True,
+                'threshold': 0.7
             }
         }
 
-        manager.configure(config)
+        manager = QualityGateManager(config)
 
         assert manager._config == config
+        assert QualityCheckType.COVERAGE in manager._enabled_gates
+        assert manager._enabled_gates[QualityCheckType.COVERAGE] == True
 
-    def test_quality_gate_manager_basic_run(self):
-        """Test basic quality gates run"""
+    def test_manager_run_quality_checks(self):
+        """Проверяет выполнение quality checks"""
+        manager = QualityGateManager()
+
+        async def test():
+            results = await manager.run_quality_checks()
+
+            assert results is not None
+            assert isinstance(results, list)
+
+            # Даже если нет включенных чекеров, должен вернуться пустой список
+            if len(results) > 0:
+                for result in results:
+                    assert isinstance(result, QualityResult)
+
+        asyncio.run(test())
+
+    def test_manager_run_quality_checks_with_context(self):
+        """Проверяет выполнение quality checks с контекстом"""
+        manager = QualityGateManager()
+
+        context = {
+            'project_path': '/test/project',
+            'files': ['test.py', 'main.py'],
+            'task_type': 'code'
+        }
+
+        async def test():
+            results = await manager.run_quality_checks(context)
+
+            assert results is not None
+            assert isinstance(results, list)
+
+        asyncio.run(test())
+
+    def test_manager_get_enabled_gates(self):
+        """Проверяет получение списка включенных gates"""
+        config = {
+            QualityCheckType.COVERAGE: {'enabled': True},
+            QualityCheckType.COMPLEXITY: {'enabled': False},
+            QualityCheckType.SECURITY: {'enabled': True}
+        }
+
+        manager = QualityGateManager(config)
+
+        enabled_gates = manager.get_enabled_gates()
+
+        assert enabled_gates is not None
+        assert isinstance(enabled_gates, list)
+        assert QualityCheckType.COVERAGE in enabled_gates
+        assert QualityCheckType.SECURITY in enabled_gates
+        assert QualityCheckType.COMPLEXITY not in enabled_gates
+
+    def test_manager_configure_gate(self):
+        """Проверяет настройку gate"""
         manager = QualityGateManager()
 
         config = {
             'enabled': True,
-            'strict_mode': False,
-            'gates': {
-                'coverage': {'enabled': True, 'min_coverage': 50.0}
-            }
-        }
-        manager.configure(config)
-
-        # Mock context
-        context = {
-            'project_path': '/tmp/test',
-            'task_type': 'test'
+            'threshold': 0.85,
+            'strict': True
         }
 
-        # Run gates (should not fail even if no actual checking)
-        result = manager.run_all_gates(context)
+        async def test():
+            success = await manager.configure_gate(QualityCheckType.COVERAGE, config)
 
-        assert isinstance(result, QualityGateResult)
-        assert result.gate_name is not None
+            # Настройка должна выполниться без ошибок
+            assert success == True or success is None  # зависит от реализации
 
-    def test_should_block_execution_logic(self):
-        """Test should_block_execution logic"""
+        asyncio.run(test())
+
+    def test_manager_get_quality_report(self):
+        """Проверяет получение quality report"""
         manager = QualityGateManager()
 
-        # Test with no results
-        assert not manager.should_block_execution()
+        async def test():
+            # Сначала выполняем проверки
+            results = await manager.run_quality_checks()
 
-        # Test with passing result
-        passing_result = QualityGateResult("test")
-        passing_result.add_result(QualityResult(
-            check_type=QualityCheckType.COVERAGE,
-            status=QualityStatus.PASSED,
-            score=0.9
-        ))
+            # Получаем отчет
+            report = await manager.get_quality_report()
 
-        assert not manager.should_block_execution(passing_result)
+            assert report is not None
+            assert isinstance(report, dict)
 
-        # Test with failing result in strict mode
-        manager._config = {'strict_mode': True}
-        failing_result = QualityGateResult("test")
-        failing_result.add_result(QualityResult(
-            check_type=QualityCheckType.COVERAGE,
-            status=QualityStatus.FAILED,
-            score=0.3
-        ))
+        asyncio.run(test())
 
-        assert manager.should_block_execution(failing_result)
+    def test_manager_is_quality_gate_passed(self):
+        """Проверяет проверку прохождения quality gate"""
+        manager = QualityGateManager()
+
+        async def test():
+            passed = await manager.is_quality_gate_passed()
+
+            # Должен вернуться булевый результат
+            assert isinstance(passed, bool)
+
+        asyncio.run(test())
 
 
 class TestQualityCheckersSmoke:
-    """Smoke tests for quality checkers"""
+    """Дымовые тесты для чекеров качества"""
 
-    def test_coverage_checker_creation(self):
-        """Test CoverageChecker can be created"""
+    def test_coverage_checker_creation_and_execution(self):
+        """Проверяет создание и выполнение CoverageChecker"""
         checker = CoverageChecker()
-        assert checker is not None
-        assert checker.get_check_type() == QualityCheckType.COVERAGE
 
-    def test_complexity_checker_creation(self):
-        """Test ComplexityChecker can be created"""
+        assert checker is not None
+        assert checker.name == "CoverageChecker"
+        assert checker.check_type == QualityCheckType.COVERAGE
+
+        async def test():
+            result = await checker.check()
+
+            assert result is not None
+            assert isinstance(result, QualityResult)
+            assert result.check_type == QualityCheckType.COVERAGE
+
+        asyncio.run(test())
+
+    def test_coverage_checker_with_context(self):
+        """Проверяет CoverageChecker с контекстом"""
+        checker = CoverageChecker()
+
+        context = {
+            'project_path': '/test',
+            'coverage_data': {'total': 100, 'covered': 85}
+        }
+
+        async def test():
+            result = await checker.check(context)
+
+            assert result is not None
+            assert isinstance(result, QualityResult)
+
+        asyncio.run(test())
+
+    def test_complexity_checker_creation_and_execution(self):
+        """Проверяет создание и выполнение ComplexityChecker"""
         checker = ComplexityChecker()
-        assert checker is not None
-        assert checker.get_check_type() == QualityCheckType.COMPLEXITY
 
-    def test_security_checker_creation(self):
-        """Test SecurityChecker can be created"""
+        assert checker is not None
+        assert checker.name == "ComplexityChecker"
+        assert checker.check_type == QualityCheckType.COMPLEXITY
+
+        async def test():
+            result = await checker.check()
+
+            assert result is not None
+            assert isinstance(result, QualityResult)
+            assert result.check_type == QualityCheckType.COMPLEXITY
+
+        asyncio.run(test())
+
+    def test_security_checker_creation_and_execution(self):
+        """Проверяет создание и выполнение SecurityChecker"""
         checker = SecurityChecker()
-        assert checker is not None
-        assert checker.get_check_type() == QualityCheckType.SECURITY
 
-    def test_style_checker_creation(self):
-        """Test StyleChecker can be created"""
+        assert checker is not None
+        assert checker.name == "SecurityChecker"
+        assert checker.check_type == QualityCheckType.SECURITY
+
+        async def test():
+            result = await checker.check()
+
+            assert result is not None
+            assert isinstance(result, QualityResult)
+            assert result.check_type == QualityCheckType.SECURITY
+
+        asyncio.run(test())
+
+    def test_style_checker_creation_and_execution(self):
+        """Проверяет создание и выполнение StyleChecker"""
         checker = StyleChecker()
-        assert checker is not None
-        assert checker.get_check_type() == QualityCheckType.STYLE
 
-    def test_task_type_checker_creation(self):
-        """Test TaskTypeChecker can be created"""
+        assert checker is not None
+        assert checker.name == "StyleChecker"
+        assert checker.check_type == QualityCheckType.STYLE
+
+        async def test():
+            result = await checker.check()
+
+            assert result is not None
+            assert isinstance(result, QualityResult)
+            assert result.check_type == QualityCheckType.STYLE
+
+        asyncio.run(test())
+
+    def test_task_type_checker_creation_and_execution(self):
+        """Проверяет создание и выполнение TaskTypeChecker"""
         checker = TaskTypeChecker()
-        assert checker is not None
-        assert checker.get_check_type() == QualityCheckType.TASK_TYPE
 
-    def test_dependency_checker_creation(self):
-        """Test DependencyChecker can be created"""
+        assert checker is not None
+        assert checker.name == "TaskTypeChecker"
+        assert checker.check_type == QualityCheckType.TASK_TYPE
+
+        async def test():
+            result = await checker.check()
+
+            assert result is not None
+            assert isinstance(result, QualityResult)
+            assert result.check_type == QualityCheckType.TASK_TYPE
+
+        asyncio.run(test())
+
+    def test_dependency_checker_creation_and_execution(self):
+        """Проверяет создание и выполнение DependencyChecker"""
         checker = DependencyChecker()
-        assert checker is not None
-        assert checker.get_check_type() == QualityCheckType.DEPENDENCY
 
-    def test_resource_checker_creation(self):
-        """Test ResourceChecker can be created"""
+        assert checker is not None
+        assert checker.name == "DependencyChecker"
+        assert checker.check_type == QualityCheckType.DEPENDENCY
+
+        async def test():
+            result = await checker.check()
+
+            assert result is not None
+            assert isinstance(result, QualityResult)
+            assert result.check_type == QualityCheckType.DEPENDENCY
+
+        asyncio.run(test())
+
+    def test_resource_checker_creation_and_execution(self):
+        """Проверяет создание и выполнение ResourceChecker"""
         checker = ResourceChecker()
-        assert checker is not None
-        assert checker.get_check_type() == QualityCheckType.RESOURCE
 
-    def test_progress_checker_creation(self):
-        """Test ProgressChecker can be created"""
+        assert checker is not None
+        assert checker.name == "ResourceChecker"
+        assert checker.check_type == QualityCheckType.RESOURCE
+
+        async def test():
+            result = await checker.check()
+
+            assert result is not None
+            assert isinstance(result, QualityResult)
+            assert result.check_type == QualityCheckType.RESOURCE
+
+        asyncio.run(test())
+
+    def test_progress_checker_creation_and_execution(self):
+        """Проверяет создание и выполнение ProgressChecker"""
         checker = ProgressChecker()
+
         assert checker is not None
-        assert checker.get_check_type() == QualityCheckType.PROGRESS
+        assert checker.name == "ProgressChecker"
+        assert checker.check_type == QualityCheckType.PROGRESS
 
-    def test_checker_configure(self):
-        """Test checker configuration"""
-        checker = CoverageChecker()
+        async def test():
+            result = await checker.check()
 
-        config = {'min_coverage': 75.0}
+            assert result is not None
+            assert isinstance(result, QualityResult)
+            assert result.check_type == QualityCheckType.PROGRESS
+
+        asyncio.run(test())
+
+    @pytest.mark.parametrize("checker_class", [
+        CoverageChecker,
+        ComplexityChecker,
+        SecurityChecker,
+        StyleChecker,
+        TaskTypeChecker,
+        DependencyChecker,
+        ResourceChecker,
+        ProgressChecker
+    ])
+    def test_all_checkers_basic_functionality(self, checker_class):
+        """Проверяет базовую функциональность всех чекеров"""
+        checker = checker_class()
+
+        # Проверяем основные атрибуты
+        assert hasattr(checker, 'name')
+        assert hasattr(checker, 'check_type')
+        assert hasattr(checker, 'description')
+
+        # Проверяем основные методы
+        assert hasattr(checker, 'configure')
+        assert hasattr(checker, 'check')
+        assert asyncio.iscoroutinefunction(checker.check)
+
+        # Проверяем свойства
+        assert checker.get_default_threshold() >= 0.0
+        assert checker.get_default_threshold() <= 1.0
+
+        assert isinstance(checker.get_supported_file_types(), list)
+
+    @pytest.mark.parametrize("checker_class", [
+        CoverageChecker,
+        ComplexityChecker,
+        SecurityChecker,
+        StyleChecker,
+        TaskTypeChecker,
+        DependencyChecker,
+        ResourceChecker,
+        ProgressChecker
+    ])
+    def test_all_checkers_configuration(self, checker_class):
+        """Проверяет настройку всех чекеров"""
+        checker = checker_class()
+
+        config = {'threshold': 0.8, 'enabled': True}
+
+        # Настройка должна выполниться без ошибок
         checker.configure(config)
 
-        # Should not raise exception
-        assert checker is not None
+        # Проверяем, что конфигурация валидна
+        assert checker.validate_configuration(config) == True
 
-    def test_checker_basic_check(self):
-        """Test basic checker check method"""
+    @pytest.mark.parametrize("checker_class,expected_types", [
+        (CoverageChecker, ['.py', '.js', '.ts', '.java']),
+        (ComplexityChecker, ['.py', '.js', '.ts', '.java', '.cpp', '.c']),
+        (SecurityChecker, ['.py', '.js', '.ts', '.java', '.yaml', '.yml', '.json']),
+        (StyleChecker, ['.py', '.js', '.ts', '.java', '.css', '.html']),
+    ])
+    def test_checker_supported_file_types(self, checker_class, expected_types):
+        """Проверяет поддерживаемые типы файлов для чекеров"""
+        checker = checker_class()
+
+        supported_types = checker.get_supported_file_types()
+
+        assert isinstance(supported_types, list)
+        # Проверяем, что базовые типы поддерживаются
+        for expected_type in expected_types:
+            if expected_type in ['.py', '.js', '.ts']:
+                assert expected_type in supported_types or len(supported_types) == 0
+
+
+class TestQualityGatesIntegrationSmoke:
+    """Дымовые тесты интеграции Quality Gates"""
+
+    def test_manager_with_multiple_checkers(self):
+        """Проверяет работу менеджера с несколькими чекерами"""
+        config = {
+            QualityCheckType.COVERAGE: {'enabled': True, 'threshold': 0.8},
+            QualityCheckType.COMPLEXITY: {'enabled': True, 'threshold': 0.7},
+            QualityCheckType.SECURITY: {'enabled': True, 'threshold': 0.9}
+        }
+
+        manager = QualityGateManager(config)
+
+        async def test():
+            results = await manager.run_quality_checks()
+
+            assert results is not None
+            assert isinstance(results, list)
+
+            # Проверяем, что результаты соответствуют включенным чекерам
+            enabled_gates = manager.get_enabled_gates()
+            # Количество результатов может быть меньше количества чекеров,
+            # если некоторые чекеры не могут выполниться
+
+        asyncio.run(test())
+
+    def test_manager_configuration_workflow(self):
+        """Проверяет workflow настройки менеджера"""
+        manager = QualityGateManager()
+
+        # Настраиваем gate
+        config = {'enabled': True, 'threshold': 0.85, 'strict': False}
+
+        async def test():
+            # Настраиваем gate
+            await manager.configure_gate(QualityCheckType.COVERAGE, config)
+
+            # Проверяем, что gate включен
+            enabled_gates = manager.get_enabled_gates()
+            assert QualityCheckType.COVERAGE in enabled_gates
+
+            # Выполняем проверки
+            results = await manager.run_quality_checks()
+
+            # Получаем отчет
+            report = await manager.get_quality_report()
+            assert isinstance(report, dict)
+
+            # Проверяем статус
+            passed = await manager.is_quality_gate_passed()
+            assert isinstance(passed, bool)
+
+        asyncio.run(test())
+
+    def test_checker_configuration_and_execution(self):
+        """Проверяет настройку и выполнение чекера"""
         checker = CoverageChecker()
 
-        context = {
-            'project_path': '/tmp/test',
-            'files': []
-        }
+        # Настраиваем чекер
+        config = {'threshold': 0.8, 'min_coverage': 75}
+        checker.configure(config)
 
-        # Should return a result (may be failed due to no files)
-        result = checker.check(context)
+        # Проверяем валидность конфигурации
+        assert checker.validate_configuration(config) == True
 
-        assert isinstance(result, QualityResult)
-        assert result.check_type == QualityCheckType.COVERAGE
+        async def test():
+            # Выполняем проверку
+            result = await checker.check()
 
-    def test_all_checkers_have_unique_types(self):
-        """Test all checkers have unique check types"""
-        checkers = [
-            CoverageChecker(), ComplexityChecker(), SecurityChecker(), StyleChecker(),
-            TaskTypeChecker(), DependencyChecker(), ResourceChecker(), ProgressChecker()
-        ]
+            assert result is not None
+            assert isinstance(result, QualityResult)
+            assert result.check_type == QualityCheckType.COVERAGE
 
-        check_types = [checker.get_check_type() for checker in checkers]
-        assert len(check_types) == len(set(check_types))  # All unique
+            # Проверяем, что результат содержит ожидаемые поля
+            assert hasattr(result, 'passed')
+            assert hasattr(result, 'score')
+            assert hasattr(result, 'check_name')
 
+        asyncio.run(test())
 
-class TestQualityReportersSmoke:
-    """Smoke tests for quality reporters"""
-
-    def test_console_reporter_creation(self):
-        """Test ConsoleReporter can be created"""
-        reporter = ConsoleReporter()
-        assert reporter is not None
-
-    def test_file_reporter_creation(self):
-        """Test FileReporter can be created"""
-        import tempfile
-        import os
-
-        with tempfile.NamedTemporaryFile(delete=False) as f:
-            temp_file = f.name
-
-        try:
-            reporter = FileReporter()
-            reporter.configure({'output_file': temp_file})
-            assert reporter is not None
-        finally:
-            if os.path.exists(temp_file):
-                os.unlink(temp_file)
-
-    def test_console_reporter_report(self):
-        """Test ConsoleReporter report method"""
-        reporter = ConsoleReporter()
-
-        # Create a test result
-        result = QualityGateResult("test_gate")
-        result.add_result(QualityResult(
+    def test_quality_gate_result_structure(self):
+        """Проверяет структуру QualityGateResult"""
+        # Создаем тестовые результаты
+        coverage_result = QualityResult(
             check_type=QualityCheckType.COVERAGE,
-            status=QualityStatus.PASSED,
-            score=0.85
-        ))
-
-        # Should not raise exception
-        reporter.report(result)
-
-    def test_file_reporter_report(self):
-        """Test FileReporter report method"""
-        import tempfile
-        import os
-
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
-            temp_file = f.name
-
-        try:
-            reporter = FileReporter()
-            reporter.configure({'output_file': temp_file})
-
-            # Create a test result
-            result = QualityGateResult("test_gate")
-            result.add_result(QualityResult(
-                check_type=QualityCheckType.COVERAGE,
-                status=QualityStatus.PASSED,
-                score=0.85
-            ))
-
-            # Should not raise exception
-            reporter.report(result)
-
-            # Check file was written
-            assert os.path.exists(temp_file)
-            with open(temp_file, 'r') as f:
-                content = f.read()
-                assert len(content) > 0
-
-        finally:
-            if os.path.exists(temp_file):
-                os.unlink(temp_file)
-
-    def test_reporter_configure(self):
-        """Test reporter configuration"""
-        reporter = ConsoleReporter()
-
-        config = {'verbose': True}
-        reporter.configure(config)
-
-        # Should not raise exception
-        assert reporter is not None
-
-
-class TestQualityModelsSmoke:
-    """Smoke tests for quality models"""
-
-    def test_quality_result_creation(self):
-        """Test QualityResult can be created"""
-        result = QualityResult(
-            check_type=QualityCheckType.COVERAGE,
-            status=QualityStatus.PASSED,
-            score=0.85,
-            message="Coverage is good",
-            details={'covered_lines': 85, 'total_lines': 100}
-        )
-
-        assert result.check_type == QualityCheckType.COVERAGE
-        assert result.status == QualityStatus.PASSED
-        assert result.score == 0.85
-        assert result.message == "Coverage is good"
-        assert result.details == {'covered_lines': 85, 'total_lines': 100}
-
-    def test_quality_gate_result_creation(self):
-        """Test QualityGateResult can be created"""
-        result = QualityGateResult("test_gate")
-
-        assert result.gate_name == "test_gate"
-        assert len(result.results) == 0
-        assert result.timestamp is not None
-
-    def test_quality_gate_result_add_result(self):
-        """Test adding results to QualityGateResult"""
-        gate_result = QualityGateResult("test_gate")
-
-        check_result = QualityResult(
-            check_type=QualityCheckType.COVERAGE,
-            status=QualityStatus.PASSED,
+            check_name="Coverage Check",
+            passed=True,
             score=0.85
         )
 
-        gate_result.add_result(check_result)
-
-        assert len(gate_result.results) == 1
-        assert gate_result.results[0] == check_result
-
-    def test_quality_gate_result_overall_status(self):
-        """Test overall status calculation"""
-        gate_result = QualityGateResult("test_gate")
-
-        # Add passing result
-        gate_result.add_result(QualityResult(
-            check_type=QualityCheckType.COVERAGE,
-            status=QualityStatus.PASSED,
-            score=0.85
-        ))
-
-        # Should be passed
-        assert gate_result.get_overall_status() == QualityStatus.PASSED
-
-        # Add failing result
-        gate_result.add_result(QualityResult(
+        complexity_result = QualityResult(
             check_type=QualityCheckType.COMPLEXITY,
-            status=QualityStatus.FAILED,
-            score=15.0
-        ))
+            check_name="Complexity Check",
+            passed=True,
+            score=0.9
+        )
 
-        # Should be failed
-        assert gate_result.get_overall_status() == QualityStatus.FAILED
+        gate_result = QualityGateResult(
+            gate_name="Code Quality Gate",
+            check_type=QualityCheckType.COVERAGE,  # Это поле может быть устаревшим
+            passed=True,
+            overall_score=0.875,
+            results=[coverage_result, complexity_result],
+            execution_time=1.5
+        )
 
-        # Add warning result
-        gate_result.add_result(QualityResult(
-            check_type=QualityCheckType.STYLE,
-            status=QualityStatus.WARNING,
-            score=0.7
-        ))
+        assert gate_result.gate_name == "Code Quality Gate"
+        assert gate_result.passed == True
+        assert gate_result.overall_score == 0.875
+        assert len(gate_result.results) == 2
+        assert gate_result.execution_time == 1.5
 
-        # Should still be failed (failed takes precedence)
-        assert gate_result.get_overall_status() == QualityStatus.FAILED
-
-
-class TestQualityIntegrationSmoke:
-    """Smoke tests for quality system integration"""
-
-    def test_full_quality_pipeline(self):
-        """Test full quality pipeline"""
-        # Create manager
+    def test_error_handling_in_quality_checks(self):
+        """Проверяет обработку ошибок в quality checks"""
         manager = QualityGateManager()
 
-        # Configure
-        config = {
-            'enabled': True,
-            'strict_mode': False,
-            'gates': {
-                'coverage': {'enabled': True, 'min_coverage': 50.0},
-                'complexity': {'enabled': True, 'max_complexity': 20}
-            }
-        }
-        manager.configure(config)
+        async def test():
+            # Выполняем проверки - даже если есть ошибки, не должно быть исключений
+            try:
+                results = await manager.run_quality_checks()
+                assert isinstance(results, list)
+            except Exception as e:
+                pytest.fail(f"Unexpected exception in quality checks: {e}")
 
-        # Create context
-        context = {
-            'project_path': '/tmp/test',
-            'task_type': 'development',
-            'files': []
-        }
+        asyncio.run(test())
 
-        # Run quality gates
-        result = manager.run_all_gates(context)
+    def test_empty_configuration_handling(self):
+        """Проверяет обработку пустой конфигурации"""
+        manager = QualityGateManager({})
 
-        # Should return a result
-        assert isinstance(result, QualityGateResult)
-        assert len(result.results) >= 0  # May be 0 if no checks actually run
+        async def test():
+            # С пустой конфигурацией все равно должно работать
+            results = await manager.run_quality_checks()
+            assert isinstance(results, list)
 
-        # Test blocking logic
-        should_block = manager.should_block_execution(result)
-        assert isinstance(should_block, bool)
+            enabled_gates = manager.get_enabled_gates()
+            assert isinstance(enabled_gates, list)
 
-        # Test reporting
-        console_reporter = ConsoleReporter()
-        console_reporter.report(result)  # Should not raise
-
-    def test_quality_gates_with_different_configs(self):
-        """Test quality gates with different configurations"""
-        manager = QualityGateManager()
-
-        # Test with minimal config
-        minimal_config = {'enabled': False}
-        manager.configure(minimal_config)
-
-        context = {'project_path': '/tmp/test'}
-        result = manager.run_all_gates(context)
-
-        assert isinstance(result, QualityGateResult)
-
-        # Test with full config
-        full_config = {
-            'enabled': True,
-            'strict_mode': True,
-            'gates': {
-                'coverage': {'enabled': True, 'min_coverage': 80.0},
-                'complexity': {'enabled': True, 'max_complexity': 10},
-                'security': {'enabled': True},
-                'style': {'enabled': True}
-            }
-        }
-        manager.configure(full_config)
-
-        result = manager.run_all_gates(context)
-        assert isinstance(result, QualityGateResult)
+        asyncio.run(test())

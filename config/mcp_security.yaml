@@ -1,0 +1,161 @@
+# Конфигурация безопасности MCP сервера
+
+# Основные настройки безопасности
+security:
+  enabled: true
+  auth_required: false  # Включить для продакшена
+
+# JWT настройки
+jwt:
+  algorithm: "HS256"
+  access_token_expire_minutes: 30
+  refresh_token_expire_days: 7
+  secret_key: ""  # Автоматическая генерация если пусто
+
+# OAuth2 настройки (для будущего использования)
+oauth2:
+  enabled: false
+  providers: []
+  client_id: ""
+  client_secret: ""
+  redirect_uri: ""
+
+# RBAC - Role Based Access Control
+rbac:
+  enabled: true
+
+  # Определение ролей
+  roles:
+    admin:
+      name: "Administrator"
+      description: "Полный доступ ко всем ресурсам"
+      permissions:
+        - "resources:read:*"
+        - "resources:write:*"
+        - "resources:delete:*"
+        - "users:manage"
+        - "system:admin"
+
+    developer:
+      name: "Developer"
+      description: "Доступ для разработки"
+      permissions:
+        - "resources:read:*"
+        - "resources:write:src/**"
+        - "resources:write:docs/**"
+        - "resources:write:config/**"
+
+    viewer:
+      name: "Viewer"
+      description: "Только чтение"
+      permissions:
+        - "resources:read:*"
+
+  # Правила доступа к ресурсам
+  resource_policies:
+    - resource: "docs/**"
+      allow_roles: ["admin", "developer", "viewer"]
+      deny_roles: []
+
+    - resource: "src/**"
+      allow_roles: ["admin", "developer"]
+      deny_roles: []
+
+    - resource: "config/**"
+      allow_roles: ["admin", "developer"]
+      deny_roles: []
+
+    - resource: "logs/**"
+      allow_roles: ["admin"]
+      deny_roles: []
+
+    - resource: ".env*"
+      allow_roles: []
+      deny_roles: ["admin", "developer", "viewer"]
+
+# Rate limiting
+rate_limiting:
+  enabled: true
+
+  # Глобальные лимиты
+  global:
+    requests_per_minute: 60
+    burst_limit: 10
+
+  # Лимиты по эндпоинтам
+  endpoints:
+    "/health":
+      requests_per_minute: 120
+      burst_limit: 20
+
+    "/mcp":
+      requests_per_minute: 30
+      burst_limit: 5
+
+  # Лимиты по пользователям
+  user_limits:
+    admin:
+      requests_per_minute: 120
+      burst_limit: 20
+
+    developer:
+      requests_per_minute: 60
+      burst_limit: 10
+
+    viewer:
+      requests_per_minute: 30
+      burst_limit: 5
+
+# Audit logging
+audit:
+  enabled: true
+  log_file: "logs/mcp_audit.log"
+  log_level: "INFO"
+
+  # События для логирования
+  events:
+    - "auth_login"
+    - "auth_logout"
+    - "auth_failed"
+    - "resource_access"
+    - "resource_modify"
+    - "permission_denied"
+
+# Encryption
+encryption:
+  enabled: false  # Включить для чувствительных данных
+  algorithm: "AES-256-GCM"
+  key_rotation_days: 30
+
+# Network security
+network:
+  allowed_ips: []  # Список разрешенных IP (пустой = все разрешены)
+  blocked_ips: []
+
+  # SSL/TLS настройки
+  ssl:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+    ca_file: ""
+
+# Session management
+session:
+  max_sessions_per_user: 5
+  session_timeout_minutes: 60
+  cleanup_interval_minutes: 30
+
+# Password policy
+password_policy:
+  min_length: 8
+  require_uppercase: true
+  require_lowercase: true
+  require_digits: true
+  require_special_chars: false
+  max_age_days: 90
+
+# 2FA (для будущего использования)
+two_factor_auth:
+  enabled: false
+  required_roles: ["admin"]
+  methods: ["totp", "sms"]

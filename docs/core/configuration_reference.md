@@ -71,6 +71,11 @@ server:
     checkpoint_file: ".codeagent_checkpoint.json"
     max_task_attempts: 3
     keep_completed_tasks: 100
+
+  # Настройки MCP сервера
+  mcp_enabled: true                # Включить MCP сервер
+  mcp_host: localhost              # Хост для MCP сервера
+  mcp_port: 3000                   # Порт для MCP сервера
 ```
 
 ### Настройки документации

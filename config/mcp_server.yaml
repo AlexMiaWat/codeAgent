@@ -1,0 +1,105 @@
+# Конфигурация MCP сервера для Code Agent
+
+# Основные настройки сервера
+server:
+  host: "localhost"
+  port: 3000
+  log_level: "INFO"
+  enable_cors: true
+
+# Настройки безопасности
+security:
+  enabled: true
+  jwt_secret_key: ""  # Оставьте пустым для генерации случайного ключа
+  token_expire_hours: 24
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 60
+    burst_limit: 10
+
+  # Пользователи (хранятся в config/users.yaml)
+  # Пользователи инициализируются из внешнего файла с хэшированными паролями
+
+# Настройки ресурсов
+resources:
+  enabled_dirs:
+    - "docs"      # Документация проекта
+    - "src"       # Исходный код
+    - "config"    # Конфигурационные файлы
+    - "examples"  # Примеры
+    - "logs"      # Логи (только для чтения)
+
+  excluded_patterns:
+    - "*.pyc"
+    - "*.pyo"
+    - "*.tmp"
+    - "*.temp"
+    - "*.bak"
+    - "*.swp"
+    - "__pycache__"
+    - ".git"
+    - ".env*"
+    - "*.log"  # Исключить логи кроме logs/
+
+  max_file_size_mb: 10  # Максимальный размер файла для кэширования
+
+# Настройки кэширования
+cache:
+  enabled: true
+  max_size_mb: 100
+  default_ttl_seconds: 300  # 5 минут
+  cleanup_interval_seconds: 60
+
+# Настройки метрик и мониторинга
+metrics:
+  enabled: true
+  prometheus_port: 9090
+  log_summary_interval_minutes: 5
+
+# Настройки WebSocket
+websocket:
+  enabled: true
+  max_connections: 100
+  ping_interval_seconds: 30
+  ping_timeout_seconds: 10
+
+# Настройки протокола MCP
+mcp:
+  protocol_version: "2024-11-05"
+  server_info:
+    name: "Code Agent MCP Server"
+    version: "0.1.0"
+
+  capabilities:
+    resources:
+      subscribe: true
+      listChanged: true
+    tools:
+      listChanged: true
+    prompts:
+      listChanged: true
+    logging: {}
+
+# Настройки логирования
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/mcp_server.log"
+  max_file_size_mb: 10
+  backup_count: 5
+
+# Настройки для продакшена
+production:
+  enabled: false
+  ssl_enabled: false
+  ssl_cert_file: ""
+  ssl_key_file: ""
+  worker_processes: 4
+  max_requests_per_worker: 1000
+
+# Настройки разработки
+development:
+  enabled: true
+  debug_mode: true
+  auto_reload: true
+  show_error_details: true

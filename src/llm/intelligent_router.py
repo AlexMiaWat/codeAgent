@@ -27,21 +27,7 @@ from .types import (
 logger = logging.getLogger(__name__)
 
 
-class TaskType(Enum):
-    """Типы задач для классификации запросов"""
-    CREATIVE_WRITING = "creative_writing"      # Творческое письмо
-    CODE_GENERATION = "code_generation"        # Генерация кода
-    CODE_REVIEW = "code_review"                # Ревью кода
-    ANALYSIS = "analysis"                      # Анализ данных
-    QUESTION_ANSWERING = "question_answering"  # Ответы на вопросы
-    SUMMARIZATION = "summarization"            # Суммаризация
-    TRANSLATION = "translation"                # Перевод
-    MATH_PROBLEM = "math_problem"              # Математические задачи
-    LOGIC_REASONING = "logic_reasoning"        # Логическое мышление
-    CHAT_CONVERSATION = "chat_conversation"    # Общий чат
-    JSON_GENERATION = "json_generation"        # Генерация JSON
-    TECHNICAL_WRITING = "technical_writing"    # Техническая документация
-    UNKNOWN = "unknown"                        # Неизвестный тип
+# TaskType imported from types.py
 
 
 class ComplexityLevel(Enum):

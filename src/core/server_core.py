@@ -116,6 +116,9 @@ class ServerCore:
     - Выполнение задач с правильной координацией
     """
 
+    # Константы
+    DEFAULT_EXECUTION_DELAY = 5  # Задержка между задачами по умолчанию (секунды)
+
     def __init__(
         self,
         todo_manager: ITodoManager,

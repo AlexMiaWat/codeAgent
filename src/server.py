@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 
+logger = logging.getLogger(__name__)
+
 from crewai import Task, Crew
 
 try:
@@ -38,6 +40,14 @@ from .session_tracker import SessionTracker
 from .git_utils import auto_push_after_commit
 from .core import ServerCore, create_default_container
 
+        # MCP Server import
+try:
+    from .mcp.server import MCPServer
+    MCP_AVAILABLE = True
+except ImportError:
+    MCP_AVAILABLE = False
+    logger.warning("MCP Server not available - missing dependencies")
+
 # ServerCore logic is now extracted into separate ServerCore component
 
 
@@ -57,8 +67,6 @@ if sys.platform == 'win32':
 
 # Создаем директорию для логов если не существует
 Path('logs').mkdir(exist_ok=True)
-
-logger = logging.getLogger(__name__)
 
 
 class ServerReloadException(Exception):
@@ -208,6 +216,11 @@ class CodeAgentServer:
         self.flask_app = None
         self.http_thread = None
         self.http_server = None  # Ссылка на werkzeug сервер для управления
+
+        # Настройки MCP сервера
+        self.mcp_enabled = server_config.get('mcp_enabled', True) and MCP_AVAILABLE
+        self.mcp_server = None
+        self.mcp_thread = None
         
         # Настройки автоперезапуска
         self.auto_reload = server_config.get('auto_reload', True)
@@ -645,19 +658,40 @@ class CodeAgentServer:
                 "cli_available": False
             }
         
+        # Обновляем контекст задачи в MCP
+        self.update_mcp_task_context(task_id, {
+            "instruction": instruction,
+            "status": "executing",
+            "type": "cursor_instruction",
+            "start_time": datetime.utcnow().isoformat()
+        })
+
         logger.info(f"Выполнение инструкции для задачи {task_id} через Cursor CLI")
-        
+
         result = self.cursor_cli.execute_instruction(
             instruction=instruction,
             task_id=task_id,
             working_dir=str(self.project_dir),
             timeout=timeout
         )
-        
+
+        # Обновляем результат в MCP
+        task_result = {
+            "task_id": task_id,
+            "success": result["success"],
+            "type": "cursor_instruction",
+            "completed_at": datetime.utcnow().isoformat()
+        }
+
         if result["success"]:
             logger.info(f"Инструкция для задачи {task_id} выполнена успешно")
+            task_result["status"] = "completed"
         else:
             logger.warning(f"Инструкция для задачи {task_id} завершилась с ошибкой: {result.get('error_message')}")
+            task_result["status"] = "failed"
+            task_result["error"] = result.get('error_message')
+
+        self.update_mcp_task_result(task_id, task_result)
         
         return result
     
@@ -4296,7 +4330,147 @@ class CodeAgentServer:
         if not server_started:
             logger.warning(f"HTTP сервер не смог запуститься на порту {self.http_port} после {max_attempts} попыток.")
             logger.warning("Проверьте логи выше на наличие ошибок. Сервер продолжит работу без HTTP API.")
-    
+
+    def _setup_mcp_server(self):
+        """Настройка и запуск MCP сервера"""
+        if not MCP_AVAILABLE:
+            logger.warning("MCP Server не доступен - отсутствуют зависимости")
+            return
+
+        with self.mcp_lock:
+            try:
+                # Создаем MCP сервер
+                self.mcp_server = MCPServer(self.config)
+
+                # Получаем настройки MCP из конфигурации
+                mcp_config = self.config.get('mcp', {})
+                mcp_host = mcp_config.get('host', 'localhost')
+                mcp_port = mcp_config.get('port', 3000)
+
+                # Запускаем MCP сервер в отдельном потоке
+                self.mcp_thread = threading.Thread(
+                    target=self._run_mcp_server_with_recovery,
+                    args=(mcp_host, mcp_port),
+                    daemon=True,
+                    name="MCP-Server"
+                )
+                self.mcp_thread.start()
+                self.mcp_restart_attempts = 0  # Сбрасываем счетчик при успешном запуске
+
+                logger.info(f"MCP сервер запущен на {mcp_host}:{mcp_port}")
+
+            except Exception as e:
+                logger.error(f"Ошибка при запуске MCP сервера: {e}")
+                self.mcp_enabled = False
+
+    def _run_mcp_server_with_recovery(self, host: str, port: int):
+        """Запуск MCP сервера с механизмом восстановления"""
+        while self.mcp_enabled and self.mcp_restart_attempts < self.mcp_max_restart_attempts:
+            try:
+                logger.info(f"Запуск MCP сервера (попытка {self.mcp_restart_attempts + 1})")
+                self.mcp_server.run_server(host=host, port=port)
+                # Если run_server завершился без исключения, значит нормальное завершение
+                break
+
+            except Exception as e:
+                self.mcp_restart_attempts += 1
+                logger.error(f"Ошибка в MCP сервере (попытка {self.mcp_restart_attempts}/{self.mcp_max_restart_attempts}): {e}")
+
+                if self.mcp_restart_attempts < self.mcp_max_restart_attempts:
+                    logger.info(f"Перезапуск MCP сервера через {self.mcp_restart_delay} секунд...")
+                    time.sleep(self.mcp_restart_delay)
+                else:
+                    logger.error("MCP сервер не удалось восстановить после нескольких попыток")
+                    with self.mcp_lock:
+                        self.mcp_enabled = False
+                    break
+
+    def _run_mcp_server(self, host: str, port: int):
+        """Устаревший метод - используйте _run_mcp_server_with_recovery"""
+        self._run_mcp_server_with_recovery(host, port)
+
+    def update_mcp_task_context(self, task_id: str, context: Dict[str, Any]):
+        """
+        Обновление контекста задачи в MCP сервере.
+
+        Args:
+            task_id: ID задачи
+            context: Контекст задачи
+        """
+        with self.mcp_lock:
+            if self.mcp_server and self.mcp_enabled:
+                try:
+                    self.mcp_server.update_task_context(task_id, context)
+                    logger.debug(f"Updated MCP context for task {task_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to update MCP task context: {e}")
+
+    def update_mcp_task_result(self, task_id: str, result: Dict[str, Any]):
+        """
+        Обновление результата задачи в MCP сервере.
+
+        Args:
+            task_id: ID задачи
+            result: Результат выполнения
+        """
+        with self.mcp_lock:
+            if self.mcp_server and self.mcp_enabled:
+                try:
+                    self.mcp_server.update_task_result(task_id, result)
+                    logger.debug(f"Updated MCP result for task {task_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to update MCP task result: {e}")
+
+    def get_mcp_task_context(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Получение контекста задачи из MCP сервера.
+
+        Args:
+            task_id: ID задачи
+
+        Returns:
+            Контекст задачи или None
+        """
+        with self.mcp_lock:
+            if self.mcp_server and self.mcp_enabled:
+                try:
+                    return self.mcp_server.get_task_context(task_id)
+                except Exception as e:
+                    logger.warning(f"Failed to get MCP task context: {e}")
+        return None
+
+    def restart_mcp_server(self) -> bool:
+        """
+        Перезапуск MCP сервера принудительно.
+
+        Returns:
+            True если перезапуск успешен
+        """
+        with self.mcp_lock:
+            try:
+                if self.mcp_thread and self.mcp_thread.is_alive():
+                    logger.info("Stopping current MCP server thread...")
+                    # Примечание: daemon threads завершаются автоматически при остановке main thread
+                    # Здесь мы просто сбрасываем состояние
+
+                # Сбрасываем состояние
+                self.mcp_restart_attempts = 0
+                self.mcp_enabled = True
+
+                # Получаем настройки и перезапускаем
+                mcp_config = self.config.get('mcp', {})
+                mcp_host = mcp_config.get('host', 'localhost')
+                mcp_port = mcp_config.get('port', 3000)
+
+                logger.info("Restarting MCP server...")
+                self._setup_mcp_server()
+
+                return True
+
+            except Exception as e:
+                logger.error(f"Failed to restart MCP server: {e}")
+                return False
+
     def _setup_file_watcher(self):
         """Настройка отслеживания изменений .py файлов для автоперезапуска"""
         if not WATCHDOG_AVAILABLE:
@@ -4576,6 +4750,13 @@ class CodeAgentServer:
         # Запускаем HTTP сервер
         self._setup_http_server()
         logger.info("HTTP сервер настроен, продолжаем запуск...")
+
+        # Запускаем MCP сервер
+        if self.mcp_enabled:
+            self._setup_mcp_server()
+            logger.info("MCP сервер настроен, продолжаем запуск...")
+        else:
+            logger.info("MCP сервер отключен или недоступен")
 
         # Запускаем file watcher для автоперезапуска
         self._setup_file_watcher()
