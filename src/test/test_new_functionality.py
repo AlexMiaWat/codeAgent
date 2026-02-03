@@ -1,48 +1,30 @@
-
 import pytest
-from src.new_functionality import some_new_function, another_new_function
+import sys
+import os
 
-# Smoke Tests
-def test_some_new_function_smoke():
-    assert some_new_function(1, 2) == 3
+# Add the src directory to the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+
+from new_functionality import new_feature_function, another_new_function
+
+# Статические тесты (linting - обычно запускается отдельно, но для примера можно включить простой тест)
+def test_static_analysis():
+    # В реальном проекте здесь будет запуск flake8, pylint и т.д.
+    # Для демонстрации, просто убедимся, что функции существуют.
+    assert hasattr(new_functionality, 'new_feature_function')
+    assert hasattr(new_functionality, 'another_new_function')
+
+# Дымовые тесты
+def test_new_feature_function_smoke():
+    assert new_feature_function() == "New functionality is working!"
 
 def test_another_new_function_smoke():
-    assert another_new_function("hello") == "HELLO"
+    assert another_new_function(1, 2) == 3
 
-# Integration Tests for some_new_function
-@pytest.mark.parametrize("a, b, expected", [
-    (1, 2, 3),
-    (-1, 1, 0),
-    (0, 0, 0),
-    (100, -50, 50),
-    (-10, -20, -30),
-])
-def test_some_new_function_integration(a, b, expected):
-    assert some_new_function(a, b) == expected
-
-# Integration Tests for another_new_function
-@pytest.mark.parametrize("text, expected", [
-    ("world", "WORLD"),
-    ("Python rocks", "PYTHON ROCKS"),
-    ("", ""),
-    ("123", "123"),
-    ("hello world!", "HELLO WORLD!"),
-    ("   leading/trailing spaces   ", "   LEADING/TRAILING SPACES   "), # Added a new case
-])
-def test_another_new_function_integration(text, expected):
-    assert another_new_function(text) == expected
-
-# Integration Test: Chaining functions
-def test_chained_functions_integration():
-    result_sum = some_new_function(5, 7)
-    result_processed = another_new_function(str(result_sum))
-    assert result_processed == "12" # 5 + 7 = 12, then "12".upper() = "12"
-
-# Integration Test: Edge case for another_new_function with numbers in string
-def test_another_new_function_numbers_integration():
-    assert another_new_function("123test456") == "123TEST456"
-
-# Integration Test: Edge case for another_new_function with special characters
-def test_another_new_function_special_chars_integration():
-    assert another_new_function("!@#$%^&*()") == "!@#$%^&*()"
-
+# Интеграционные тесты
+def test_another_new_function_integration():
+    # Тест на различные входные данные
+    assert another_new_function(10, 20) == 30
+    assert another_new_function(-1, 1) == 0
+    assert another_new_function(0, 0) == 0
+    assert another_new_function(1000, -500) == 500

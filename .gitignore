@@ -213,6 +213,8 @@ docs/results/test_full_task_1770137675.md
 docs/results/test_full_task_1770139257.md
 docs/results/test_full_task_1770140870.md
 docs/results/test_full_task_1770141211.md
+docs/results/test_full_task_1770143047.md
+docs/results/test_full_task_1770143407.md
 
 # Test coverage and reports
 .coverage.*
@@ -494,8 +496,22 @@ test_task_1770141211_*/
 test_full_task_1770141211_*/
 docs/results/test_full_task_1770141211.md
 
+# Task 1770143047 specific artifacts
+task_1770143047_*/
+test_task_1770143047_*/
+test_full_task_1770143047_*/
+docs/results/test_full_task_1770143047.md
+
+# Task 1770143407 specific artifacts (current testing task)
+task_1770143407_*/
+test_task_1770143407_*/
+test_full_task_1770143407_*/
+docs/results/test_full_task_1770143407.md
+
 # ===================================
 # End of additional ignores
 # ===================================
 *.xml
+report.json
+report.xml
 .env.openai

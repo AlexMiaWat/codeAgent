@@ -1,12 +1,12 @@
 
-def some_new_function(a, b):
+def new_feature_function():
     """
-    This is a new function that adds two numbers.
+    This function represents a new feature and returns a confirmation message.
+    """
+    return "New functionality is working!"
+
+def another_new_function(a, b):
+    """
+    This function adds two numbers.
     """
     return a + b
-
-def another_new_function(text):
-    """
-    This function processes text.
-    """
-    return text.upper()

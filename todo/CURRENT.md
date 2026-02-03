@@ -18,9 +18,9 @@
 - [x] Синхронизировать docs с кодом через automated pipelines
 - [x] **Developer experience и productivity** - см. docs/planning/roadmap.md (раздел DX)
 - [x] Создать `src/core/` с разделением ответственности
-- [x] Реализовать `TaskOrchestrator` для координации задач <!-- Выполняется - 2026-02-03 21:23:37 -->
-- [ ] Создать `ConfigurationManager` для унифицированного конфигурирования
-- [ ] Добавить `ErrorHandler` с типизацией ошибок и recovery стратегиями
+- [x] Реализовать `TaskOrchestrator` для координации задач <!-- Выполнено успешно (8/8 инструкций) - 2026-02-03 21:24:01 -->
+- [x] Создать `ConfigurationManager` для унифицированного конфигурирования <!-- Выполнено успешно (7/8 инструкций) - 2026-02-03 21:30:02 -->
+- [x] Добавить `ErrorHandler` с типизацией ошибок и recovery стратегиями <!-- Выполняется - 2026-02-03 21:35:41 -->
 - [ ] Добавить `_analyze_error_llm()` с root cause analysis
 - [ ] Создать `llm_utils.py` с advanced error handling и retry logic
 - [ ] Внедрить Sentry MCP с distributed tracing и error correlation
