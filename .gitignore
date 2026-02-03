@@ -212,6 +212,7 @@ docs/results/test_full_task_1770136836.md
 docs/results/test_full_task_1770137675.md
 docs/results/test_full_task_1770139257.md
 docs/results/test_full_task_1770140870.md
+docs/results/test_full_task_1770141211.md
 
 # Test coverage and reports
 .coverage.*
@@ -486,6 +487,12 @@ task_1770140870_*/
 test_task_1770140870_*/
 test_full_task_1770140870_*/
 docs/results/test_full_task_1770140870.md
+
+# Task 1770141211 specific artifacts
+task_1770141211_*/
+test_task_1770141211_*/
+test_full_task_1770141211_*/
+docs/results/test_full_task_1770141211.md
 
 # ===================================
 # End of additional ignores
