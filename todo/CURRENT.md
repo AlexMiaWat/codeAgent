@@ -7,8 +7,8 @@
 - [x] **Многоуровневая верификация результатов** - см. docs/planning/conceptual_improvements.md <!-- Выполнено успешно (8/8 инструкций) - 2026-01-23 18:30:27 -->
 - [x] **Архитектурная переработка LLM Manager** - см. docs/planning/implementation_roadmap.md <!-- Выполнено успешно (8/8 инструкций) - 2026-01-23 19:29:46 -->
 - [x] **Интеграция enterprise-grade MCP серверов** - см. docs/planning/task_3_20260123_083422.md <!-- Выполнено - 2026-01-29 10:40:05 --> <!-- Выполняется - 2026-01-31 18:32:10 --> <!-- Выполняется - 2026-01-31 19:38:40 --> <!-- Выполнено успешно (8/8 инструкций) - 2026-02-01 00:52:50 -->
-- [ ] Интегрировать Docker MCP с security scanning и vulnerability assessment <!-- Выполнено - 2026-01-29 11:26:22 -->
-- [ ] **Асинхронная архитектура и concurrency** - см. docs/planning/parameter_optimization_analysis.md
+- [x] Интегрировать Docker MCP с security scanning и vulnerability assessment <!-- Выполнено - 2026-01-29 11:26:22 --> <!-- Выполнено успешно (8/8 инструкций) - 2026-02-01 02:02:55 -->
+- [x] **Асинхронная архитектура и concurrency** - см. docs/planning/parameter_optimization_analysis.md <!-- Выполняется - 2026-02-03 18:56:19 -->
 - [ ] **Распределенная система мониторинга** - см. docs/planning/roadmap.md (раздел мониторинга)
 - [ ] **Визуализация и operational intelligence** - см. docs/planning/conceptual_improvements.md
 - [ ] **Zero-trust security architecture** - см. docs/planning/implementation_roadmap.md

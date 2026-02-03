@@ -370,6 +370,8 @@ quality_gates_backup/
 # Task 1769168319 specific artifacts
 task_1769168319_*/
 test_task_1769168319_*/
+test_full_task_1769168319_*/
+docs/results/test_full_task_1769168319_*/
 
 # Task 1769170727 specific artifacts (previous testing task)
 task_1769170727_*/
@@ -406,6 +408,20 @@ task_1769192892_*/
 test_task_1769192892_*/
 test_full_task_1769192892_*/
 docs/results/test_full_task_1769192892_*/
+
+# Task 1769898919 specific artifacts (current testing task)
+task_1769898919_*/
+test_task_1769898919_*/
+test_full_task_1769898919_*/
+docs/results/test_full_task_1769898919.md
+docs/results/test_full_task_1769898919_*/
+
+# Task 1769900584 specific artifacts (current testing task)
+task_1769900584_*/
+test_task_1769900584_*/
+test_full_task_1769900584_*/
+docs/results/test_full_task_1769900584.md
+docs/results/test_full_task_1769900584_*/
 
 # ===================================
 # End of additional ignores
