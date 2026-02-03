@@ -69,7 +69,7 @@ poetry.lock
 .vim/
 
 # Emacs
-\#*\#
+\#*#
 .#*
 
 # Cursor IDE
@@ -208,6 +208,10 @@ test_full_task_*.md
 test_results_task_*.md
 docs/results/test_full_task_*.md
 docs/results/test_results_task_*.md
+docs/results/test_full_task_1770136836.md
+docs/results/test_full_task_1770137675.md
+docs/results/test_full_task_1770139257.md
+docs/results/test_full_task_1770140870.md
 
 # Test coverage and reports
 .coverage.*
@@ -349,9 +353,7 @@ revision_optimize_*.md
 optimize_temp/
 revision_temp/
 
-# ===================================
 # Current task specific (interfaces, DI, quality gates)
-# ===================================
 # Interface implementation artifacts
 interface_temp/
 interface_backup/
@@ -429,6 +431,61 @@ test_task_1770134211_*/
 test_full_task_1770134211_*/
 docs/results/test_full_task_1770134211.md
 docs/results/test_full_task_1770134211_*/
+
+# Task 1770135724 specific artifacts (current testing task)
+task_1770135724_*/
+test_task_1770135724_*/
+test_full_task_1770135724_*/
+docs/results/test_full_task_1770135724.md
+docs/results/test_full_task_1770135724_*/
+
+# Task 1770136025 specific artifacts
+task_1770136025_*/
+test_task_1770136025_*/
+test_full_task_1770136025_*/
+docs/results/test_full_task_1770136025.md
+docs/results/test_full_task_1770136025_*/
+
+# Task 1770136836 specific artifacts (current testing task)
+task_1770136836_*/
+test_task_1770136836_*/
+test_full_task_1770136836_*/
+docs/results/test_full_task_1770136836.md
+docs/results/test_full_task_1770136836_*/
+
+# Task 1770137242 specific artifacts (current testing task)
+task_1770137242_*/
+test_task_1770137242_*/
+test_full_task_1770137242_*/
+docs/results/test_full_task_1770137242.md
+docs/results/test_full_task_1770137242_*/
+
+# Task 1770137675 specific artifacts (current testing task)
+task_1770137675_*/
+test_task_1770137675_*/
+test_full_task_1770137675_*/
+docs/results/test_full_task_1770137675.md
+docs/results/test_full_task_1770137675_*/
+
+# Task 1770138074 specific artifacts
+task_1770138074_*/
+test_task_1770138074_*/
+test_full_task_1770138074_*/
+docs/results/test_full_task_1770138074.md
+docs/results/test_full_task_1770138074_*/
+error_reports/
+
+# Task 1770139257 specific artifacts
+task_1770139257_*/
+test_task_1770139257_*/
+test_full_task_1770139257_*/
+docs/results/test_full_task_1770139257.md
+
+# Task 1770140870 specific artifacts
+task_1770140870_*/
+test_task_1770140870_*/
+test_full_task_1770140870_*/
+docs/results/test_full_task_1770140870.md
 
 # ===================================
 # End of additional ignores
