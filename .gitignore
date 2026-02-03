@@ -70,7 +70,7 @@ poetry.lock
 
 # Emacs
 \#*\#
-.\#*
+.#*
 
 # Cursor IDE
 .cursor/
@@ -422,6 +422,13 @@ test_task_1769900584_*/
 test_full_task_1769900584_*/
 docs/results/test_full_task_1769900584.md
 docs/results/test_full_task_1769900584_*/
+
+# Task 1770134211 specific artifacts (current testing task)
+task_1770134211_*/
+test_task_1770134211_*/
+test_full_task_1770134211_*/
+docs/results/test_full_task_1770134211.md
+docs/results/test_full_task_1770134211_*/
 
 # ===================================
 # End of additional ignores
