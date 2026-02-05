@@ -1,11 +1,11 @@
 ============================= test session starts ==============================
 platform linux -- Python 3.13.2, pytest-9.0.2, pluggy-1.6.0 -- /usr/local/bin/python3.13
 cachedir: .pytest_cache
-metadata: {'Python': '3.13.2', 'Platform': 'Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.36', 'Packages': {'pytest': '9.0.2', 'pluggy': '1.6.0'}, 'Plugins': {'metadata': '3.1.1', 'html': '4.2.0', 'anyio': '4.12.1'}}
+metadata: {'Python': '3.13.2', 'Platform': 'Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.36', 'Packages': {'pytest': '9.0.2', 'pluggy': '1.6.0'}, 'Plugins': {'metadata': '3.1.1', 'json': '0.4.0', 'html': '4.2.0', 'anyio': '4.12.1'}}
 rootdir: /workspace
 configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
-plugins: metadata-3.1.1, html-4.2.0, anyio-4.12.1
-collecting ... collected 13 items / 1 error
+plugins: metadata-3.1.1, json-0.4.0, html-4.2.0, anyio-4.12.1
+collecting ... collected 8 items / 1 error
 
 ==================================== ERRORS ====================================
 ________________ ERROR collecting src/test/test_new_feature.py _________________
@@ -19,19 +19,18 @@ src/test/test_new_feature.py:4: in <module>
     from core.new_feature import NewFeature, process_feature_list
 src/core/__init__.py:15: in <module>
     from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
-src/core/server_core.py:22: in <module>
-    from verification.interfaces import IMultiLevelVerificationManager
-src/verification/__init__.py:5: in <module>
-    from .interfaces import IExecutionMonitor, ILLMValidator, IMultiLevelVerificationManager
-src/verification/interfaces.py:8: in <module>
-    from quality.models.quality_result import VerificationResult, MultiLevelVerificationResult
-src/quality/__init__.py:8: in <module>
-    from .quality_gate_manager import QualityGateManager
-src/quality/quality_gate_manager.py:11: in <module>
-    from .models.quality_result import QualityGateResult, QualityResult, QualityCheckType, QualityStatus
-E   ImportError: cannot import name 'QualityStatus' from 'quality.models.quality_result' (/workspace/src/quality/models/quality_result.py)
---------------- generated xml file: /workspace/test-results.xml ----------------
+src/core/server_core.py:11: in <module>
+    from .interfaces.itask_executor import ITaskExecutor
+src/core/interfaces/itask_executor.py:4: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:15: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/todo_file_io.py:8: in <module>
+    from todo_manager import TodoItem
+E   ImportError: cannot import name 'TodoItem' from partially initialized module 'todo_manager' (most likely due to a circular import) (/workspace/src/todo_manager.py)
+---------------- generated json report: /workspace/report.json -----------------
+---------- Generated html report: file:///workspace/html_report.html -----------
 =========================== short test summary info ============================
 ERROR src/test/test_new_feature.py
 !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
-========================= 2 warnings, 1 error in 3.18s =========================
+========================= 2 warnings, 1 error in 1.07s =========================

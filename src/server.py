@@ -32,20 +32,24 @@ try:
 except ImportError:
     WATCHDOG_AVAILABLE = False
 
-from .config_loader import ConfigLoader
-from .cursor_executor import CursorExecutor
-from .todo_manager import TodoItem
-from .agents.executor_agent import create_executor_agent
-from .cursor_cli_interface import CursorCLIInterface, create_cursor_cli_interface
-from .cursor_file_interface import CursorFileInterface
-from .task_logger import TaskLogger, TaskPhase, Colors
-from .session_tracker import SessionTracker
-from .git_utils import auto_push_after_commit
-from .core import ServerCore, create_default_container
-
-        # MCP Server import
-from .server.server_manager import ConfigValidator
-from .server.todo_sync_manager import TodoCheckpointSynchronizer
+from src.core.interfaces import (
+    IConfigLoader, ITodoManager, IStatusManager, ICheckpointManager, ILogger, IServer,
+    IAgent, ITaskManager, IQualityGateManager, IMultiLevelVerificationManager,
+    IInstructionProcessor, ISessionTracker, ICursorExecutor, ITodoCheckpointSynchronizer
+)
+from src.core.di_container import DIContainer, create_default_container # Import DIContainer and create_default_container
+from src.core.instruction_processor import InstructionProcessor # New import for the extracted class
+from src.todo_manager import TodoItem
+from src.agents.executor_agent import create_executor_agent # Keep this for now until Agent creation is fully injected
+from .exceptions import ServerReloadException
+from .utils.logging_utils import setup_logging
+from .core import ServerCore # Keep ServerCore import
+from .config_loader import ConfigLoader # Keep for default instantiation in main.py, but remove from CodeAgentServer constructor
+from .config_validator import ConfigValidator # Keep for default instantiation in main.py, but remove from CodeAgentServer constructor
+from .cursor_executor import CursorExecutor # Keep for default instantiation in main.py, but remove from CodeAgentServer constructor
+from .session_tracker import SessionTracker # Keep for default instantiation in main.py, but remove from CodeAgentServer constructor
+from .task_logger import TaskLogger as ServerLogger # Alias for ServerLogger
+from .server.todo_sync_manager import TodoCheckpointSynchronizer # Keep for default instantiation in main.py, but remove from CodeAgentServer constructor
 try:
     from .mcp.server import MCPServer
     MCP_AVAILABLE = True
@@ -94,90 +98,67 @@ class CodeAgentServer:
     
     def __init__(
         self,
-        config_path: Optional[str] = None,
-        project_dir: Optional[str] = None,
-        docs_dir: Optional[str] = None,
-        status_file: Optional[str] = None,
-        agent_config: Optional[Dict[str, Any]] = None,
-        server_config: Optional[Dict[str, Any]] = None,
-        llm_config: Optional[Dict[str, Any]] = None,
-        override_config: Optional[Dict[str, Any]] = None
+        config_loader: IConfigLoader,
+        todo_manager: ITodoManager,
+        status_manager: IStatusManager,
+        checkpoint_manager: ICheckpointManager,
+        server_logger: ILogger,
+        instruction_processor: IInstructionProcessor,
+        session_tracker: ISessionTracker,
+        cursor_executor: ICursorExecutor,
+        todo_checkpoint_synchronizer: ITodoCheckpointSynchronizer,
+        quality_gate_manager: IQualityGateManager,
+        verification_manager: IMultiLevelVerificationManager,
+        di_container: DIContainer, # The container itself is a dependency now
+        project_dir: Path,
+        docs_dir: Path,
+        status_file: Path,
+        agent: IAgent, # Agent is now an injected dependency
+        server_core: ServerCore # ServerCore is also injected
     ):
         """
-        Инициализация сервера агента
+        Инициализация сервера агента с использованием Dependency Injection.
 
         Args:
-            config_path: Путь к файлу конфигурации
-            project_dir: Директория проекта (переопределяет конфиг)
-            docs_dir: Директория документации (переопределяет конфиг)
-            status_file: Файл статуса проекта (переопределяет конфиг)
-            agent_config: Конфигурация агента (переопределяет конфиг)
-            server_config: Конфигурация сервера (переопределяет конфиг)
-            llm_config: Конфигурация LLM (переопределяет конфиг)
-            override_config: Полный конфиг для переопределения (высший приоритет)
+            config_loader: Загрузчик конфигурации
+            todo_manager: Менеджер TODO задач
+            status_manager: Менеджер статуса проекта
+            checkpoint_manager: Менеджер контрольных точек
+            server_logger: Логгер сервера
+            instruction_processor: Обработчик инструкций
+            session_tracker: Трекер сессий
+            cursor_executor: Исполнитель команд Cursor
+            todo_checkpoint_synchronizer: Синхронизатор TODO и чекпоинтов
+            quality_gate_manager: Менеджер ворот качества
+            verification_manager: Менеджер многоуровневой верификации
+            di_container: Контейнер зависимостей
+            project_dir: Директория проекта
+            docs_dir: Директория документации
+            status_file: Файл статуса проекта
+            agent: Экземпляр агента
+            server_core: Экземпляр ServerCore
         """
-        # Загрузка базовой конфигурации
-        self.config = ConfigLoader(config_path or "config/config.yaml")
-        # Инициализация CursorExecutor
-        self.cursor_executor = CursorExecutor(
-            config=self.config.config,
-            project_dir=self.project_dir,
-            mcp_server=self.mcp_server, # Pass MCP server instance
-            mcp_enabled=self.mcp_enabled, # Pass MCP enabled flag
-            stop_lock=self._stop_lock,
-            reload_lock=self._reload_lock,
-            task_in_progress_lock=self._task_in_progress_lock,
-            server_logger=self.server_logger,
-            status_manager=self.status_manager,
-            checkpoint_manager=self.checkpoint_manager
-        )
+        self.config_loader = config_loader
+        self.config = self.config_loader.config # Use the loaded config
+        self.todo_manager = todo_manager
+        self.status_manager = status_manager
+        self.checkpoint_manager = checkpoint_manager
+        self.server_logger = server_logger
+        self.instruction_processor = instruction_processor
+        self.session_tracker = session_tracker
+        self.cursor_executor = cursor_executor
+        self.todo_checkpoint_synchronizer = todo_checkpoint_synchronizer
+        self.quality_gate_manager = quality_gate_manager
+        self.verification_manager = verification_manager
+        self.di_container = di_container
+        self.project_dir = project_dir
+        self.docs_dir = docs_dir
+        self.status_file = status_file
+        self.agent = agent
+        self.server_core = server_core
+
         self.use_cursor_cli = self.cursor_executor.is_cursor_cli_available()
 
-        # Переопределение конфигурации через параметры
-        if override_config:
-            # Полное переопределение конфигурации
-            self.config.config.update(override_config)
-        else:
-            # Частичное переопределение отдельных секций
-            if agent_config:
-                self.config.config.setdefault('agent', {}).update(agent_config)
-            if server_config:
-                self.config.config.setdefault('server', {}).update(server_config)
-            if llm_config:
-                self.config.config.setdefault('llm', {}).update(llm_config)
-
-        # Получение путей (с возможным переопределением через параметры)
-        self.project_dir = Path(project_dir) if project_dir else self.config.get_project_dir()
-        self.docs_dir = Path(docs_dir) if docs_dir else self.config.get_docs_dir()
-        self.status_file = status_file or self.config.get_status_file()
-        
-        # Валидация конфигурации
-        config_validator = ConfigValidator(self.config, self.project_dir, self.docs_dir, self.status_file)
-        config_validator.validate_config()
-
-        # Инициализация DI контейнера для dependency injection
-        # Используем переопределенные пути
-        self.di_container = create_default_container(self.project_dir, self.config.config, self.status_file)
-
-        # Получение менеджеров из DI контейнера
-        from .core.interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger
-        self.todo_manager = self.di_container.resolve(ITodoManager)
-        self.status_manager = self.di_container.resolve(IStatusManager)
-        self.checkpoint_manager = self.di_container.resolve(ICheckpointManager)
-        self.server_logger = self.di_container.resolve(ILogger)
-
-        # Создание агента
-        agent_config = self.config.get('agent', {})
-        self.agent = create_executor_agent(
-            project_dir=self.project_dir,
-            docs_dir=self.docs_dir,
-            role=agent_config.get('role'),
-            goal=agent_config.get('goal'),
-            backstory=agent_config.get('backstory'),
-            allow_code_execution=agent_config.get('allow_code_execution', True),
-            verbose=agent_config.get('verbose', True)
-        )
-        
         # Настройки сервера
         server_config = self.config.get('server', {})
         self.check_interval = server_config.get('check_interval', self.DEFAULT_CHECK_INTERVAL)
@@ -220,39 +201,15 @@ class CodeAgentServer:
         self._task_in_progress = False
         self._task_in_progress_lock = threading.Lock()
         
-
-        
         # Отслеживание выполнения ревизии
         self._revision_done = False  # Флаг выполнения ревизии в текущей сессии
         self._revision_lock = threading.Lock()
         
-        # Инициализация Cursor интерфейсов
-        cursor_config = self.config.get('cursor', {})
-        interface_type = cursor_config.get('interface_type', 'cli')
-        
-
-        
         # Инициализация трекера сессий для автоматической генерации TODO
-        # Session файлы хранятся в каталоге codeAgent, а не в целевом проекте
         auto_todo_config = server_config.get('auto_todo_generation', {})
         self.auto_todo_enabled = auto_todo_config.get('enabled', True)
         self.max_todo_generations = auto_todo_config.get('max_generations_per_session', 5)
-        tracker_file = auto_todo_config.get('session_tracker_file', '.codeagent_sessions.json')
-        codeagent_dir = Path(__file__).parent.parent  # Директория codeAgent
-        self.session_tracker = SessionTracker(codeagent_dir, tracker_file)
         
-        # Инициализация менеджера контрольных точек для восстановления после сбоев
-        # Checkpoint файлы хранятся в каталоге codeAgent, а не в целевом проекте
-        # Инициализация DI контейнера для dependency injection (уже создана выше)
-        self.di_container = create_default_container(self.project_dir, self.config.config, self.status_file)
-
-        self.todo_checkpoint_synchronizer = TodoCheckpointSynchronizer(
-            checkpoint_manager=self.checkpoint_manager,
-            todo_manager=self.todo_manager,
-            status_manager=self.status_manager,
-            server_logger=self.server_logger
-        )
-
         # Проверяем, нужно ли восстановление после сбоя
         self.todo_checkpoint_synchronizer.check_recovery_needed()
         
@@ -281,22 +238,7 @@ class CodeAgentServer:
             logger.info(f"Автоматическая генерация TODO включена (макс. {self.max_todo_generations} раз за сессию)")
         logger.info("Checkpoint система активирована для защиты от сбоев")
 
-        # Register real implementations in DI container now that server is fully initialized
-        from src.core.implementations import ServerImpl, AgentManagerImpl, TaskManagerImpl
-        from src.core.interfaces import IServer, IAgent, ITaskManager
-
-        # Register ServerImpl
-        self.di_container.register_instance(IServer, ServerImpl(self))
-
-        # Replace mock implementations with real ones
-        agent_manager = AgentManagerImpl(config=self.config.config.get('agent_manager', {}))
-        self.di_container.register_instance(IAgent, agent_manager)
-
-        task_manager = TaskManagerImpl(config=self.config.config.get('task_manager', {}))
-        self.di_container.register_instance(ITaskManager, task_manager)
-
-        # Создание ServerCore для управления циклом выполнения
-        self._create_server_core()
+        logger.debug("CodeAgentServer dependencies injected and initialized.")
 
     def _create_server_core(self):
         """

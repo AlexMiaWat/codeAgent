@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from todo_manager import TodoItem
+from src.core.todo_item import TodoItem
 
 class ITaskExecutor(ABC):
     @abstractmethod

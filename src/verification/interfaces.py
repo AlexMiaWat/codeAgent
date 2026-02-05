@@ -5,7 +5,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 
-from quality.models.quality_result import VerificationResult, MultiLevelVerificationResult
+from src.quality.models.quality_result import QualityResult, MultiLevelVerificationResult
 
 
 class IExecutionMonitor(ABC):

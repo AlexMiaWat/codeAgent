@@ -351,99 +351,95 @@ def create_default_container(project_dir: Path, config: Dict[str, Any], status_f
     Returns:
         Configured DI container
     """
-    # Import interfaces
-    try:
-        from .interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger, IServer, IAgent, ITaskManager
-        from .mock_implementations import MockServer, MockAgentManager, MockTaskManager
-        from ..todo_manager import TodoManager
-        from ..status_manager import StatusManager
-        from ..checkpoint_manager import CheckpointManager
-        from ..task_logger import ServerLogger
-        from ..quality.interfaces import IQualityGateManager
-        from ..quality.quality_gate_manager import QualityGateManager
-        from ..verification.interfaces import IMultiLevelVerificationManager
-    except ImportError:
-        # Fallback for test environment
-        import sys
-        current_dir = Path(__file__).parent
-        src_dir = current_dir.parent
-        if str(src_dir) not in sys.path:
-            sys.path.insert(0, str(src_dir))
+    # Import interfaces and implementations
+    from src.core.interfaces import (
+        ITodoManager, IStatusManager, ICheckpointManager, ILogger, IServer,
+        IAgent, ITaskManager, IQualityGateManager, IMultiLevelVerificationManager,
+        IConfigLoader, IInstructionProcessor, ISessionTracker, ICursorExecutor,
+        ITodoCheckpointSynchronizer
+    )
+    from src.todo_manager import TodoManager
+    from src.status_manager import StatusManager
+    from src.checkpoint_manager import CheckpointManager
+    from src.task_logger import TaskLogger as ServerLogger # Renamed to TaskLogger but aliased for compatibility
+    from src.quality.quality_gate_manager import QualityGateManager
+    from src.config_loader import ConfigLoader
+    from src.core.instruction_processor import InstructionProcessor
+    from src.session_tracker import SessionTracker
+    from src.cursor_executor import CursorExecutor
+    from src.server.todo_sync_manager import TodoCheckpointSynchronizer
+    from src.core.mock_implementations import MockServer, MockAgentManager, MockTaskManager # Keep mocks for initial container setup if needed, or remove if always real
+    from src.core.implementations import ServerImpl, AgentManagerImpl, TaskManagerImpl # Real implementations
+    from src.verification.verification_manager import MultiLevelVerificationManager
+    from src.config_validator import ConfigValidator
+    from src.server.server_manager import ConfigValidator as ServerConfigValidator # Temporary alias until ConfigValidator is fully integrated as a service
 
-        from src.core.interfaces import ITodoManager, IStatusManager, ICheckpointManager, ILogger, IServer, IAgent, ITaskManager
-        from src.core.mock_implementations import MockServer
-        from src.todo_manager import TodoManager
-        from src.status_manager import StatusManager
-        from src.checkpoint_manager import CheckpointManager
-        from src.task_logger import ServerLogger
-        from src.quality.interfaces import IQualityGateManager
-        from src.quality.quality_gate_manager import QualityGateManager
+
 
     container = DIContainer()
 
-    # Register TodoManager with factory
-    def create_todo_manager():
-        return TodoManager(project_dir=project_dir, config=config.get('todo_manager', {}))
-    container.register_factory(ITodoManager, create_todo_manager)
+    # Register ConfigLoader as a singleton
+    container.register_instance(IConfigLoader, ConfigLoader(config_path="config/config.yaml"))
 
-    # Register StatusManager with factory
-    def create_status_manager():
-        return StatusManager(status_file=status_file, config=config.get('status_manager', {}))
-    container.register_factory(IStatusManager, create_status_manager)
+    # Register basic managers and logger with factories
+    container.register_factory(ITodoManager, lambda: TodoManager(
+        project_dir=project_dir,
+        config=config.get('todo_manager', {})
+    ))
+    container.register_factory(IStatusManager, lambda: StatusManager(
+        status_file=status_file,
+        config=config.get('status_manager', {})
+    ))
+    # CheckpointManager needs the codeagent_dir for its path
+    codeagent_dir = Path(__file__).parent.parent.parent
+    container.register_factory(ICheckpointManager, lambda: CheckpointManager(
+        project_dir=codeagent_dir,
+        config={'checkpoint_file': config.get('checkpoint_file', '.codeagent_checkpoint.json')}
+    ))
+    container.register_factory(ILogger, lambda: ServerLogger(
+        log_dir=codeagent_dir / "logs",
+        config=config.get('logging', {})
+    ))
 
-    # Register CheckpointManager with factory
-    def create_checkpoint_manager():
-        checkpoint_file = config.get('checkpoint_file', '.codeagent_checkpoint.json')
-        # Checkpoint файлы хранятся в каталоге codeAgent, а не в целевом проекте
-        codeagent_dir = Path(__file__).parent.parent.parent
-        return CheckpointManager(project_dir=codeagent_dir, config={'checkpoint_file': checkpoint_file})
-    container.register_factory(ICheckpointManager, create_checkpoint_manager)
+    # Register QualityGateManager
+    container.register_factory(IQualityGateManager, lambda: QualityGateManager(
+        config=config.get('quality_gates', {})
+    ))
 
-    # Register Logger with factory
-    def create_logger():
-        return ServerLogger(config=config.get('logging', {}))
-    container.register_factory(ILogger, create_logger)
+    # Register MultiLevelVerificationManager
+    container.register_factory(IMultiLevelVerificationManager, lambda: MultiLevelVerificationManager(
+        config=config.get('verification', {})
+    ))
 
-    # Register new interfaces with real implementations
-    # Note: ServerImpl requires server_instance, so we use MockServer for DI container
-    # Real ServerImpl will be registered later after CodeAgentServer is created
+    # Register SessionTracker
+    # Session files are stored in the codeAgent directory
+    auto_todo_config = config.get('server', {}).get('auto_todo_generation', {})
+    tracker_file = auto_todo_config.get('session_tracker_file', '.codeagent_sessions.json')
+    container.register_factory(ISessionTracker, lambda: SessionTracker(
+        project_dir=codeagent_dir,
+        tracker_file=tracker_file
+    ))
 
-    def create_server():
-        return MockServer(project_dir=project_dir, config=config.get('server', {}))
-    container.register_factory(IServer, create_server)
+    # Register InstructionProcessor
+    container.register_factory(IInstructionProcessor, lambda: InstructionProcessor(
+        config=config # The InstructionProcessor will extract its own instruction config
+    ))
 
-    def create_agent_manager():
-        try:
-            from .implementations import AgentManagerImpl
-            return AgentManagerImpl(config=config.get('agent_manager', {}))
-        except ImportError:
-            # Fallback to mock if implementations not available
-            from .mock_implementations import MockAgentManager
-            return MockAgentManager(config=config.get('agent_manager', {}))
-    container.register_factory(IAgent, create_agent_manager)
+    # Register CursorExecutor
+    container.register_factory(ICursorExecutor, lambda: CursorExecutor(
+        config=config,
+        project_dir=project_dir,
+        # Other dependencies for CursorExecutor will be resolved by DI if its constructor is updated
+        # For now, we assume CursorExecutor can load its own dependencies or they are provided
+    ))
 
-    def create_task_manager():
-        try:
-            from .implementations import TaskManagerImpl
-            return TaskManagerImpl(config=config.get('task_manager', {}))
-        except ImportError:
-            # Fallback to mock if implementations not available
-            from .mock_implementations import MockTaskManager
-            return MockTaskManager(config=config.get('task_manager', {}))
-    container.register_factory(ITaskManager, create_task_manager)
+    # Register TodoCheckpointSynchronizer
+    container.register_transient(ITodoCheckpointSynchronizer, TodoCheckpointSynchronizer)
 
-    # Register QualityGateManager with factory
-    def create_quality_gate_manager():
-        quality_config = config.get('quality_gates', {})
-        return QualityGateManager(config=quality_config)
-    container.register_factory(IQualityGateManager, create_quality_gate_manager)
+    # Register Mock Server, Agent, TaskManager for now. Real implementations will be registered later
+    container.register_factory(IServer, lambda: ServerImpl(project_dir=project_dir, config=config.get('server', {})))
+    container.register_factory(IAgent, lambda: AgentManagerImpl(config=config.get('agent_manager', {})))
+    container.register_factory(ITaskManager, lambda: TaskManagerImpl(config=config.get('task_manager', {})))
 
-    # Register MultiLevelVerificationManager with factory
-    def create_verification_manager():
-        from ..verification.verification_manager import MultiLevelVerificationManager
-        verification_config = config.get('verification', {})
-        return MultiLevelVerificationManager(config=verification_config)
-    container.register_factory(IMultiLevelVerificationManager, create_verification_manager)
-
-    logger.info("Default DI container created with core services including new interfaces, quality gates, and verification manager")
+    logger.info("Default DI container created with core services and initial registrations.")
     return container

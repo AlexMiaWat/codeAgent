@@ -221,6 +221,10 @@ docs/results/test_full_task_1770143407.md
 coverage.xml
 docs/results/test_full_task_1770317913.md
 junit.xml
+docs/results/
+html_report.html
+test_output.txt
+test_results.txt
 test-results.xml
 *.cover
 htmlcov/

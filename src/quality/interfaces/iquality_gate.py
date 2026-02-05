@@ -4,7 +4,7 @@
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List
-from ..models.quality_result import QualityResult, QualityCheckType
+from src.quality.models.quality_result import QualityResult, QualityCheckType
 
 
 class IQualityGate(ABC):
