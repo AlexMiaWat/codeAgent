@@ -8,15 +8,18 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from .interfaces.itask_executor import ITaskExecutor
+from .interfaces.irevision_executor import IRevisionExecutor
+from .interfaces.itodo_generator import ITodoGenerator
 
-from ..config_loader import ConfigLoader
-from ..session_tracker import SessionTracker
-from ..task_logger import Colors, TaskLogger, TaskPhase
+from config_loader import ConfigLoader
+from session_tracker import SessionTracker
+from task_logger import Colors, TaskLogger, TaskPhase
 from .interfaces import ICheckpointManager, ILogger, IStatusManager, ITodoManager
-from ..todo_manager import TodoItem
-from ..llm.manager import LLMManager as NewLLMManager
-from ..llm.llm_manager import LLMManager as LegacyLLMManager
-from ..verification.interfaces import IMultiLevelVerificationManager
+from todo_manager import TodoItem
+from llm.manager import LLMManager as NewLLMManager
+from llm.llm_manager import LLMManager as LegacyLLMManager
+from verification.interfaces import IMultiLevelVerificationManager
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +36,9 @@ class ServerCore:
         checkpoint_manager: ICheckpointManager,
         status_manager: IStatusManager,
         server_logger: ILogger,
-        task_executor: Callable[..., Any],
-        revision_executor: Callable[..., Any],
-        todo_generator: Callable[..., Any],
+        task_executor: ITaskExecutor,
+        revision_executor: IRevisionExecutor,
+        todo_generator: ITodoGenerator,
         config: Dict[str, Any],
         project_dir: Path,
         verification_manager: IMultiLevelVerificationManager,

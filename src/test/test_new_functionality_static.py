@@ -1,10 +1,5 @@
 import pytest
 import inspect
-import sys
-import os
-
-# Add the src directory to the Python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
 from new_functionality import new_feature_function, another_new_function
 

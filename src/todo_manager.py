@@ -9,8 +9,8 @@ import re
 import logging
 import os
 
-from .core.interfaces import ITodoManager
-from .core.types import TaskType
+from core.interfaces import ITodoManager
+from core.types import TaskType
 
 logger = logging.getLogger(__name__)
 

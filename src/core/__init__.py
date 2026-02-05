@@ -17,13 +17,14 @@ from .di_container import DIContainer, create_default_container, ServiceLifetime
 from .base_classes import BaseManager, ConfigurableManager, MetricsManager
 
 # Interface imports
-from .interfaces import (
-    IManager,
-    ITodoManager,
-    IStatusManager,
-    ICheckpointManager,
-    ILogger,
-)
+from .interfaces.imanager import IManager
+from .interfaces.itodo_manager import ITodoManager
+from .interfaces.istatus_manager import IStatusManager
+from .interfaces.icheckpoint_manager import ICheckpointManager
+from .interfaces.ilogger import ILogger
+from .interfaces.itask_processor import ITaskProcessor
+from .interfaces.irevision_processor import IRevisionProcessor
+from .interfaces.itodo_generator import ITodoGenerator
 
 # Version info
 __version__ = "1.0.0"
@@ -48,4 +49,8 @@ __all__ = [
     "IStatusManager",
     "ICheckpointManager",
     "ILogger",
+    # New interfaces
+    "ITaskProcessor",
+    "IRevisionProcessor",
+    "ITodoGenerator",
 ]

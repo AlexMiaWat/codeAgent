@@ -2,8 +2,18 @@ import subprocess
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+@dataclass
+class CursorCLIResult:
+    success: bool
+    error_message: Optional[str]
+    stdout: str
+    stderr: str
+    return_code: int
+    cli_available: bool
 
 class CursorCLIInterface:
     """Интерфейс взаимодействия с Cursor через CLI."""

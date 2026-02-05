@@ -1,6 +1,29 @@
 # Module: `cursor_cli_interface`
 
 ## Class: `CursorCLIInterface`
+## Dataclass: `CursorCLIResult`
+
+Класс данных для инкапсуляции результатов выполнения команд Cursor CLI.
+
+```python
+@dataclass
+class CursorCLIResult:
+    success: bool
+    error_message: Optional[str]
+    stdout: str
+    stderr: str
+    return_code: int
+    cli_available: bool
+```
+
+**Поля:**
+- `success` (bool): `True`, если команда выполнена успешно, иначе `False`.
+- `error_message` (Optional[str]): Сообщение об ошибке, если таковая произошла.
+- `stdout` (str): Стандартный вывод команды.
+- `stderr` (str): Стандартный вывод ошибок команды.
+- `return_code` (int): Код возврата команды.
+- `cli_available` (bool): `True`, если Cursor CLI доступен, иначе `False`.
+
 
 ```python
 Интерфейс взаимодействия с Cursor через CLI.
@@ -45,7 +68,7 @@ Args:
     timeout: Таймаут выполнения (в секундах).
 
 Returns:
-    Словарь с результатом выполнения.
+    Словарь с результатом выполнения, инкапсулированный в `CursorCLIResult`.
 ```
 
 ## Function: `create_cursor_cli_interface`

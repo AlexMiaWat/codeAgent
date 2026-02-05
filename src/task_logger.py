@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 
-from .core.interfaces import ILogger
+from core.interfaces import ILogger
 
 # Определяем, нужно ли использовать эмодзи (отключаем на Windows из-за проблем с кодировкой cp1251)
 USE_EMOJI = platform.system() != 'Windows'

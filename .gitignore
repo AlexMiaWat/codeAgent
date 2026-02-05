@@ -244,6 +244,7 @@ test_*_experience_*/
 
 # Benchmark outputs
 benchmark_results/
+error_reports/
 benchmark_output/
 *.benchmark.json
 
