@@ -1,0 +1,2 @@
+class CursorUIInterface:
+    pass

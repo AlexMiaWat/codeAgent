@@ -219,6 +219,7 @@ docs/results/test_full_task_1770143407.md
 # Test coverage and reports
 .coverage.*
 coverage.xml
+docs/results/test_full_task_1770317913.md
 junit.xml
 test-results.xml
 *.cover

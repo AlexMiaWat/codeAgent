@@ -1,17 +1,19 @@
-
+import pytest
 import inspect
-from new_functionality import some_new_function, another_new_function
+import sys
+import os
 
-def test_some_new_function_has_docstring():
-    """Verify some_new_function has a docstring."""
-    assert inspect.getdoc(some_new_function) is not None, "some_new_function should have a docstring"
+# Add the src directory to the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+
+from new_functionality import new_feature_function, another_new_function
+
+def test_new_feature_function_has_docstring():
+    """Verify new_feature_function has a docstring."""
+    assert inspect.getdoc(new_feature_function) is not None, "new_feature_function should have a docstring"
 
 def test_another_new_function_has_docstring():
     """Verify another_new_function has a docstring."""
     assert inspect.getdoc(another_new_function) is not None, "another_new_function should have a docstring"
 
-# Assuming no type hints for now, but this is where you'd add checks for them
-# def test_some_new_function_type_hints():
-#     """Verify some_new_function has type hints."""
-#     signature = inspect.signature(some_new_function)
-#     assert all(param.annotation is not inspect.Parameter.empty for param in signature.parameters.values()), "some_new_function should have type hints"
+# Add more static tests if needed, e.g., type hints, complexity, etc.

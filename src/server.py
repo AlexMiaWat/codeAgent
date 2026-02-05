@@ -12,6 +12,8 @@ import threading
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
+from .exceptions import ServerReloadException
+from .utils.logging_utils import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,7 @@ except ImportError:
     WATCHDOG_AVAILABLE = False
 
 from .config_loader import ConfigLoader
+from .cursor_executor import CursorExecutor
 from .todo_manager import TodoItem
 from .agents.executor_agent import create_executor_agent
 from .cursor_cli_interface import CursorCLIInterface, create_cursor_cli_interface
@@ -41,6 +44,8 @@ from .git_utils import auto_push_after_commit
 from .core import ServerCore, create_default_container
 
         # MCP Server import
+from .server.server_manager import ConfigValidator
+from .server.todo_sync_manager import TodoCheckpointSynchronizer
 try:
     from .mcp.server import MCPServer
     MCP_AVAILABLE = True
@@ -69,62 +74,16 @@ if sys.platform == 'win32':
 Path('logs').mkdir(exist_ok=True)
 
 
-class ServerReloadException(Exception):
-    """Исключение для инициации перезапуска сервера"""
-    pass
 
 
-def _setup_logging():
-    """Настройка логирования (вызывается после очистки логов)"""
-    # Удаляем существующий FileHandler для code_agent.log если есть
-    root_logger = logging.getLogger()
-    for handler in root_logger.handlers[:]:
-        if isinstance(handler, logging.FileHandler):
-            # baseFilename может быть строкой с абсолютным путем
-            base_filename = str(handler.baseFilename)
-            if base_filename.endswith('code_agent.log') or 'code_agent.log' in base_filename:
-                root_logger.removeHandler(handler)
-                handler.close()
-    
-    # Удаляем файл code_agent.log если он существует
-    log_file = Path('logs/code_agent.log')
-    if log_file.exists():
-        try:
-            log_file.unlink()
-        except Exception:
-            pass
-    
-    # Настраиваем логирование (force=True доступен с Python 3.8+)
-    try:
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler('logs/code_agent.log', encoding='utf-8'),
-                logging.StreamHandler(sys.stdout)
-            ],
-            force=True  # Переопределяем существующую конфигурацию (Python 3.8+)
-        )
-    except TypeError:
-        # Для старых версий Python без force=True
-        # Очищаем handlers и настраиваем заново
-        root_logger = logging.getLogger()
-        root_logger.handlers.clear()
-        root_logger.addHandler(logging.FileHandler('logs/code_agent.log', encoding='utf-8'))
-        root_logger.addHandler(logging.StreamHandler(sys.stdout))
-        root_logger.setLevel(logging.INFO)
+
+
 
 
 class CodeAgentServer:
     """Основной сервер Code Agent"""
     
-    # Константы для обработки ошибок Cursor
-    MAX_CURSOR_ERRORS = 3  # Максимальное количество последовательных ошибок перед перезапуском
-    CURSOR_ERROR_DELAY_INITIAL = 30  # Начальная задержка при ошибке (секунды)
-    CURSOR_ERROR_DELAY_INCREMENT = 30  # Увеличение задержки при каждой новой ошибке (секунды)
-    
-    # Константы таймаутов
-    DEFAULT_CURSOR_CLI_TIMEOUT = 300  # Таймаут по умолчанию для Cursor CLI (секунды)
+
     
     # Константы интервалов по умолчанию
     DEFAULT_CHECK_INTERVAL = 60  # Интервал проверки задач по умолчанию (секунды)
@@ -159,6 +118,20 @@ class CodeAgentServer:
         """
         # Загрузка базовой конфигурации
         self.config = ConfigLoader(config_path or "config/config.yaml")
+        # Инициализация CursorExecutor
+        self.cursor_executor = CursorExecutor(
+            config=self.config.config,
+            project_dir=self.project_dir,
+            mcp_server=self.mcp_server, # Pass MCP server instance
+            mcp_enabled=self.mcp_enabled, # Pass MCP enabled flag
+            stop_lock=self._stop_lock,
+            reload_lock=self._reload_lock,
+            task_in_progress_lock=self._task_in_progress_lock,
+            server_logger=self.server_logger,
+            status_manager=self.status_manager,
+            checkpoint_manager=self.checkpoint_manager
+        )
+        self.use_cursor_cli = self.cursor_executor.is_cursor_cli_available()
 
         # Переопределение конфигурации через параметры
         if override_config:
@@ -179,7 +152,8 @@ class CodeAgentServer:
         self.status_file = status_file or self.config.get_status_file()
         
         # Валидация конфигурации
-        self._validate_config()
+        config_validator = ConfigValidator(self.config, self.project_dir, self.docs_dir, self.status_file)
+        config_validator.validate_config()
 
         # Инициализация DI контейнера для dependency injection
         # Используем переопределенные пути
@@ -246,12 +220,7 @@ class CodeAgentServer:
         self._task_in_progress = False
         self._task_in_progress_lock = threading.Lock()
         
-        # Отслеживание повторяющихся ошибок Cursor
-        self._cursor_error_count = 0  # Счетчик последовательных ошибок
-        self._cursor_error_lock = threading.Lock()
-        self._last_cursor_error = None  # Последняя ошибка Cursor
-        self._cursor_error_delay = 0  # Дополнительная задержка при ошибках (секунды)
-        self._max_cursor_errors = self.MAX_CURSOR_ERRORS  # Максимальное количество ошибок перед перезапуском
+
         
         # Отслеживание выполнения ревизии
         self._revision_done = False  # Флаг выполнения ревизии в текущей сессии
@@ -261,18 +230,7 @@ class CodeAgentServer:
         cursor_config = self.config.get('cursor', {})
         interface_type = cursor_config.get('interface_type', 'cli')
         
-        # Инициализация Cursor CLI интерфейса (если доступен)
-        self.cursor_cli = self._init_cursor_cli()
-        
-        # Инициализация файлового интерфейса (fallback)
-        self.cursor_file = CursorFileInterface(self.project_dir)
-        
-        # Определяем приоритетный интерфейс
-        self.use_cursor_cli = (
-            interface_type == 'cli' and 
-            self.cursor_cli and 
-            self.cursor_cli.is_available()
-        )
+
         
         # Инициализация трекера сессий для автоматической генерации TODO
         # Session файлы хранятся в каталоге codeAgent, а не в целевом проекте
@@ -288,11 +246,18 @@ class CodeAgentServer:
         # Инициализация DI контейнера для dependency injection (уже создана выше)
         self.di_container = create_default_container(self.project_dir, self.config.config, self.status_file)
 
+        self.todo_checkpoint_synchronizer = TodoCheckpointSynchronizer(
+            checkpoint_manager=self.checkpoint_manager,
+            todo_manager=self.todo_manager,
+            status_manager=self.status_manager,
+            server_logger=self.server_logger
+        )
+
         # Проверяем, нужно ли восстановление после сбоя
-        self._check_recovery_needed()
+        self.todo_checkpoint_synchronizer.check_recovery_needed()
         
         # Синхронизируем TODO задачи с checkpoint (помечаем выполненные задачи)
-        self._sync_todos_with_checkpoint()
+        self.todo_checkpoint_synchronizer.sync_todos_with_checkpoint()
         
         # Логируем инициализацию
         self.server_logger.log_initialization({
@@ -391,772 +356,29 @@ class CodeAgentServer:
             logger.error(f"Ошибка при создании ServerCore: {e}", exc_info=True)
             raise
 
-    def _validate_config(self):
-        """
-        Валидация конфигурации при инициализации сервера
-        
-        Проверяет наличие обязательных параметров и их корректность.
-        Выбрасывает исключения с понятными сообщениями об ошибках.
-        
-        Raises:
-            ValueError: Если обязательные параметры не установлены или некорректны
-            FileNotFoundError: Если директории или файлы не найдены
-        """
-        errors = []
-        
-        # Проверка project_dir
-        if not self.project_dir:
-            errors.append("PROJECT_DIR не установлен в переменных окружения или .env файле")
-        elif not self.project_dir.exists():
-            errors.append(
-                f"Директория проекта не найдена: {self.project_dir}\n"
-                f"  Убедитесь, что путь указан правильно в .env файле:\n"
-                f"  PROJECT_DIR={self.project_dir}"
-            )
-        elif not self.project_dir.is_dir():
-            errors.append(f"Путь не является директорией: {self.project_dir}")
-        else:
-            # Проверка прав доступа на чтение
-            if not os.access(self.project_dir, os.R_OK):
-                errors.append(f"Нет прав на чтение директории проекта: {self.project_dir}")
-            # Проверка прав доступа на запись (для создания файлов статусов)
-            if not os.access(self.project_dir, os.W_OK):
-                errors.append(
-                    f"Нет прав на запись в директорию проекта: {self.project_dir}\n"
-                    f"  Агенту нужны права на запись для создания файлов статусов"
-                )
-        
-        # Проверка docs_dir (опционально, но желательно)
-        if self.docs_dir and self.docs_dir.exists():
-            if not os.access(self.docs_dir, os.R_OK):
-                errors.append(f"Нет прав на чтение директории документации: {self.docs_dir}")
-        
-        # Проверка конфигурационного файла
-        if not self.config.config_path.exists():
-            errors.append(f"Конфигурационный файл не найден: {self.config.config_path}")
-        
-        # Если есть ошибки, выбрасываем исключение с понятным сообщением
-        if errors:
-            error_msg = "Ошибки конфигурации:\n\n" + "\n\n".join(f"  • {e}" for e in errors)
-            error_msg += "\n\n" + "=" * 70
-            error_msg += "\n\nДля решения проблем:\n"
-            error_msg += "  1. Проверьте наличие .env файла в корне codeAgent/\n"
-            error_msg += "  2. Убедитесь, что PROJECT_DIR указан правильно\n"
-            error_msg += "  3. Проверьте права доступа к директориям\n"
-            error_msg += "  4. См. документацию: docs/guides/setup.md\n"
-            error_msg += "  5. См. шаблон: .env.example"
-            
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-        
-        # Логируем успешную валидацию
-        logger.debug("Валидация конфигурации пройдена успешно")
-        logger.debug(f"  Project dir: {self.project_dir}")
-        logger.debug(f"  Docs dir: {self.docs_dir}")
-        logger.debug(f"  Status file: {self.status_file}")
-    
-    def _check_recovery_needed(self):
-        """
-        Проверка необходимости восстановления после сбоя
-        """
-        recovery_info = self.checkpoint_manager.get_recovery_info()
-        
-        if not recovery_info["was_clean_shutdown"]:
-            logger.warning("=" * 80)
-            logger.warning("ОБНАРУЖЕН НЕКОРРЕКТНЫЙ ОСТАНОВ СЕРВЕРА")
-            logger.warning("=" * 80)
-            logger.warning(f"Последний запуск: {recovery_info['last_start_time']}")
-            logger.warning(f"Последний останов: {recovery_info['last_stop_time']}")
-            logger.warning(f"Сессия: {recovery_info['session_id']}")
-            logger.warning(f"Итераций выполнено: {recovery_info['iteration_count']}")
-            
-            # Проверяем прерванную задачу
-            current_task = recovery_info.get("current_task")
-            if current_task:
-                logger.warning(f"Прерванная задача: {current_task['task_text']}")
-                logger.warning(f"  - ID: {current_task['task_id']}")
-                logger.warning(f"  - Попыток: {current_task['attempts']}")
-                logger.warning(f"  - Начало: {current_task['start_time']}")
-                
-                # Сбрасываем прерванную задачу для повторного выполнения
-                self.checkpoint_manager.reset_interrupted_task()
-                logger.info("Прерванная задача сброшена для повторного выполнения")
-            
-            # Показываем незавершенные задачи (ограничиваем вывод для избежания блокировки)
-            incomplete_count = recovery_info["incomplete_tasks_count"]
-            if incomplete_count > 0:
-                logger.warning(f"Незавершенных задач: {incomplete_count}")
-                # Показываем только первые 3 задачи, чтобы не блокировать вывод
-                for task in recovery_info["incomplete_tasks"][:3]:
-                    try:
-                        task_text = str(task.get('task_text', 'N/A'))[:100]  # Ограничиваем длину
-                        task_state = str(task.get('state', 'unknown'))
-                        logger.warning(f"  - {task_text} (состояние: {task_state})")
-                    except Exception as e:
-                        # Защита от ошибок при выводе
-                        logger.warning(f"  - [Ошибка при выводе задачи: {e}]")
-            
-            # Показываем задачи с ошибками (ограничиваем вывод)
-            failed_count = recovery_info["failed_tasks_count"]
-            if failed_count > 0:
-                logger.warning(f"Задач с ошибками: {failed_count}")
-                # Показываем только первые 2 задачи, чтобы не блокировать вывод
-                for task in recovery_info["failed_tasks"][:2]:
-                    try:
-                        task_text = str(task.get('task_text', 'N/A'))[:100]  # Ограничиваем длину
-                        error_msg = str(task.get('error_message', 'N/A'))[:200]  # Ограничиваем длину
-                        logger.warning(f"  - {task_text}")
-                        logger.warning(f"    Ошибка: {error_msg}")
-                    except Exception as e:
-                        # Защита от ошибок при выводе
-                        logger.warning(f"  - [Ошибка при выводе задачи с ошибкой: {e}]")
-            
-            logger.warning("=" * 80)
-            logger.info("Сервер продолжит работу с последней контрольной точки")
-            logger.warning("=" * 80)
-            logger.info("Восстановление завершено, продолжаем инициализацию сервера...")
-            
-            # Обновляем статус
-            self.status_manager.append_status(
-                f"Восстановление после сбоя. Незавершенных задач: {incomplete_count}, "
-                f"с ошибками: {failed_count}",
-                level=2
-            )
-        else:
-            logger.info("Предыдущий останов был корректным. Восстановление не требуется.")
-            
-            # Показываем статистику
-            stats = self.checkpoint_manager.get_statistics()
-            logger.info(f"Статистика: выполнено {stats['completed']} задач, "
-                       f"ошибок {stats['failed']}, итераций {stats['iteration_count']}")
-    
-    def _sync_todos_with_checkpoint(self):
-        """
-        Синхронизация TODO задач с checkpoint - помечает задачи как выполненные в TODO файле,
-        если они помечены как completed в checkpoint
-        """
-        try:
-            # Получаем все задачи из TODO
-            all_todo_items = self.todo_manager.get_all_tasks()
-            
-            # Получаем все завершенные задачи из checkpoint
-            completed_tasks_in_checkpoint = [
-                task for task in self.checkpoint_manager.checkpoint_data.get("tasks", [])
-                if task.get("state") == "completed"
-            ]
-            
-            # Создаем словарь завершенных задач для быстрого поиска
-            completed_task_texts = set()
-            for task in completed_tasks_in_checkpoint:
-                task_text = task.get("task_text", "")
-                if task_text:
-                    completed_task_texts.add(task_text)
-            
-            # Синхронизируем: помечаем задачи как done в TODO, если они completed в checkpoint
-            synced_count = 0
-            for todo_item in all_todo_items:
-                if not todo_item.done and todo_item.text in completed_task_texts:
-                    # Задача выполнена в checkpoint, но не отмечена в TODO файле
-                    todo_item.done = True
-                    synced_count += 1
-                    logger.debug(f"Синхронизация: задача '{todo_item.text}' помечена как выполненная в TODO")
-            
-            # Сохраняем изменения в TODO файл
-            if synced_count > 0:
-                self.todo_manager._save_todos()
-                logger.info(f"Синхронизация TODO с checkpoint: {synced_count} задач помечено как выполненные")
-            else:
-                logger.debug("Синхронизация TODO с checkpoint: изменений не требуется")
-                
-        except Exception as e:
-            logger.error(f"Ошибка при синхронизации TODO с checkpoint: {e}", exc_info=True)
-            # Не прерываем инициализацию из-за ошибки синхронизации
-    
-    def _filter_completed_tasks(self, tasks: List[TodoItem]) -> List[TodoItem]:
-        """
-        Фильтрация задач: исключает задачи, которые уже выполнены в checkpoint
-        
-        Args:
-            tasks: Список задач для фильтрации
-            
-        Returns:
-            Отфильтрованный список задач (только невыполненные)
-        """
-        filtered_tasks = []
-        for task in tasks:
-            if not self.checkpoint_manager.is_task_completed(task.text):
-                filtered_tasks.append(task)
-            else:
-                logger.debug(f"Задача '{task.text}' уже выполнена в checkpoint, пропускаем")
-                # Помечаем задачу как done в TODO для синхронизации
-                self.todo_manager.mark_task_done(task.text)
-        return filtered_tasks
-    
-    def _init_cursor_cli(self) -> Optional[CursorCLIInterface]:
-        """
-        Инициализация Cursor CLI интерфейса
-        
-        Returns:
-            Экземпляр CursorCLIInterface или None если недоступен
-        """
-        try:
-            cursor_config = self.config.get('cursor', {})
-            cli_config = cursor_config.get('cli', {})
-            
-            cli_path = cli_config.get('cli_path')
-            timeout = cli_config.get('timeout', self.DEFAULT_CURSOR_CLI_TIMEOUT)
-            headless = cli_config.get('headless', True)
-            
-            logger.debug(f"Инициализация Cursor CLI: timeout={timeout} секунд (из конфига: {cli_config.get('timeout', 'не указан')}, дефолт: {self.DEFAULT_CURSOR_CLI_TIMEOUT})")
-            
-            # Передаем директорию проекта и роль агента для настройки контекста
-            agent_config = self.config.get('agent', {})
-            cli_interface = create_cursor_cli_interface(
-                cli_path=cli_path,
-                timeout=timeout,
-                headless=headless,
-                project_dir=str(self.project_dir),
-                agent_role=agent_config.get('role')
-            )
-            
-            if cli_interface and cli_interface.is_available():
-                version = cli_interface.check_version()
-                if version:
-                    logger.info(f"Cursor CLI версия: {version}")
-                return cli_interface
-            else:
-                logger.info("Cursor CLI не найден в системе")
-                return cli_interface
-                
-        except Exception as e:
-            logger.warning(f"Ошибка при инициализации Cursor CLI: {e}")
-            return None
-    
-    def execute_cursor_instruction(
-        self,
-        instruction: str,
-        task_id: str,
-        timeout: Optional[int] = None
-    ) -> dict:
-        """
-        Выполнить инструкцию через Cursor CLI (если доступен)
-        
-        Args:
-            instruction: Текст инструкции для выполнения
-            task_id: Идентификатор задачи
-            timeout: Таймаут выполнения (если None - используется из конфига)
-            
-        Returns:
-            Словарь с результатом выполнения
-        """
-        if not self.cursor_cli or not self.cursor_cli.is_available():
-            logger.warning("Cursor CLI недоступен, инструкция не может быть выполнена")
-            return {
-                "task_id": task_id,
-                "success": False,
-                "error": "Cursor CLI недоступен",
-                "cli_available": False
-            }
-        
-        # Обновляем контекст задачи в MCP
-        self.update_mcp_task_context(task_id, {
-            "instruction": instruction,
-            "status": "executing",
-            "type": "cursor_instruction",
-            "start_time": datetime.utcnow().isoformat()
-        })
 
-        logger.info(f"Выполнение инструкции для задачи {task_id} через Cursor CLI")
+    
 
-        result = self.cursor_cli.execute_instruction(
-            instruction=instruction,
-            task_id=task_id,
-            working_dir=str(self.project_dir),
-            timeout=timeout
-        )
+    
 
-        # Обновляем результат в MCP
-        task_result = {
-            "task_id": task_id,
-            "success": result["success"],
-            "type": "cursor_instruction",
-            "completed_at": datetime.utcnow().isoformat()
-        }
+    
 
-        if result["success"]:
-            logger.info(f"Инструкция для задачи {task_id} выполнена успешно")
-            task_result["status"] = "completed"
-        else:
-            logger.warning(f"Инструкция для задачи {task_id} завершилась с ошибкой: {result.get('error_message')}")
-            task_result["status"] = "failed"
-            task_result["error"] = result.get('error_message')
+    
 
-        self.update_mcp_task_result(task_id, task_result)
-        
-        return result
     
-    def _execute_cursor_instruction_with_retry(
-        self,
-        instruction: str,
-        task_id: str,
-        timeout: Optional[int],
-        task_logger: TaskLogger,
-        instruction_num: int
-    ) -> dict:
-        """
-        Выполнить инструкцию через Cursor с обработкой повторяющихся ошибок
-        
-        Args:
-            instruction: Текст инструкции
-            task_id: ID задачи
-            timeout: Таймаут выполнения
-            task_logger: Логгер задачи
-            instruction_num: Номер инструкции
-            
-        Returns:
-            Словарь с результатом выполнения
-        """
-        return self.execute_cursor_instruction(
-            instruction=instruction,
-            task_id=task_id,
-            timeout=timeout
-        )
+
     
-    def _is_critical_cursor_error(self, error_message: str) -> bool:
-        """
-        Проверка, является ли ошибка критической (не исправится перезапуском)
-        
-        Args:
-            error_message: Сообщение об ошибке
-            
-        Returns:
-            True если ошибка критическая
-        """
-        error_lower = error_message.lower()
-        critical_keywords = [
-            "неоплаченный счет",
-            "unpaid",
-            "billing",
-            "payment required",
-            "subscription",
-            "account suspended",
-            "аккаунт заблокирован",
-            "доступ запрещен",
-            "access denied",
-            "authentication failed",
-            "invalid api key",
-            "api key expired"
-        ]
-        return any(keyword in error_lower for keyword in critical_keywords)
+
     
-    def _is_unexpected_cursor_error(self, error_message: str) -> bool:
-        """
-        Проверка, является ли ошибка непредвиденной (требует перезапуска Docker)
-        
-        Непредвиденные ошибки - это ошибки, которые могут быть исправлены перезапуском Docker,
-        например, когда Cursor CLI недоступен или возвращает неизвестную ошибку.
-        
-        Args:
-            error_message: Сообщение об ошибке
-            
-        Returns:
-            True если ошибка непредвиденная и может быть исправлена перезапуском Docker
-        """
-        if not error_message:
-            return False
-        
-        error_lower = error_message.lower()
-        unexpected_keywords = [
-            "неизвестная ошибка",
-            "unknown error",
-            "cursor cli недоступен",
-            "cursor cli unavailable",
-            "cli недоступен",
-            "cli unavailable"
-        ]
-        
-        # Проверяем на ключевые слова
-        if any(keyword in error_lower for keyword in unexpected_keywords):
-            return True
-        
-        # Проверяем на ошибки вида "CLI вернул код X" (кроме специальных кодов)
-        # Коды 137 (SIGKILL) и 143 (SIGTERM) обрабатываются специально и не требуют перезапуска
-        import re
-        cli_code_pattern = r"cli вернул код (\d+)"
-        match = re.search(cli_code_pattern, error_lower)
-        if match:
-            return_code = int(match.group(1))
-            logger.debug(f"Найдена ошибка 'CLI вернул код {return_code}' в сообщении: {error_message}")
-            # Игнорируем специальные коды, которые обрабатываются отдельно
-            if return_code not in [137, 143]:
-                # Коды ошибок (не 0) могут указывать на проблемы с контейнером
-                logger.debug(f"Код возврата {return_code} не является специальным, считаем ошибку непредвиденной")
-                return True
-            else:
-                logger.debug(f"Код возврата {return_code} является специальным (SIGKILL/SIGTERM), не считаем непредвиденной")
-        
-        return False
+
     
-    def _handle_cursor_error(self, error_message: str, task_logger: TaskLogger) -> bool:
-        """
-        Обработка ошибки Cursor с учетом повторяющихся ошибок
-        
-        Args:
-            error_message: Сообщение об ошибке
-            task_logger: Логгер задачи
-            
-        Returns:
-            True если можно продолжать работу, False если нужно остановить сервер
-        """
-        # Проверяем, является ли ошибка критической
-        is_critical = self._is_critical_cursor_error(error_message)
-        
-        # Проверяем, является ли ошибка непредвиденной (требует немедленного перезапуска Docker)
-        is_unexpected = self._is_unexpected_cursor_error(error_message)
-        logger.info(f"Обработка ошибки Cursor: error_message='{error_message}', is_critical={is_critical}, is_unexpected={is_unexpected}")
-        
-        with self._cursor_error_lock:
-            # Проверяем, та же ли ошибка (сравниваем по первым 100 символам для группировки похожих ошибок)
-            error_key = error_message[:100] if error_message else ""
-            if self._last_cursor_error == error_key:
-                self._cursor_error_count += 1
-            else:
-                # Новая ошибка - сбрасываем счетчик и задержку
-                self._cursor_error_count = 1
-                self._last_cursor_error = error_key
-                self._cursor_error_delay = self.CURSOR_ERROR_DELAY_INITIAL  # Начинаем с начальной задержки для новой ошибки
-            
-            # Для критических ошибок - останавливаем сервер сразу (не ждем повторений)
-            if is_critical:
-                logger.error("=" * 80)
-                logger.error(f"КРИТИЧЕСКАЯ ОШИБКА CURSOR: {error_message}")
-                logger.error("Критическая ошибка не исправится перезапуском - останавливаем сервер немедленно")
-                logger.error("=" * 80)
-                task_logger.log_error(f"Критическая ошибка Cursor (не исправится): {error_message}", Exception(error_message))
-                # Останавливаем сервер немедленно для критических ошибок
-                self._stop_server_due_to_cursor_errors(error_message)
-                return False
-            
-            # Для непредвиденных ошибок - перезапускаем Docker при первой или второй ошибке (если используется Docker)
-            # Это позволяет перезапустить Docker даже если первая ошибка была другой
-            logger.info(f"Проверка непредвиденной ошибки: is_unexpected={is_unexpected}, счетчик={self._cursor_error_count}")
-            if is_unexpected and self._cursor_error_count <= 2:
-                logger.info(f"Обнаружена непредвиденная ошибка (счетчик: {self._cursor_error_count}), проверяем использование Docker...")
-                # Проверяем, используется ли Docker
-                if self.cursor_cli and hasattr(self.cursor_cli, 'cli_command'):
-                    logger.debug(f"Cursor CLI доступен, cli_command: {self.cursor_cli.cli_command}")
-                    if self.cursor_cli.cli_command == "docker-compose-agent":
-                        logger.warning("=" * 80)
-                        logger.warning(f"НЕПРЕДВИДЕННАЯ ОШИБКА CURSOR (#{self._cursor_error_count}): {error_message}")
-                        logger.warning("Перезапускаем Docker контейнер из-за непредвиденной ошибки...")
-                        logger.warning("=" * 80)
-                        task_logger.log_warning(f"Непредвиденная ошибка Cursor - перезапуск Docker: {error_message}")
-                        
-                        # Сначала проверяем, установлен ли агент в контейнере
-                        container_name = "cursor-agent-life"
-                        logger.info(f"Проверка установки Cursor Agent в контейнере {container_name}...")
-                        import subprocess
-                        agent_check = subprocess.run(
-                            ["docker", "exec", container_name, "/root/.local/bin/agent", "--version"],
-                            capture_output=True,
-                            text=True,
-                            timeout=10
-                        )
-                        
-                        if agent_check.returncode != 0:
-                            logger.warning("Cursor Agent не найден в контейнере, пытаемся переустановить...")
-                            self._safe_print("Переустановка Cursor Agent в контейнере...")
-                            reinstall_result = subprocess.run(
-                                ["docker", "exec", container_name, "bash", "-c", "curl https://cursor.com/install -fsS | bash"],
-                                capture_output=True,
-                                text=True,
-                                timeout=60
-                            )
-                            if reinstall_result.returncode == 0:
-                                logger.info("✓ Cursor Agent переустановлен")
-                                self._safe_print("✓ Cursor Agent переустановлен")
-                            else:
-                                logger.warning(f"Не удалось переустановить агент: {reinstall_result.stderr[:200]}")
-                        
-                        # Перезапускаем Docker контейнер и очищаем диалоги
-                        self._safe_print("Попытка перезапуска Docker контейнера из-за непредвиденной ошибки...")
-                        if self._restart_cursor_environment():
-                            success_msg = "Docker контейнер перезапущен после непредвиденной ошибки. Сбрасываем счетчик ошибок."
-                            self._safe_print(success_msg)
-                            logger.info(success_msg)
-                            task_logger.log_info("Docker контейнер перезапущен после непредвиденной ошибки")
-                            # Сбрасываем счетчик после перезапуска
-                            self._cursor_error_count = 0
-                            self._cursor_error_delay = 0
-                            self._last_cursor_error = None
-                            return True
-                        else:
-                            logger.warning("Перезапуск Docker не удался, продолжаем с обычной обработкой ошибки")
-                            # Продолжаем с обычной обработкой ошибки
-                    else:
-                        logger.warning(f"Docker не используется (cli_command='{self.cursor_cli.cli_command}'), пропускаем перезапуск для непредвиденной ошибки")
-                else:
-                    logger.warning("Cursor CLI недоступен или не имеет cli_command, пропускаем перезапуск для непредвиденной ошибки")
-            elif is_unexpected:
-                logger.debug(f"Непредвиденная ошибка обнаружена, но счетчик ошибок ({self._cursor_error_count}) > 2, пропускаем перезапуск")
-            else:
-                logger.debug("Ошибка не является непредвиденной (is_unexpected=False), обычная обработка")
-            
-            # Увеличиваем задержку на +30 секунд при каждой повторяющейся ошибке
-            # При первой ошибке задержка уже установлена в 30 секунд выше
-            # При каждой следующей повторяющейся ошибке добавляем еще 30 секунд
-            if self._cursor_error_count > 1:
-                self._cursor_error_delay += self.CURSOR_ERROR_DELAY_INCREMENT
-            
-            logger.warning(f"Ошибка Cursor #{self._cursor_error_count}: {error_message}")
-            logger.warning(f"Дополнительная задержка перед следующим запросом: {self._cursor_error_delay} секунд")
-            task_logger.log_warning(f"Ошибка Cursor #{self._cursor_error_count}, задержка перед следующим запросом: {self._cursor_error_delay}с")
-            
-            # Если ошибка повторилась 3 раза - перезапускаем Docker и очищаем диалоги
-            if self._cursor_error_count >= self._max_cursor_errors:
-                # Выводим в консоль и в лог
-                critical_msg = "=" * 80 + "\n"
-                critical_msg += f"КРИТИЧЕСКАЯ СИТУАЦИЯ: Ошибка Cursor повторилась {self._cursor_error_count} раз\n"
-                critical_msg += f"Последняя ошибка: {error_message}\n"
-                critical_msg += "=" * 80
-                
-                self._safe_print("\n" + critical_msg + "\n")
-                logger.error(critical_msg)
-                
-                task_logger.log_error(f"Критическая ошибка: повтор {self._cursor_error_count} раз", Exception(error_message))
-                
-                # Перезапускаем Docker контейнер и очищаем диалоги
-                self._safe_print("Попытка перезапуска Docker контейнера и очистки диалогов...")
-                if self._restart_cursor_environment():
-                    success_msg = "Docker контейнер и диалоги перезапущены. Сбрасываем счетчик ошибок."
-                    self._safe_print(success_msg)
-                    logger.info(success_msg)
-                    task_logger.log_info("Docker контейнер перезапущен после критической ошибки")
-                    # Сбрасываем счетчик после перезапуска
-                    self._cursor_error_count = 0
-                    self._cursor_error_delay = 0
-                    self._last_cursor_error = None
-                    return True
-                else:
-                    # Перезапуск не помог - останавливаем сервер
-                    self._safe_print("Перезапуск не помог. Останавливаем сервер...")
-                    task_logger.log_error("Критическая ошибка: перезапуск не помог, сервер остановлен", Exception(error_message))
-                    
-                    # Останавливаем сервер
-                    self._stop_server_due_to_cursor_errors(error_message)
-                    return False
-            
-            return True
+
     
-    def _restart_cursor_environment(self) -> bool:
-        """
-        Перезапустить Docker контейнер и очистить открытые диалоги Cursor
-        
-        Returns:
-            True если перезапуск успешен, False иначе
-        """
-        logger.info("=" * 80)
-        logger.info("ПЕРЕЗАПУСК CURSOR ENVIRONMENT")
-        logger.info("=" * 80)
-        
-        try:
-            # 1. Очищаем открытые диалоги
-            logger.info("Шаг 1: Очистка открытых диалогов Cursor...")
-            if self.cursor_cli:
-                cleanup_result = self.cursor_cli.prepare_for_new_task()
-                if cleanup_result:
-                    logger.info("  ✓ Диалоги очищены")
-                else:
-                    logger.warning("  ⚠ Не удалось полностью очистить диалоги")
-            
-            # 2. Перезапускаем Docker контейнер (если используется)
-            logger.info("Шаг 2: Перезапуск Docker контейнера...")
-            if self.cursor_cli and hasattr(self.cursor_cli, 'cli_command'):
-                if self.cursor_cli.cli_command == "docker-compose-agent":
-                    # Перезапускаем Docker контейнер
-                    compose_file = Path(__file__).parent.parent / "docker" / "docker-compose.agent.yml"
-                    container_name = "cursor-agent-life"  # Имя из docker-compose.agent.yml
-                    
-                    try:
-                        import subprocess
-                        
-                        # Останавливаем контейнер
-                        logger.info(f"  Остановка контейнера {container_name}...")
-                        stop_result = subprocess.run(
-                            ["docker", "stop", container_name],
-                            capture_output=True,
-                            text=True,
-                            timeout=15
-                        )
-                        if stop_result.returncode == 0:
-                            logger.info(f"  ✓ Контейнер {container_name} остановлен")
-                        else:
-                            logger.warning(f"  ⚠ Не удалось остановить контейнер: {stop_result.stderr[:200]}")
-                        
-                        # Ждем немного
-                        time.sleep(2)
-                        
-                        # Запускаем контейнер заново
-                        logger.info(f"  Запуск контейнера {container_name}...")
-                        up_result = subprocess.run(
-                            ["docker", "compose", "-f", str(compose_file), "up", "-d"],
-                            capture_output=True,
-                            text=True,
-                            timeout=30
-                        )
-                        
-                        if up_result.returncode == 0:
-                            logger.info(f"  ✓ Контейнер {container_name} запущен")
-                            # Ждем, пока контейнер запустится
-                            time.sleep(5)
-                            
-                            # Проверяем, что контейнер работает
-                            check_result = subprocess.run(
-                                ["docker", "exec", container_name, "echo", "ok"],
-                                capture_output=True,
-                                timeout=5
-                            )
-                            
-                            if check_result.returncode == 0:
-                                logger.info("  ✓ Контейнер работает корректно")
-                                
-                                # Проверяем, установлен ли Cursor Agent
-                                logger.info("  Проверка установки Cursor Agent...")
-                                agent_check = subprocess.run(
-                                    ["docker", "exec", container_name, "/root/.local/bin/agent", "--version"],
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=10
-                                )
-                                
-                                if agent_check.returncode == 0:
-                                    agent_version = agent_check.stdout.strip()[:50] if agent_check.stdout else "unknown"
-                                    logger.info(f"  ✓ Cursor Agent установлен: {agent_version}")
-                                else:
-                                    logger.warning("  ⚠ Cursor Agent не найден, пытаемся переустановить...")
-                                    reinstall_result = subprocess.run(
-                                        ["docker", "exec", container_name, "bash", "-c", "curl https://cursor.com/install -fsS | bash"],
-                                        capture_output=True,
-                                        text=True,
-                                        timeout=60
-                                    )
-                                    if reinstall_result.returncode == 0:
-                                        logger.info("  ✓ Cursor Agent переустановлен")
-                                        # Проверяем снова
-                                        verify_result = subprocess.run(
-                                            ["docker", "exec", container_name, "/root/.local/bin/agent", "--version"],
-                                            capture_output=True,
-                                            text=True,
-                                            timeout=10
-                                        )
-                                        if verify_result.returncode == 0:
-                                            logger.info("  ✓ Cursor Agent подтвержден после переустановки")
-                                        else:
-                                            logger.warning("  ⚠ Cursor Agent все еще не работает после переустановки")
-                                    else:
-                                        logger.error(f"  ✗ Не удалось переустановить Cursor Agent: {reinstall_result.stderr[:200]}")
-                                
-                                logger.info("=" * 80)
-                                logger.info("ПЕРЕЗАПУСК УСПЕШЕН")
-                                logger.info("=" * 80)
-                                return True
-                            else:
-                                logger.warning(f"  ⚠ Контейнер запущен, но не отвечает: {check_result.stderr[:200]}")
-                        else:
-                            logger.error(f"  ✗ Не удалось запустить контейнер: {up_result.stderr[:200]}")
-                    except Exception as e:
-                        logger.error(f"  ✗ Ошибка при перезапуске Docker: {e}", exc_info=True)
-                        return False
-                else:
-                    logger.info("  Docker не используется, пропускаем перезапуск контейнера")
-                    # Если не Docker, просто очищаем диалоги
-                    logger.info("=" * 80)
-                    logger.info("ПЕРЕЗАПУСК ЗАВЕРШЕН (без Docker)")
-                    logger.info("=" * 80)
-                    return True
-            else:
-                logger.warning("  Cursor CLI недоступен, пропускаем перезапуск")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Ошибка при перезапуске Cursor environment: {e}", exc_info=True)
-            return False
+
     
-    def _safe_print(self, message: str, end: str = "\n") -> None:
-        """
-        Безопасный вывод в консоль с защитой от ошибок потока
-        
-        Args:
-            message: Сообщение для вывода
-            end: Символ окончания строки (по умолчанию \n)
-        """
-        try:
-            print(message, end=end, flush=True)
-        except (OSError, IOError, ValueError):
-            # Если stdout недоступен (закрыт или обернут), используем stderr
-            try:
-                sys.stderr.write(message + (end if end else ""))
-                sys.stderr.flush()
-            except (OSError, IOError, ValueError):
-                # Если и stderr недоступен, просто пропускаем вывод в консоль
-                # Логирование все равно произойдет через logger
-                pass
+
     
-    def _stop_server_due_to_cursor_errors(self, error_message: str):
-        """
-        Остановить сервер из-за критических ошибок Cursor
-        
-        Args:
-            error_message: Сообщение об ошибке
-        """
-        # Выводим в консоль и в лог
-        error_msg = "=" * 80 + "\n"
-        error_msg += "ОСТАНОВКА СЕРВЕРА ИЗ-ЗА КРИТИЧЕСКИХ ОШИБОК CURSOR\n"
-        error_msg += "=" * 80 + "\n"
-        error_msg += f"Ошибка повторяется: {error_message}\n"
-        error_msg += f"Количество повторений: {self._cursor_error_count}\n"
-        error_msg += "Перезапуск Docker контейнера не помог\n"
-        error_msg += "=" * 80 + "\n"
-        error_msg += "РЕКОМЕНДАЦИИ:\n"
-        error_msg += "1. Проверьте состояние Cursor аккаунта: https://cursor.com/dashboard\n"
-        error_msg += "2. Проверьте доступность Docker контейнера\n"
-        error_msg += "3. Проверьте логи Cursor для деталей ошибки\n"
-        error_msg += "4. Перезапустите сервер вручную после устранения проблемы\n"
-        error_msg += "=" * 80
-        
-        # Выводим в консоль (с защитой от ошибок потока)
-        self._safe_print("\n" + error_msg + "\n")
-        
-        # Логируем
-        logger.error(error_msg)
-        
-        # Обновляем статус
-        self.status_manager.append_status(
-            f"КРИТИЧЕСКАЯ ОШИБКА: Cursor ошибка повторяется ({self._cursor_error_count} раз). "
-            f"Ошибка: {error_message}. Сервер остановлен.",
-            level=2
-        )
-        
-        # Устанавливаем флаг остановки
-        with self._stop_lock:
-            self._should_stop = True
-        
-        # Отмечаем некорректный останов
-        self.checkpoint_manager.mark_server_stop(clean=False)
-        
-        # Логируем остановку
-        self.server_logger.log_server_shutdown(
-            f"Остановка из-за критических ошибок Cursor: {error_message} (повтор {self._cursor_error_count} раз)"
-        )
-    
-    def is_cursor_cli_available(self) -> bool:
-        """
-        Проверка доступности Cursor CLI
-        
-        Returns:
-            True если CLI доступен, False иначе
-        """
-        return self.cursor_cli is not None and self.cursor_cli.is_available()
+
     
     def _determine_task_type(self, todo_item: TodoItem) -> str:
         """
@@ -2747,7 +1969,7 @@ class CodeAgentServer:
                     logger.info(f"✓ TODO файл сохранен: {self.todo_manager.todo_file}")
                     
                     # Также синхронизируем с checkpoint для полноты
-                    self._sync_todos_with_checkpoint()
+                    self.todo_checkpoint_synchronizer.sync_todos_with_checkpoint()
                 except Exception as e:
                     logger.error(f"Ошибка при сохранении TODO файла перед коммитом: {e}", exc_info=True)
                     # Не прерываем выполнение из-за ошибки сохранения TODO
@@ -2759,7 +1981,7 @@ class CodeAgentServer:
             instruction_start_time = time.time()
             
             # Используем Cursor CLI для выполнения инструкции с обработкой повторяющихся ошибок
-            result = self._execute_cursor_instruction_with_retry(
+            result = self.cursor_executor.execute_instruction_with_retry(
                 instruction=instruction_text,
                 task_id=task_id,
                 timeout=timeout,
@@ -3714,7 +2936,7 @@ class CodeAgentServer:
         logger.info(f"Выполнение инструкции: {task_id}")
         
         if self.use_cursor_cli:
-            result = self.execute_cursor_instruction(
+            result = self.cursor_executor.execute_cursor_instruction(
                 instruction=instruction,
                 task_id=task_id,
                 timeout=timeout
@@ -3753,88 +2975,6 @@ class CodeAgentServer:
         
         return wait_result.get("success", False)
 
-    def _sync_todos_with_checkpoint(self):
-        """
-        Синхронизация TODO задач с checkpoint - помечает задачи как выполненные в TODO файле,
-        если они помечены как completed в checkpoint
-        """
-        try:
-            # Получаем все задачи из TODO
-            all_todo_items = self.todo_manager.get_all_tasks()
-
-            # Получаем все завершенные задачи из checkpoint
-            completed_tasks_in_checkpoint = [
-                task for task in self.checkpoint_manager.checkpoint_data.get("tasks", [])
-                if task.get("state") == "completed"
-            ]
-
-            # Создаем словарь завершенных задач для быстрого поиска
-            completed_task_texts = set()
-            for task in completed_tasks_in_checkpoint:
-                task_text = task.get("task_text", "")
-                if task_text:
-                    completed_task_texts.add(task_text)
-
-            # Синхронизируем: помечаем задачи как done в TODO, если они completed в checkpoint
-            synced_count = 0
-            for todo_item in all_todo_items:
-                if not todo_item.done and todo_item.text in completed_task_texts:
-                    # Задача выполнена в checkpoint, но не отмечена в TODO файле
-                    todo_item.done = True
-                    synced_count += 1
-                    logger.debug(f"Синхронизация: задача '{todo_item.text}' помечена как выполненная в TODO")
-
-            # Сохраняем изменения в TODO файл
-            if synced_count > 0:
-                self.todo_manager._save_todos()
-                logger.info(f"Синхронизация TODO с checkpoint: {synced_count} задач помечено как выполненные")
-            else:
-                logger.debug("Синхронизация TODO с checkpoint: изменений не требуется")
-
-        except Exception as e:
-            logger.error(f"Ошибка при синхронизации TODO с checkpoint: {e}", exc_info=True)
-
-    def _filter_completed_tasks(self, tasks: List[TodoItem]) -> List[TodoItem]:
-        """
-        Фильтрация задач: исключает задачи, которые уже выполнены в checkpoint
-
-        Args:
-            tasks: Список задач для фильтрации
-
-        Returns:
-            Отфильтрованный список задач
-        """
-        try:
-            # Получаем все завершенные задачи из checkpoint
-            completed_tasks_in_checkpoint = [
-                task for task in self.checkpoint_manager.checkpoint_data.get("tasks", [])
-                if task.get("state") == "completed"
-            ]
-
-            # Создаем множество текстов завершенных задач для быстрого поиска
-            completed_task_texts = set()
-            for task in completed_tasks_in_checkpoint:
-                task_text = task.get("task_text", "")
-                if task_text:
-                    completed_task_texts.add(task_text)
-
-            # Фильтруем задачи
-            filtered_tasks = []
-            for task in tasks:
-                if task.text not in completed_task_texts:
-                    filtered_tasks.append(task)
-                else:
-                    logger.debug(f"Задача '{task.text}' уже выполнена в checkpoint, пропускаем")
-
-            filtered_count = len(tasks) - len(filtered_tasks)
-            if filtered_count > 0:
-                logger.info(f"Отфильтровано {filtered_count} уже выполненных задач из checkpoint")
-
-            return filtered_tasks
-
-        except Exception as e:
-            logger.error(f"Ошибка при фильтрации выполненных задач: {e}", exc_info=True)
-            return tasks  # Возвращаем исходный список в случае ошибки
 
     def _handle_no_tasks_scenario(self) -> bool:
         """
@@ -3921,7 +3061,7 @@ class CodeAgentServer:
             True если есть ожидающие задачи
         """
         pending_tasks = self.todo_manager.get_pending_tasks()
-        pending_tasks = self._filter_completed_tasks(pending_tasks)
+        pending_tasks = self.todo_checkpoint_synchronizer.filter_completed_tasks(pending_tasks)
         return len(pending_tasks) > 0
 
     async def run_iteration(self, iteration: int = 1):
@@ -5111,6 +4251,7 @@ def run_server():
 
     # Создаем и запускаем сервер
     server = CodeAgentServer()
+    setup_logging()
     # Для совместимости с main.py, вызываем start как обычный метод
     import asyncio
     asyncio.run(server.start())
