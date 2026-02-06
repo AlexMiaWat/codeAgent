@@ -201,6 +201,49 @@ def mock_todo_manager():
     return mock
 
 
+def _path_has_any(path_str: str, keywords) -> bool:
+    path_str = path_str.lower()
+    return any(key in path_str for key in keywords)
+
+
+def pytest_collection_modifyitems(config, items):
+    """Auto-mark and skip LLM/integration-heavy tests in CI."""
+    in_ci = bool(os.getenv("CI") or os.getenv("GITHUB_ACTIONS"))
+    allow_llm = os.getenv("RUN_LLM_TESTS") == "1"
+    allow_integration = os.getenv("RUN_INTEGRATION_TESTS") == "1"
+
+    llm_keywords = (
+        "test_llm_",
+        "openrouter",
+        "groq",
+        "gemini",
+        "mistral",
+        "crewai",
+        "model_discovery",
+        "billing_error",
+    )
+    integration_keywords = (
+        "integration",
+        "hybrid_",
+        "real_",
+        "cursor_",
+        "docker",
+    )
+
+    for item in items:
+        path = str(item.fspath)
+
+        if _path_has_any(path, llm_keywords):
+            item.add_marker(pytest.mark.llm)
+            if in_ci and not allow_llm:
+                item.add_marker(pytest.mark.skip(reason="LLM tests are disabled in CI."))
+
+        if _path_has_any(path, integration_keywords):
+            item.add_marker(pytest.mark.integration)
+            if in_ci and not allow_integration:
+                item.add_marker(pytest.mark.skip(reason="Integration tests are disabled in CI."))
+
+
 @pytest.fixture
 def sample_todo_content():
     """Return sample TODO content for testing."""

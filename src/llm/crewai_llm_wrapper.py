@@ -7,9 +7,8 @@
 
 import logging
 from typing import Optional, Any, Dict, List
-from crewai.llm import LLM
 
-from .llm_manager import LLMManager, ModelConfig
+from .llm_manager import LLMManager
 
 logger = logging.getLogger(__name__)
 

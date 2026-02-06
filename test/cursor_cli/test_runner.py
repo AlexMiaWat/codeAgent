@@ -156,7 +156,7 @@ class CursorCLITester:
 
         with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
 
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H1", "location": "test_runner.py:run_command_entry", "message": "Entering run_command", "data": {"model": model, "prompt": prompt, "flags": flags, "timeout": timeout}, "timestamp": time.time()}) + "\n"))
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H1", "location": "test_runner.py:run_command_entry", "message": "Entering run_command", "data": {"model": model, "prompt": prompt, "flags": flags, "timeout": timeout}, "timestamp": time.time()}) + "\n")
 
         # #endregion
 
@@ -236,7 +236,7 @@ class CursorCLITester:
 
         with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
 
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H1", "location": "test_runner.py:run_command_before_exec", "message": "Executing command", "data": {"cmd_parts": cmd_parts, "bash_cmd": bash_cmd}, "timestamp": time.time()}) + "\n"))
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H1", "location": "test_runner.py:run_command_before_exec", "message": "Executing command", "data": {"cmd_parts": cmd_parts, "bash_cmd": bash_cmd}, "timestamp": time.time()}) + "\n")
 
         # #endregion
 
@@ -292,7 +292,7 @@ class CursorCLITester:
 
             with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
 
-                f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H3", "location": "test_runner.py:run_command_exception", "message": "Exception during command execution", "data": {"error": str(e)}, "timestamp": time.time()}) + "\n"))
+                f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H3", "location": "test_runner.py:run_command_exception", "message": "Exception during command execution", "data": {"error": str(e)}, "timestamp": time.time()}) + "\n")
 
             # #endregion
 
@@ -302,7 +302,7 @@ class CursorCLITester:
 
         with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
 
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H1", "location": "test_runner.py:run_command_exit", "message": "Exiting run_command", "data": {"result": result}, "timestamp": time.time()}) + "\n"))
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H1", "location": "test_runner.py:run_command_exit", "message": "Exiting run_command", "data": {"result": result}, "timestamp": time.time()}) + "\n")
 
         # #endregion
 
@@ -328,7 +328,7 @@ class CursorCLITester:
 
         with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
 
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H2", "location": "test_runner.py:test_all_models_entry", "message": "Entering test_all_models", "data": {"prompt_type": prompt_type, "prompt": prompt, "flags": flags}, "timestamp": time.time()}) + "\n"))
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H2", "location": "test_runner.py:test_all_models_entry", "message": "Entering test_all_models", "data": {"prompt_type": prompt_type, "prompt": prompt, "flags": flags}, "timestamp": time.time()}) + "\n")
 
         # #endregion
 
@@ -366,7 +366,7 @@ class CursorCLITester:
 
         with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
 
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H2", "location": "test_runner.py:test_all_models_loop", "message": "Model test iteration complete", "data": {"model": model, "result_summary": status}, "timestamp": time.time()}) + "\n"))
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H2", "location": "test_runner.py:test_all_models_loop", "message": "Model test iteration complete", "data": {"model": model, "result_summary": status}, "timestamp": time.time()}) + "\n")
 
             # #endregion
 
@@ -382,7 +382,7 @@ class CursorCLITester:
 
         with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
 
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H2", "location": "test_runner.py:test_all_models_exit", "message": "Exiting test_all_models", "data": {"num_results": len(results)}, "timestamp": time.time()}) + "\n"))
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H2", "location": "test_runner.py:test_all_models_exit", "message": "Exiting test_all_models", "data": {"num_results": len(results)}, "timestamp": time.time()}) + "\n")
 
         # #endregion
 
@@ -406,7 +406,7 @@ class CursorCLITester:
 
         with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
 
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H2", "location": "test_runner.py:test_flag_combinations_entry", "message": "Entering test_flag_combinations", "data": {"model": model, "prompt": prompt}, "timestamp": time.time()}) + "\n"))
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H2", "location": "test_runner.py:test_flag_combinations_entry", "message": "Entering test_flag_combinations", "data": {"model": model, "prompt": prompt}, "timestamp": time.time()}) + "\n")
 
         # #endregion
 
@@ -438,7 +438,7 @@ class CursorCLITester:
 
         with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
 
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H2", "location": "test_runner.py:test_flag_combinations_loop", "message": "Flag combination test iteration complete", "data": {"flags": flags_str, "result_summary": status}, "timestamp": time.time()}) + "\n"))
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H2", "location": "test_runner.py:test_flag_combinations_loop", "message": "Flag combination test iteration complete", "data": {"flags": flags_str, "result_summary": status}, "timestamp": time.time()}) + "\n")
 
             # #endregion
 
@@ -452,7 +452,7 @@ class CursorCLITester:
 
         with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
 
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H2", "location": "test_runner.py:test_flag_combinations_exit", "message": "Exiting test_flag_combinations", "data": {"num_results": len(results)}, "timestamp": time.time()}) + "\n"))
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H2", "location": "test_runner.py:test_flag_combinations_exit", "message": "Exiting test_flag_combinations", "data": {"num_results": len(results)}, "timestamp": time.time()}) + "\n")
 
         # #endregion
 
@@ -468,7 +468,7 @@ class CursorCLITester:
 
         with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
 
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H3", "location": "test_runner.py:save_results_entry", "message": "Entering save_results", "data": {"filename": filename, "num_results": len(results) if results else 0}, "timestamp": time.time()}) + "\n"))
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H3", "location": "test_runner.py:save_results_entry", "message": "Entering save_results", "data": {"filename": filename, "num_results": len(results) if results else 0}, "timestamp": time.time()}) + "\n")
 
         # #endregion
 
@@ -478,7 +478,7 @@ class CursorCLITester:
 
             with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
 
-                f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H3", "location": "test_runner.py:save_results_no_results", "message": "No results to save", "data": {"filename": filename}, "timestamp": time.time()}) + "\n"))
+                f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H3", "location": "test_runner.py:save_results_no_results", "message": "No results to save", "data": {"filename": filename}, "timestamp": time.time()}) + "\n")
 
             # #endregion
 
@@ -508,90 +508,58 @@ class CursorCLITester:
 
         with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
 
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H3", "location": "test_runner.py:save_results_exit", "message": "Exiting save_results", "data": {"filepath": str(filepath)}, "timestamp": time.time()}) + "\n"))
-
-        # #endregion
-
-    
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H3", "location": "test_runner.py:save_results_exit", "message": "Exiting save_results", "data": {"filepath": str(filepath)}, "timestamp": time.time()}) + "\n")
 
     def generate_summary(self, all_results: Dict[str, List[Dict]]) -> Dict:
-
         """Сгенерировать сводку результатов"""
-
         # #region agent log
-
         with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
-
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H3", "location": "test_runner.py:generate_summary_entry", "message": "Entering generate_summary", "data": {"num_result_categories": len(all_results)}, "timestamp": time.time()}) + "\n"))
-
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H3", "location": "test_runner.py:generate_summary_entry", "message": "Entering generate_summary", "data": {"num_result_categories": len(all_results)}, "timestamp": time.time()}) + "\n")
         # #endregion
 
         summary = {
-
             "timestamp": datetime.now().isoformat(),
-
             "total_tests": sum(len(r) for r in all_results.values()),
-
             "successful": 0,
-
-        
+            "failed": 0,
+            "billing_errors": 0,
+            "timeouts": 0,
+            "working_models": [],
+            "recommendations": []
+        }
 
         # Анализ результатов
-
         for category, results in all_results.items():
-
             for result in results:
-
                 if result["success"]:
-
                     summary["successful"] += 1
-
                     if category == "models" and result["model"] not in summary["working_models"]:
-
                         summary["working_models"].append(result["model"])
-
                 else:
-
                     summary["failed"] += 1
 
-                
-
                 if result["billing_error"]:
-
                     summary["billing_errors"] += 1
 
-                
-
                 if result["timeout"]:
-
                     summary["timeouts"] += 1
 
-        
-
         # Рекомендации
-
         if summary["billing_errors"] > 0:
-
             summary["recommendations"].append("Использовать дешевые модели (claude-haiku, gpt-4o-mini)")
 
-        
-
         if summary["timeouts"] > 0:
-
             summary["recommendations"].append("Увеличить таймаут или проверить контейнер")
 
-        
-
         if summary["working_models"]:
-
             summary["recommendations"].append(f"Рекомендуемые модели: {', '.join(summary['working_models'][:3])}")
 
-        
+        # #region agent log
+        with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H3", "location": "test_runner.py:generate_summary_exit", "message": "Exiting generate_summary", "data": {"summary": summary}, "timestamp": time.time()}) + "\n")
+        # #endregion
 
         return summary
-
-    
-
     def run_full_test_suite(self):
 
         """Запустить полный набор тестов"""
@@ -608,7 +576,7 @@ class CursorCLITester:
 
         with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
 
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H2", "location": "test_runner.py:run_full_test_suite_entry", "message": "Entering run_full_test_suite", "timestamp": time.time()}) + "\n"))
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H2", "location": "test_runner.py:run_full_test_suite_entry", "message": "Entering run_full_test_suite", "timestamp": time.time()}) + "\n")
 
         # #endregion
 
@@ -662,7 +630,7 @@ class CursorCLITester:
 
         with open("d:/Space/codeAgent/.cursor/debug.log", "a", encoding="utf-8") as f:
 
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H3", "location": "test_runner.py:generate_summary_exit", "message": "Exiting generate_summary", "data": {"summary": summary}, "timestamp": time.time()}) + "\n"))
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run4", "hypothesisId": "H3", "location": "test_runner.py:generate_summary_exit", "message": "Exiting generate_summary", "data": {"summary": summary}, "timestamp": time.time()}) + "\n")
 
         # #endregion
 
@@ -693,4 +661,3 @@ if __name__ == "__main__":
     tester = CursorCLITester()
 
     tester.run_full_test_suite()
-

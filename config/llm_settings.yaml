@@ -31,7 +31,7 @@ llm:
     working_count: 1
     fastest_model: arcee-ai/trinity-large-preview:free
 providers:
-  google:
+  google_disabled:
     models:
       google:
       - context_window: 1000000

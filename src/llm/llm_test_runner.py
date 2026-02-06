@@ -10,7 +10,6 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
-import yaml
 
 from .llm_manager import LLMManager, ModelConfig, ModelResponse
 

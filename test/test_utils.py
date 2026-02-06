@@ -10,6 +10,18 @@ from dotenv import load_dotenv
 # Загружаем переменные окружения
 load_dotenv(override=True)
 
+def _normalize_project_dir(path_str: str) -> str:
+    if not path_str:
+        return path_str
+    if os.name != "nt" and ":" in path_str and "\\" in path_str:
+        return (
+            os.getenv("PROJECT_DIR_CONTAINER")
+            or os.getenv("PROJECT_DIR_DOCKER")
+            or os.getenv("PROJECT_DIR_POSIX")
+            or "/workspace"
+        )
+    return path_str
+
 
 def get_test_config_values() -> Dict[str, Any]:
     """
@@ -26,6 +38,7 @@ def get_test_config_values() -> Dict[str, Any]:
     if not project_dir:
         # По умолчанию используем текущую директорию для тестов
         project_dir = str(Path(__file__).parent.parent)
+    project_dir = _normalize_project_dir(project_dir)
 
     # Настройки CLI
     cli_path = os.getenv("CURSOR_CLI_PATH", "docker-compose-agent")

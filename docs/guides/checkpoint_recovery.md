@@ -89,8 +89,8 @@ Code Agent оснащен надежной системой контрольны
 ### Файлы checkpoint
 
 ```
-.codeagent_checkpoint.json         # Основной файл контрольных точек
-.codeagent_checkpoint.json.backup  # Резервная копия
+data/.codeagent_checkpoint.json         # Основной файл контрольных точек
+data/.codeagent_checkpoint.json.backup  # Резервная копия
 ```
 
 ### Структура данных checkpoint
@@ -156,13 +156,13 @@ server:
   checkpoint:
     # Включить систему checkpoint
     enabled: true
-    
+
     # Файл для хранения контрольных точек
-    checkpoint_file: ".codeagent_checkpoint.json"
-    
+    checkpoint_file: "data/.codeagent_checkpoint.json"
+
     # Максимальное количество попыток выполнения задачи
     max_task_attempts: 3
-    
+
     # Количество завершенных задач для хранения в checkpoint
     keep_completed_tasks: 100
 ```
@@ -173,7 +173,7 @@ server:
 from src.checkpoint_manager import CheckpointManager
 
 # Создание менеджера
-checkpoint = CheckpointManager(project_dir, checkpoint_file=".checkpoint.json")
+checkpoint = CheckpointManager(project_dir, checkpoint_file="data/.checkpoint.json")
 
 # Отметка запуска сервера
 checkpoint.mark_server_start(session_id="session_001")
@@ -337,8 +337,8 @@ failed = checkpoint.get_failed_tasks()
 
 ```bash
 # Удалить checkpoint файлы
-rm .codeagent_checkpoint.json
-rm .codeagent_checkpoint.json.backup
+rm data/.codeagent_checkpoint.json
+rm data/.codeagent_checkpoint.json.backup
 ```
 
 При следующем запуске будет создан новый checkpoint.
@@ -426,6 +426,6 @@ pytest test/test_checkpoint_recovery.py::test_crash_recovery -v
 
 ## 📚 Смотрите также
 
-- **[Система логирования](../core/logging_system.md)** - Подробная информация о логировании операций сервера
-- **[Автоматическая генерация TODO](../features/auto_todo_generation.md)** - Как система создает новые задачи для развития проекта
+- **[Система логирования](../core/logging.md)** - Подробная информация о логировании операций сервера
+- **[Автоматическая генерация TODO](../archive/auto_todo_generation.md)** - Как система создает новые задачи для развития проекта
 - **[Мониторинг сервера](SERVER_MONITORING_GUIDE.md)** - Руководство по мониторингу работы сервера

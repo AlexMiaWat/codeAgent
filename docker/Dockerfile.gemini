@@ -1,6 +1,6 @@
 # Dockerfile для установки Gemini CLI
 # Основан на Python slim-buster для эффективности
-FROM python:3.14-slim
+FROM python:3.13.2-slim
 
 # Установка необходимых системных зависимостей
 # git, openssh-client для работы с репозиториями

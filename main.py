@@ -26,6 +26,45 @@ from pathlib import Path
 from src.server import CodeAgentServer, _setup_logging, ServerReloadException
 
 
+def is_our_server_process(pid: int) -> bool:
+    """
+    Проверяет, является ли процесс с заданным PID нашим сервером.
+    Определяется по командной строке (содержит main.py или server.py).
+    """
+    try:
+        if sys.platform == 'win32':
+            result = subprocess.run(
+                ['wmic', 'process', 'where', f'ProcessId={pid}', 'get', 'CommandLine', '/format:csv'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                for line in lines:
+                    if f',{pid},' in line:
+                        cmdline = line.split(',', 3)[-1] if ',' in line else ''
+                        if 'main.py' in cmdline or 'server.py' in cmdline:
+                            # Исключаем monitor_server.py
+                            if 'monitor_server.py' not in cmdline:
+                                return True
+        else:
+            result = subprocess.run(
+                ['ps', '-p', str(pid), '-o', 'command='],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                cmdline = result.stdout.strip()
+                if 'main.py' in cmdline or 'server.py' in cmdline:
+                    if 'monitor_server.py' not in cmdline:
+                        return True
+    except Exception:
+        pass
+    return False
+
+
 def setup_asyncio_exception_handling():
     """Настройка обработки необработанных исключений в asyncio задачах"""
     def handle_exception(loop, context):
@@ -73,20 +112,26 @@ def stop_server_processes():
                             parts = line.split(',')
                             for part in parts:
                                 if part.strip().isdigit():
-                                    pids.append(int(part.strip()))
-                    
+                                    pid = int(part.strip())
+                                    # Дополнительная проверка, что процесс действительно наш сервер
+                                    if is_our_server_process(pid):
+                                        pids.append(pid)
+                                    else:
+                                        print(f"Предупреждение: процесс {pid} не является нашим сервером, пропускаем")
+
                     # Останавливаем найденные процессы
                     if pids:
                         for pid in pids:
                             try:
-                                subprocess.run(['taskkill', '/F', '/PID', str(pid)], 
+                                subprocess.run(['taskkill', '/F', '/PID', str(pid)],
                                              capture_output=True, timeout=3)
                             except Exception:
                                 pass
                         print(f"Остановлено {len(pids)} процессов сервера")
                         return True
             except (subprocess.TimeoutExpired, FileNotFoundError):
-                # Fallback: используем taskkill по имени процесса
+                # Fallback: используем taskkill по имени процесса (может затронуть другие процессы)
+                print("Предупреждение: используется fallback метод остановки процессов (может завершить нецелевые процессы)")
                 try:
                     subprocess.run(['taskkill', '/F', '/FI', 'WINDOWTITLE eq *python*main.py*'],
                                  capture_output=True, timeout=5)
@@ -95,21 +140,70 @@ def stop_server_processes():
                 except Exception:
                     pass
         else:
-            # Unix/Linux/Mac: используем pkill
+            # Unix/Linux/Mac: используем pgrep для поиска процессов, затем проверяем и убиваем только наши
             try:
-                # Останавливаем процессы с main.py
-                subprocess.run(['pkill', '-f', 'python.*main.py'], 
-                             capture_output=True, timeout=5)
-                # Останавливаем процессы с server.py (но не monitor_server.py)
-                subprocess.run(['pkill', '-f', 'python.*server.py'], 
-                             capture_output=True, timeout=5)
-                print("Процессы сервера остановлены")
-                return True
-            except Exception:
-                pass
+                import signal
+                # Ищем процессы с main.py
+                result = subprocess.run(['pgrep', '-f', 'python.*main.py'],
+                                        capture_output=True, text=True, timeout=5)
+                pids = []
+                if result.returncode == 0 and result.stdout.strip():
+                    for pid_str in result.stdout.strip().split('\n'):
+                        try:
+                            pid = int(pid_str)
+                            if is_our_server_process(pid):
+                                pids.append(pid)
+                            else:
+                                print(f"Предупреждение: процесс {pid} не является нашим сервером, пропускаем")
+                        except ValueError:
+                            continue
+                # Ищем процессы с server.py (исключая monitor_server.py)
+                result2 = subprocess.run(['pgrep', '-f', 'python.*server.py'],
+                                        capture_output=True, text=True, timeout=5)
+                if result2.returncode == 0 and result2.stdout.strip():
+                    for pid_str in result2.stdout.strip().split('\n'):
+                        try:
+                            pid = int(pid_str)
+                            # Дополнительно проверяем, что это не monitor_server.py
+                            if is_our_server_process(pid):
+                                pids.append(pid)
+                            else:
+                                print(f"Предупреждение: процесс {pid} не является нашим сервером, пропускаем")
+                        except ValueError:
+                            continue
+                # Удаляем дубликаты
+                pids = list(set(pids))
+                if pids:
+                    for pid in pids:
+                        try:
+                            os.kill(pid, signal.SIGTERM)
+                            print(f"Остановлен наш процесс {pid}")
+                        except ProcessLookupError:
+                            pass  # Процесс уже завершен
+                        except Exception:
+                            pass
+                    # Даем время на завершение
+                    time.sleep(2)
+                    print(f"Остановлено {len(pids)} процессов сервера")
+                    return True
+                else:
+                    print("Не найдено процессов нашего сервера")
+                    return False
+            except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+                # Fallback на pkill с предупреждением
+                print("Предупреждение: pgrep недоступен, используется pkill (может завершить нецелевые процессы)")
+                try:
+                    subprocess.run(['pkill', '-f', 'python.*main.py'],
+                                 capture_output=True, timeout=5)
+                    subprocess.run(['pkill', '-f', 'python.*server.py'],
+                                 capture_output=True, timeout=5)
+                    print("Процессы сервера остановлены (fallback)")
+                    return True
+                except Exception:
+                    pass
     except Exception as e:
         print(f"Ошибка при остановке процессов сервера: {e}")
-    
+
     return False
 
 
@@ -196,22 +290,35 @@ def check_and_free_port(port: int) -> bool:
                     timeout=5
                 )
                 if result.returncode == 0:
+                    target_pids = []
                     for line in result.stdout.split('\n'):
                         if f':{port}' in line and 'LISTENING' in line:
                             parts = line.split()
                             if len(parts) >= 5:
-                                pid = parts[-1]
+                                pid_str = parts[-1]
                                 try:
-                                    subprocess.run(
-                                        ['taskkill', '/F', '/PID', pid],
-                                        capture_output=True,
-                                        timeout=3
-                                    )
-                                    print(f"Завершен процесс {pid} на порту {port}")
-                                    time.sleep(2)
-                                    return True
-                                except Exception:
-                                    pass
+                                    pid = int(pid_str)
+                                    if is_our_server_process(pid):
+                                        target_pids.append(pid)
+                                        print(f"Найден наш процесс {pid} на порту {port}")
+                                    else:
+                                        print(f"Предупреждение: процесс {pid} не является нашим сервером, пропускаем")
+                                except ValueError:
+                                    continue
+                    # Останавливаем только наши процессы
+                    if target_pids:
+                        for pid in target_pids:
+                            try:
+                                subprocess.run(
+                                    ['taskkill', '/F', '/PID', str(pid)],
+                                    capture_output=True,
+                                    timeout=3
+                                )
+                                print(f"Завершен наш процесс {pid} на порту {port}")
+                            except Exception:
+                                pass
+                        time.sleep(2)
+                        return True
             else:
                 # Linux/Mac: используем lsof
                 try:
@@ -222,22 +329,35 @@ def check_and_free_port(port: int) -> bool:
                         timeout=5
                     )
                     if result.returncode == 0 and result.stdout.strip():
-                        pids = result.stdout.strip().split('\n')
-                        for pid in pids:
+                        pid_strs = result.stdout.strip().split('\n')
+                        target_pids = []
+                        for pid_str in pid_strs:
                             try:
-                                subprocess.run(
-                                    ['kill', '-9', pid],
-                                    capture_output=True,
-                                    timeout=3
-                                )
-                                print(f"Завершен процесс {pid} на порту {port}")
-                            except Exception:
-                                pass
-                        time.sleep(2)
-                        return True
+                                pid = int(pid_str)
+                                if is_our_server_process(pid):
+                                    target_pids.append(pid)
+                                    print(f"Найден наш процесс {pid} на порту {port}")
+                                else:
+                                    print(f"Предупреждение: процесс {pid} не является нашим сервером, пропускаем")
+                            except ValueError:
+                                continue
+                        if target_pids:
+                            for pid in target_pids:
+                                try:
+                                    subprocess.run(
+                                        ['kill', '-9', str(pid)],
+                                        capture_output=True,
+                                        timeout=3
+                                    )
+                                    print(f"Завершен наш процесс {pid} на порту {port}")
+                                except Exception:
+                                    pass
+                            time.sleep(2)
+                            return True
                 except FileNotFoundError:
-                    # Пробуем fuser
+                    # Пробуем fuser (может завершить нецелевые процессы)
                     try:
+                        print("Предупреждение: используется fuser, который может завершить нецелевые процессы")
                         subprocess.run(
                             ['fuser', '-k', f'{port}/tcp'],
                             capture_output=True,

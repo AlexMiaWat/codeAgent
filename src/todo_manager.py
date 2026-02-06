@@ -2,8 +2,10 @@
 Модуль управления todo-листом проекта
 """
 
+from __future__ import annotations
+
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import yaml
 import re
 import logging
@@ -11,6 +13,9 @@ import os
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from src.llm.llm_manager import LLMManager
 
 
 class TaskType(Enum):
@@ -250,7 +255,7 @@ class TodoManager:
                             f"Файл todo слишком большой ({file_size} байт, максимум {self.max_file_size}): {todo_file}"
                         )
                         continue
-                except OSError as e:
+                except OSError:
                     logger.error(f"Ошибка проверки размера файла todo: {todo_file}", exc_info=True)
                     continue
 
@@ -555,7 +560,7 @@ class TodoManager:
             logger.warning(f"Ошибка при дедупликации группы: {e}")
             return group
 
-    async def _deduplicate_small_group(self, llm_manager: 'LLMManager', group: List[TodoItem]) -> List[TodoItem]:
+    async def _deduplicate_small_group(self, llm_manager: LLMManager, group: List[TodoItem]) -> List[TodoItem]:
         """Дедупликация небольшой группы задач"""
         unique_items = []
         processed_indices = set()
@@ -563,8 +568,6 @@ class TodoManager:
         for i, item1 in enumerate(group):
             if i in processed_indices:
                 continue
-
-            is_duplicate = False
 
             # Сравниваем только со следующими задачами (оптимизация)
             for j in range(i + 1, len(group)):
@@ -580,7 +583,7 @@ class TodoManager:
 
         return unique_items
 
-    async def _are_tasks_similar(self, llm_manager: 'LLMManager', task1: TodoItem, task2: TodoItem) -> bool:
+    async def _are_tasks_similar(self, llm_manager: LLMManager, task1: TodoItem, task2: TodoItem) -> bool:
         """Проверяет семантическую похожесть двух задач с использованием LLM"""
 
         prompt = f"""Проанализируй две задачи и определи, являются ли они семантически одинаковыми (дубликатами).
@@ -644,7 +647,7 @@ class TodoManager:
             # Парсим YAML
             try:
                 data = yaml.safe_load(content) or {}
-            except yaml.YAMLError as e:
+            except yaml.YAMLError:
                 logger.error(f"Ошибка парсинга YAML файла: {file_path}", exc_info=True)
                 return []
 
@@ -789,7 +792,7 @@ class TodoManager:
         """Загрузка todo из текстового файла"""
         try:
             content = self.todo_file.read_text(encoding='utf-8')
-        except UnicodeDecodeError as e:
+        except UnicodeDecodeError:
             logger.error(
                 f"Ошибка декодирования файла todo (не UTF-8): {self.todo_file}",
                 exc_info=True,
@@ -798,9 +801,9 @@ class TodoManager:
             # Пробуем другие кодировки
             try:
                 content = self.todo_file.read_text(encoding='cp1251')
-                logger.info(f"Файл успешно прочитан с кодировкой cp1251")
+                logger.info("Файл успешно прочитан с кодировкой cp1251")
             except Exception:
-                logger.error(f"Не удалось прочитать файл с альтернативными кодировками")
+                logger.error("Не удалось прочитать файл с альтернативными кодировками")
                 self.items = []
                 return
         except Exception as e:
@@ -847,7 +850,7 @@ class TodoManager:
         """Загрузка todo из Markdown файла с чекбоксами"""
         try:
             content = self.todo_file.read_text(encoding='utf-8')
-        except UnicodeDecodeError as e:
+        except UnicodeDecodeError:
             logger.error(
                 f"Ошибка декодирования Markdown файла todo (не UTF-8): {self.todo_file}",
                 exc_info=True,
@@ -855,9 +858,9 @@ class TodoManager:
             )
             try:
                 content = self.todo_file.read_text(encoding='cp1251')
-                logger.info(f"Markdown файл успешно прочитан с кодировкой cp1251")
+                logger.info("Markdown файл успешно прочитан с кодировкой cp1251")
             except Exception:
-                logger.error(f"Не удалось прочитать Markdown файл с альтернативными кодировками")
+                logger.error("Не удалось прочитать Markdown файл с альтернативными кодировками")
                 self.items = []
                 return
         except Exception as e:
@@ -921,7 +924,7 @@ class TodoManager:
         """Загрузка todo из YAML файла"""
         try:
             content = self.todo_file.read_text(encoding='utf-8')
-        except UnicodeDecodeError as e:
+        except UnicodeDecodeError:
             logger.error(
                 f"Ошибка декодирования YAML файла todo (не UTF-8): {self.todo_file}",
                 exc_info=True,
@@ -929,9 +932,9 @@ class TodoManager:
             )
             try:
                 content = self.todo_file.read_text(encoding='cp1251')
-                logger.info(f"YAML файл успешно прочитан с кодировкой cp1251")
+                logger.info("YAML файл успешно прочитан с кодировкой cp1251")
             except Exception:
-                logger.error(f"Не удалось прочитать YAML файл с альтернативными кодировками")
+                logger.error("Не удалось прочитать YAML файл с альтернативными кодировками")
                 self.items = []
                 return
         except Exception as e:
@@ -1029,7 +1032,7 @@ class TodoManager:
                             f"Файл todo слишком большой ({file_size} байт, максимум {self.max_file_size}): {todo_file}"
                         )
                         continue
-                except OSError as e:
+                except OSError:
                     logger.error(f"Ошибка проверки размера файла todo: {todo_file}", exc_info=True)
                     continue
 
@@ -1167,7 +1170,7 @@ class TodoManager:
         Сохраняет изменения статуса задач обратно в файл todo в соответствующем формате.
         """
         if not self.todo_file or not self.todo_file.exists():
-            logger.debug(f"Файл todo не найден, пропускаем сохранение")
+            logger.debug("Файл todo не найден, пропускаем сохранение")
             return
         
         # Проверка прав доступа на запись

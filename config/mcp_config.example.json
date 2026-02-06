@@ -1,0 +1,34 @@
+{
+  "mcpServers": {
+    "python-refactoring": {
+      "command": "uvx",
+      "args": ["mcp-python-refactoring"],
+      "description": "Python Refactoring Assistant (рекомендации по рефакторингу)"
+    },
+    "refactor-mcp": {
+      "command": "npx",
+      "args": ["@myuon/refactor-mcp"],
+      "description": "Refactor MCP (regex-поиск и замена)"
+    },
+    "python-analyzer": {
+      "command": "uvx",
+      "args": ["mcp-server-analyzer"],
+      "description": "Python Code Analyzer (линтер + dead code detection)"
+    },
+    "git": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-git"],
+      "description": "Git operations"
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-filesystem"],
+      "description": "Filesystem navigation"
+    },
+    "docker": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-docker"],
+      "description": "Docker container management"
+    }
+  }
+}

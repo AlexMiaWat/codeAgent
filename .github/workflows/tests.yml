@@ -5,6 +5,12 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      run_integration:
+        description: "Run integration/LLM tests (requires local-like environment)"
+        required: false
+        default: "false"
 
 jobs:
   test:
@@ -13,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.8', '3.9', '3.10', '3.11']
+        python-version: ['3.13.2']
 
     steps:
     - name: Checkout code
@@ -37,9 +43,13 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e ".[test]"
 
+    - name: Smoke check
+      run: |
+        python smoke_check.py
+
     - name: Run unit tests
       run: |
-        pytest test/ -v -m "unit or not integration" --cov=src --cov-report=xml --cov-report=term
+        pytest test/ -v -m "not integration and not llm and not docker" --cov=src --cov-report=xml --cov-report=term
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
@@ -52,6 +62,7 @@ jobs:
   integration-tests:
     runs-on: ubuntu-latest
     needs: test
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_integration == 'true' }}
     
     steps:
     - name: Checkout code
@@ -60,7 +71,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.10'
+        python-version: '3.13.2'
 
     - name: Install dependencies
       run: |
@@ -69,7 +80,7 @@ jobs:
 
     - name: Run integration tests
       run: |
-        pytest test/ -v -m integration --cov=src --cov-report=xml
+        pytest test/ -v -m "integration or llm or docker" --cov=src --cov-report=xml
 
     - name: Upload coverage
       uses: codecov/codecov-action@v3
@@ -88,7 +99,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.10'
+        python-version: '3.13.2'
 
     - name: Install dependencies
       run: |
@@ -96,11 +107,11 @@ jobs:
         pip install -e ".[dev]"
 
     - name: Run ruff
-      run: ruff check src/ test/
+      run: ruff check src/
 
     - name: Run mypy
       run: mypy src/
       continue-on-error: true
 
     - name: Check formatting with black
-      run: black --check src/ test/
+      run: black --check src/

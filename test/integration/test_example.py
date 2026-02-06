@@ -37,11 +37,11 @@ class TestTempProjectDir:
         assert temp_project_dir.exists()
         assert (temp_project_dir / "docs").exists()
         assert (temp_project_dir / "src").exists()
-        assert (temp_project_dir / "todo.txt").exists()
+        assert (temp_project_dir / "todo.md").exists()
     
     def test_temp_project_todo_content(self, temp_project_dir):
         """Test that temporary project has TODO content."""
-        todo_file = temp_project_dir / "todo.txt"
+        todo_file = temp_project_dir / "todo.md"
         content = todo_file.read_text()
         assert "Test task" in content
         assert "Another task" in content

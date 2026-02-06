@@ -16,6 +16,8 @@ services:
     volumes:
       # Монтируем целевую директорию проекта (путь берется из .env)
       - ${PROJECT_DIR}:/workspace
+      # Монтируем обновленный код агента для разработки/тестирования
+      - ../src/agents/gemini_agent/gemini_agent_cli.py:/usr/local/bin/gemini_agent_cli.py
       # Монтируем домашнюю диреторию для сохранения конфигурации (если Gemini CLI ее использует)
       - gemini-home:/root
       # Монтируем SSH-ключи для доступа к GitHub (если необходимы Git операции)
@@ -39,7 +41,7 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    restart: unless-stopped    
+    restart: unless-stopped
 
 volumes:
   gemini-home:

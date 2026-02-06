@@ -18,6 +18,5 @@
 - [Тестирование](testing/TESTING_GUIDE.md) — Как запускать и писать тесты.
 
 ## Планирование
-- [Roadmap 2026](../archive/implementation_roadmap.md) — Планы развития.
+- [Активные задачи (Todo)](planning/todo.md) — Текущие задачи, техдолг и планы.
 - [Сравнение CLI](core/cli_comparison.md) — Cursor vs Gemini.
-- [Технический долг](../archive/DEBT.md) — Что нужно исправить.

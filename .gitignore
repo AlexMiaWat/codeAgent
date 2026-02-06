@@ -134,12 +134,16 @@ log.txt
 codeAgentProjectStatus.md
 *ProjectStatus.md
 
+# Data directory
+data/
+
 # Checkpoint files (session state, should not be committed)
 .codeagent_checkpoint.json
 .codeagent_checkpoint.json.backup
 .codeagent_sessions.json
 .test_checkpoint.json
 .test_checkpoint.json.backup
+.codeagent_fallback_state.json
 
 # Backup files
 *.backup
@@ -265,8 +269,6 @@ package-lock.json
 *.mkv
 *.iso
 nul
-.codeagent_fallback_state.json
-.codeagent_fallback_state.json
 scripts/*.bat
 config/config.yaml
 gemini_env/*

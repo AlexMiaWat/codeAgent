@@ -10,6 +10,8 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 
+from .security_utils import SensitiveDataFilter
+
 # Определяем, нужно ли использовать эмодзи (отключаем на Windows из-за проблем с кодировкой cp1251)
 USE_EMOJI = platform.system() != 'Windows'
 
@@ -138,6 +140,11 @@ class TaskLogger:
         console_formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S')
         console_handler.setFormatter(console_formatter)
         self.logger.addHandler(console_handler)
+
+        sensitive_filter = SensitiveDataFilter()
+        self.logger.addFilter(sensitive_filter)
+        file_handler.addFilter(sensitive_filter)
+        console_handler.addFilter(sensitive_filter)
         
         # Счетчики для статистики
         self.instruction_count = 0
@@ -168,27 +175,12 @@ class TaskLogger:
                 for old_log in log_files[max_logs:]:
                     try:
                         old_log.unlink()
-                    except Exception as e:
+                    except Exception:
                         # Игнорируем ошибки удаления отдельных файлов
                         pass
-        except Exception as e:
+        except Exception:
             # Игнорируем ошибки очистки - это не критично
             pass
-    
-    def log_info(self, message: str):
-        """Логировать информационное сообщение"""
-        self.logger.info(Colors.colorize(f"ℹ️  {message}", Colors.BRIGHT_BLUE))
-
-    def log_warning(self, message: str):
-        """Логировать предупреждение"""
-        self.logger.warning(Colors.colorize(f"⚠️  {message}", Colors.BRIGHT_YELLOW))
-
-    def log_error(self, message: str, exception: Optional[Exception] = None):
-        """Логировать ошибку"""
-        self.logger.error(Colors.colorize(f"❌ {message}", Colors.BRIGHT_RED))
-        if exception:
-            self.logger.error(Colors.colorize(f"   Тип: {type(exception).__name__}", Colors.RED))
-            self.logger.error(Colors.colorize(f"   Детали: {str(exception)}", Colors.RED))
     
     def _log_header(self):
         """Записать заголовок лога"""
@@ -349,7 +341,7 @@ ID: {self.task_id}
                 if modified_files:
                     self.logger.info(Colors.colorize(f"   ✏️  Изменено файлов: {', '.join(modified_files[:3])}", Colors.YELLOW))
                 if tested:
-                    self.logger.info(Colors.colorize(f"   🧪 Выполнено тестирование", Colors.CYAN))
+                    self.logger.info(Colors.colorize("   🧪 Выполнено тестирование", Colors.CYAN))
             else:
                 # Для ошибок показываем больше информации
                 error_msg = response.get('error_message', 'Неизвестная ошибка')
@@ -426,7 +418,7 @@ ID: {self.task_id}
             self.logger.info(msg)
             self.logger.debug(f"Chat ID: {chat_id}")
         else:
-            msg = Colors.colorize(f"💬 Создан новый диалог", Colors.BRIGHT_CYAN)
+            msg = Colors.colorize("💬 Создан новый диалог", Colors.BRIGHT_CYAN)
             self.logger.info(msg)
             self.logger.debug("Chat ID не получен")
     
@@ -673,9 +665,9 @@ class ServerLogger:
                 for old_log in log_files[max_logs:]:
                     try:
                         old_log.unlink()
-                    except Exception as e:
+                    except Exception:
                         # Игнорируем ошибки удаления отдельных файлов
                         pass
-        except Exception as e:
+        except Exception:
             # Игнорируем ошибки очистки - это не критично
             pass

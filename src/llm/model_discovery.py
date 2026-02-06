@@ -8,7 +8,6 @@
 """
 
 import logging
-import json
 import os
 from pathlib import Path
 from typing import List, Dict, Optional, Any
@@ -16,7 +15,6 @@ from datetime import datetime
 
 import yaml
 import requests
-from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 load_dotenv(override=True)

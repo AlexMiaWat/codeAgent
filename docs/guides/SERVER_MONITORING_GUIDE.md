@@ -276,7 +276,7 @@ watch -n 5 python scripts/monitor_server.py
 
 #### Windows PowerShell:
 ```powershell
-while ($true) { 
+while ($true) {
     cls
     python scripts/monitor_server.py
     Start-Sleep -Seconds 5
@@ -289,7 +289,7 @@ while ($true) {
 
 Checkpoint файл содержит текущее состояние сервера:
 ```
-D:\Space\your-project\.codeagent_checkpoint.json
+D:\Space\your-project\data\.codeagent_checkpoint.json
 ```
 
 ### Структура checkpoint:
@@ -321,10 +321,10 @@ D:\Space\your-project\.codeagent_checkpoint.json
 
 ```bash
 # Красивый вывод JSON
-cat D:\Space\your-project\.codeagent_checkpoint.json | python -m json.tool
+cat D:\Space\your-project\data\.codeagent_checkpoint.json | python -m json.tool
 
 # Или через Python
-python -c "import json; print(json.dumps(json.load(open('path/to/your/project/.codeagent_checkpoint.json')), indent=2))"
+python -c "import json; print(json.dumps(json.load(open('path/to/your/project/data/.codeagent_checkpoint.json')), indent=2))"
 ```
 
 ## 🎯 Что показывают логи
@@ -506,7 +506,7 @@ scripts\watch_logs.bat
 
 1. Проверьте checkpoint:
    ```bash
-   cat D:\Space\your-project\.codeagent_checkpoint.json | python -m json.tool
+   cat D:\Space\your-project\data\.codeagent_checkpoint.json | python -m json.tool
    ```
 
 2. Проверьте, не превышен ли таймаут:
@@ -553,6 +553,6 @@ scripts\watch_logs.bat
 
 ---
 
-**Дата создания:** 2026-01-18  
-**Версия:** 1.0  
+**Дата создания:** 2026-01-18
+**Версия:** 1.0
 **Автор:** Code Agent Team

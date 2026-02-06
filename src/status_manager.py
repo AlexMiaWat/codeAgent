@@ -3,7 +3,7 @@
 """
 
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 import os
 import logging
@@ -161,7 +161,6 @@ class StatusManager:
             PermissionError: Если нет прав на запись файла
             OSError: При других ошибках записи
         """
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         message = f"**Новая задача:** {task_name}\n**ID:** {task_id}\n**Статус:** Начата"
 
         self.append_status(message, level=3)
@@ -179,7 +178,6 @@ class StatusManager:
             PermissionError: Если нет прав на запись файла
             OSError: При других ошибках записи
         """
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         message = f"**Задача:** {task_name}\n**Статус:** {status}"
 
         if details:
@@ -199,7 +197,6 @@ class StatusManager:
             PermissionError: Если нет прав на запись файла
             OSError: При других ошибках записи
         """
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         message = f"**Статус сервера:** {status}"
 
         if details:

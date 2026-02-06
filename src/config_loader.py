@@ -14,6 +14,13 @@ load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
 
+# Helper: detect Windows-style paths on non-Windows hosts (e.g., inside Docker)
+def _looks_like_windows_path(path_str: str) -> bool:
+    if len(path_str) >= 3 and path_str[1] == ":" and path_str[2] in ("\\", "/"):
+        return True
+    return ":" in path_str and "\\" in path_str
+
+
 # Импорт валидатора (после определения logger, чтобы избежать циклических импортов)
 try:
     from .config_validator import ConfigValidator, ConfigValidationError
@@ -180,10 +187,32 @@ class ConfigLoader:
         if project_dir is None:
             raise ValueError("project.base_dir не указан в конфигурации")
         
-        project_path = Path(project_dir)
+        project_dir_str = str(project_dir)
+
+        # Docker/Linux: if PROJECT_DIR is a Windows path, map to container path
+        if os.name != 'nt' and _looks_like_windows_path(project_dir_str):
+            container_override = (
+                os.getenv("PROJECT_DIR_CONTAINER")
+                or os.getenv("PROJECT_DIR_DOCKER")
+                or os.getenv("PROJECT_DIR_POSIX")
+                or "/workspace"
+            )
+            candidate = Path(container_override)
+            if candidate.exists():
+                logger.warning(
+                    "Detected Windows PROJECT_DIR on non-Windows host; using container path %s",
+                    candidate,
+                )
+                project_dir_str = str(candidate)
+            else:
+                logger.warning(
+                    "Detected Windows PROJECT_DIR on non-Windows host, but container path does not exist: %s",
+                    candidate,
+                )
+
+        project_path = Path(project_dir_str)
         
         # Проверка на path traversal в исходном пути
-        project_dir_str = str(project_dir)
         if '..' in project_dir_str and project_dir_str.count('..') > 3:
             raise ValueError(
                 f"Путь проекта содержит подозрительное количество '..': {project_dir}. "

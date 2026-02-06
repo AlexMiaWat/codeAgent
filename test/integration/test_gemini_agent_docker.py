@@ -10,7 +10,7 @@ import pytest
 import time
 
 # Импорт вспомогательных функций
-from .test_utils import get_project_dir
+from test.test_utils import get_project_dir
 
 # Определение имени контейнера и файла docker-compose
 GEMINI_CONTAINER_NAME = "gemini-agent"

@@ -9,8 +9,12 @@ crewai-tools>=0.1.0,<2.0.0
 pyyaml>=6.0,<7.0
 
 # Environment variables
-# Restricted to <1.2.0 for Python 3.8 compatibility
-python-dotenv>=1.0.0,<1.2.0
+# Pinned for stability (project uses Python 3.13.2+)
+python-dotenv>=1.0.0,<2.0.0
+
+# HTTP and OpenAI clients
+openai>=1.0.0,<2.0.0
+requests>=2.31.0,<3.0.0
 
 # Gemini API
 google-genai>=1.0.0,<2.0.0
@@ -24,7 +28,7 @@ mss>=9.0.1,<10.0.0
 pygetwindow>=0.0.9,<1.0.0
 
 # File system and reports
-# Restricted to <5.0.0 for Python 3.8 compatibility
+# Pinned for stability (project uses Python 3.13.2+)
 watchdog>=3.0.0,<5.0.0
 aiofiles>=23.2.0,<24.0.0
 
@@ -36,5 +40,5 @@ colorlog>=6.8.0,<7.0.0
 rich>=13.7.0,<14.0.0
 
 # HTTP Server
-# Restricted to <3.1.0 for Python 3.8 compatibility
+# Pinned for stability (project uses Python 3.13.2+)
 flask>=2.3.0,<3.1.0

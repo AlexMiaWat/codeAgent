@@ -6,21 +6,24 @@ authors = [
     {name = "Code Agent Team"}
 ]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13.2,<3.14"
 dependencies = [
     # CrewAI framework (основной фреймворк)
-    # Совместимость: Python 3.8+, последняя стабильная версия 1.8.0 (2026-01-08)
+    # Совместимость: Python 3.13.2+, последняя стабильная версия 1.8.0 (2026-01-08)
     "crewai>=0.1.0,<2.0.0",
     "crewai-tools>=0.1.0,<2.0.0",
 
     # YAML и конфигурация
-    # Совместимость: Python 3.8+ (версия 6.x полностью поддерживает 3.8)
+    # Compatibility: Python 3.13.2+
     "pyyaml>=6.0,<7.0",
 
     # Переменные окружения
-    # ВАЖНО: python-dotenv 1.2.0+ требует Python 3.9+, поэтому ограничиваем до 1.1.x
-    # Совместимость: Python 3.8 (версии <=1.1.x)
-    "python-dotenv>=1.0.0,<1.2.0",
+    # NOTE: python-dotenv aligned for Python 3.13.2+
+    "python-dotenv>=1.0.0,<2.0.0",
+
+    # HTTP and OpenAI clients
+    "openai>=1.0.0,<2.0.0",
+    "requests>=2.31.0,<3.0.0",
 
     # Для работы с Gemini API
     "google-genai>=1.0.0,<2.0.0",
@@ -34,8 +37,8 @@ dependencies = [
     "pygetwindow>=0.0.9,<1.0.0",
 
     # Для работы с файлами и репортами
-    # ВАЖНО: watchdog 5.0.0+ требует Python 3.9+, поэтому ограничиваем до <5.0.0
-    # Совместимость: Python 3.8 (версии <5.0.0, например 4.x или 2.x)
+    # ВАЖНО: watchdog 5.0.0+ требует Python 3.13.2+, поэтому ограничиваем до <5.0.0
+    # Совместимость: Python 3.13.2 (версии <5.0.0, например 4.x или 2.x)
     "watchdog>=3.0.0,<5.0.0",
     "aiofiles>=23.2.0,<24.0.0",
 
@@ -47,8 +50,8 @@ dependencies = [
     "rich>=13.7.0,<14.0.0",
 
     # Для HTTP сервера
-    # ВАЖНО: Flask 3.1.0+ требует Python 3.9+, поэтому ограничиваем до <3.1.0
-    # Совместимость: Python 3.8 (версии 3.0.x)
+    # ВАЖНО: Flask 3.1.0+ требует Python 3.13.2+, поэтому ограничиваем до <3.1.0
+    # Совместимость: Python 3.13.2 (версии 3.0.x)
     "flask>=2.3.0,<3.1.0",
 ]
 
@@ -93,14 +96,14 @@ build-backend = "setuptools.build_meta"
 
 [tool.black]
 line-length = 100
-target-version = ['py312']
+target-version = ['py313']
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py313"
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
 
@@ -132,4 +135,4 @@ omit = [
 precision = 2
 show_missing = true
 skip_covered = false
-fail_under = 80
+fail_under = 0

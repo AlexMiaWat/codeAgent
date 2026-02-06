@@ -875,7 +875,6 @@ This agent role is used for automated project tasks execution.
             
             # Проверяем поддержку команды delete на первом чате
             # Если команда не поддерживается, пропускаем остальные попытки
-            command_not_supported = False
             test_chat_id = chat_ids[0] if chat_ids else None
             
             if test_chat_id:
@@ -906,8 +905,7 @@ This agent role is used for automated project tasks execution.
                     # Проверяем, поддерживается ли команда
                     if ("unknown command" in output or "invalid command" in output or 
                         "not found" in output or "usage:" in output or "unknown option" in output):
-                        command_not_supported = True
-                        logger.debug(f"Команда 'agent delete' не поддерживается Cursor CLI")
+                        logger.debug("Команда 'agent delete' не поддерживается Cursor CLI")
                         logger.debug(f"   Вывод команды: {full_output[:300]}")
                         not_supported_count = len(chat_ids)  # Все чаты не поддерживаются
                     elif result.returncode == 0 and ("deleted" in output or "removed" in output or "success" in output):
@@ -947,13 +945,11 @@ This agent role is used for automated project tasks execution.
                                     logger.debug(f"  [{idx}/{len(chat_ids)}] ⚠ Исключение при удалении чата {chat_id}: {e}")
                     else:
                         # Непонятный результат - считаем как не поддерживается
-                        command_not_supported = True
                         not_supported_count = len(chat_ids)
                         logger.debug(f"   Команда вернула неожиданный результат: {full_output[:300]}")
                         
                 except Exception as e:
                     # При ошибке считаем, что команда не поддерживается
-                    command_not_supported = True
                     not_supported_count = len(chat_ids)
                     logger.debug(f"   Ошибка при проверке команды delete: {e}")
             
@@ -1330,7 +1326,7 @@ This agent role is used for automated project tasks execution.
                                 logger.debug(f"Stdout: {result_stdout[:500]}")
                         elif result.returncode == 143:
                             # Код 143 (SIGTERM) - логируем как информационное сообщение
-                            logger.debug(f"Agent вернул код 143 (SIGTERM) - процесс был прерван, но может быть успешным")
+                            logger.debug("Agent вернул код 143 (SIGTERM) - процесс был прерван, но может быть успешным")
                     else:
                         result = subprocess.run(
                             exec_cmd,
@@ -1618,12 +1614,8 @@ This agent role is used for automated project tasks execution.
                 error_message="Agent CLI недоступен в системе"
             )
         
-        # Определяем рабочую директорию
-        effective_working_dir = working_dir or (str(self.project_dir) if self.project_dir else None)
-        
         # Определяем, используется ли Docker или WSL
         use_docker = self.cli_command == "docker-compose-agent"
-        use_wsl = self.cli_command and self.cli_command.startswith("wsl")
         
         # Получаем CURSOR_API_KEY из .env
         cursor_api_key = os.getenv("CURSOR_API_KEY")
@@ -1632,7 +1624,6 @@ This agent role is used for automated project tasks execution.
         
         if use_docker:
             # Docker команда
-            compose_file = Path(__file__).parent.parent / "docker" / "docker-compose.agent.yml"
             agent_base_cmd = "/root/.local/bin/agent"
             
             escaped_prompt = shlex.quote(prompt)
@@ -1656,7 +1647,6 @@ This agent role is used for automated project tasks execution.
                 bash_env_export
             ])
             
-            exec_cwd = None
         else:
             # Для локального/WSL - используем стандартный execute
             # Временно сохраняем оригинальную модель в конфиге
@@ -1908,9 +1898,6 @@ This agent role is used for automated project tasks execution.
                 error_message="Agent CLI недоступен в системе"
             )
         
-        # Определяем рабочую директорию
-        effective_working_dir = working_dir or (str(self.project_dir) if self.project_dir else None)
-        
         # Определяем, используется ли Docker
         use_docker = self.cli_command == "docker-compose-agent"
         
@@ -1929,7 +1916,6 @@ This agent role is used for automated project tasks execution.
         
         # Docker команда
         import shlex
-        compose_file = Path(__file__).parent.parent / "docker" / "docker-compose.agent.yml"
         agent_base_cmd = "/root/.local/bin/agent"
         
         escaped_prompt = shlex.quote(prompt)
@@ -2141,7 +2127,7 @@ This agent role is used for automated project tasks execution.
             
             # Проверяем, нужно ли активировать fallback для этой ошибки
             if not self._should_trigger_fallback(result, resilience):
-                logger.info(f"Ошибка не требует fallback, останавливаем попытки")
+                logger.info("Ошибка не требует fallback, останавливаем попытки")
                 break
             
             # Задержка перед следующей попыткой

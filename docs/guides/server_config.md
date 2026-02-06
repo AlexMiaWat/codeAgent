@@ -80,7 +80,7 @@ server:
     enabled: true                     # Включить автоматическую генерацию
     max_generations_per_session: 5    # Максимум генераций за сессию
     output_dir: "todo"                # Директория для сохранения
-    session_tracker_file: ".codeagent_sessions.json"
+    session_tracker_file: "data/.codeagent_sessions.json"
 ```
 
 **Описание:** Настройки автоматического создания новых задач при пустом списке.
@@ -92,7 +92,7 @@ server:
 server:
   checkpoint:
     enabled: true                     # Включить систему checkpoint
-    checkpoint_file: ".codeagent_checkpoint.json"
+    checkpoint_file: "data/.codeagent_checkpoint.json"
     max_task_attempts: 3              # Максимум попыток выполнения задачи
     keep_completed_tasks: 100         # Хранить завершенных задач
 ```

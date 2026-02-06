@@ -15,7 +15,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from test.test_real_server_integration import ServerTester
+from test.e2e.test_real_server_integration import ServerTester
 
 BASE_URL = "http://127.0.0.1:3456"
 

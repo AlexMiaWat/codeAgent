@@ -17,4 +17,4 @@ python -m src.server
 ## Проблемы?
 
 Проверьте логи: `logs/code_agent.log`  
-См. [../integration/full_access_setup.md](../integration/full_access_setup.md)
+См. [../archive/full_access_setup.md](../archive/full_access_setup.md)

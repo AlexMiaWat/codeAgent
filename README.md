@@ -35,7 +35,7 @@ Code Agent состоит из следующих компонентов:
 
 ### Требования
 
-- Python 3.8+
+- Python 3.13.2+
 - CrewAI framework
 
 ### Установка зависимостей
@@ -131,6 +131,8 @@ python -m src.server
 - `GET /` - Информация о сервере
 - `GET /status` - Детальный статус сервера и задач
 - `GET /health` - Health check
+- `POST /stop` - Остановка сервера (graceful shutdown)
+- `POST /restart` - Перезапуск сервера
 
 ### Структура проекта для работы агента
 

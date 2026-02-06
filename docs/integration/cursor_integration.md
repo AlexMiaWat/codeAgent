@@ -59,17 +59,17 @@ Code Agent работает как **координатор задач**, вза
 
 ### Способы взаимодействия (приоритет реализации)
 
-- [План реализации](../planning/implementation_roadmap.md)
-- [Резюме исправлений](../solutions/INTEGRATION_FIX_SUMMARY.md)
-- [Решения проблем](../solutions/CURSOR_INTEGRATION_SOLUTIONS.md)
-- [Быстрый старт: Гибридный интерфейс](../guides/QUICK_START_HYBRID.md)
+- [План реализации](../archive/old_plans/implementation_roadmap_Jan2026.md)
+- [Резюме исправлений](../archive/INTEGRATION_FIX_SUMMARY.md)
+- [Решения проблем](../archive/CURSOR_INTEGRATION_SOLUTIONS.md)
+- [Быстрый старт: Гибридный интерфейс](../archive/QUICK_START_HYBRID.md)
 
 Code Agent может взаимодействовать с Cursor через следующие способы (в порядке приоритета реализации):
 
 #### 1. ✅ Файловая система (РЕКОМЕНДУЕТСЯ НАЧАТЬ С ЭТОГО)
 
-**Приоритет:** ВЫСОКИЙ - Начать с этого  
-**Сложность:** Низкая  
+**Приоритет:** ВЫСОКИЙ - Начать с этого
+**Сложность:** Низкая
 **Зависимости:** Нет
 
 - ✅ Не требует API ключей
@@ -87,8 +87,8 @@ Code Agent может взаимодействовать с Cursor через с
 
 #### 2. ✅ Cursor CLI (если доступен)
 
-**Приоритет:** ВЫСОКИЙ - Второй этап  
-**Сложность:** Средняя  
+**Приоритет:** ВЫСОКИЙ - Второй этап
+**Сложность:** Средняя
 **Зависимости:** Cursor CLI должен быть установлен
 
 - ✅ Автоматическое выполнение без участия пользователя
@@ -99,8 +99,8 @@ Code Agent может взаимодействовать с Cursor через с
 
 #### 3. ✅ Background Agents API (для репозиториев)
 
-**Приоритет:** СРЕДНИЙ - Третий этап  
-**Сложность:** Средняя  
+**Приоритет:** СРЕДНИЙ - Третий этап
+**Сложность:** Средняя
 **Зависимости:** Cursor API ключ
 
 - ✅ Официальный API
@@ -111,8 +111,8 @@ Code Agent может взаимодействовать с Cursor через с
 
 #### 4. ⚠️ UI автоматизация (в последнюю очередь)
 
-**Приоритет:** НИЗКИЙ - Использовать как fallback  
-**Сложность:** Высокая  
+**Приоритет:** НИЗКИЙ - Использовать как fallback
+**Сложность:** Высокая
 **Зависимости:** pyautogui, pytesseract, opencv-python, mss
 
 - ⚠️ Хрупко и зависит от изменений интерфейса
@@ -219,9 +219,9 @@ CURSOR_API_BASE = "https://api.cursor.com/v0"
 
 ### Что отсутствует
 
-❌ **Публичный API для прямого управления чатом** (создание/отправка сообщений)  
-❌ **API для полного контроля GUI через внешние команды**  
-❌ **Публичный CLI API для всех функций Cursor**  
+❌ **Публичный API для прямого управления чатом** (создание/отправка сообщений)
+❌ **API для полного контроля GUI через внешние команды**
+❌ **Публичный CLI API для всех функций Cursor**
 ❌ **API для управления локальным окном Cursor IDE**
 
 ### Альтернативные подходы для Windows
@@ -261,7 +261,7 @@ windows = gw.getWindowsWithTitle("Cursor")
 if windows:
     cursor_window = windows[0]
     cursor_window.activate()
-    
+
     # Открыть новый чат (Ctrl+Shift+P)
     pyautogui.hotkey('ctrl', 'shift', 'p')
     # Ввести команду "New Chat"
@@ -297,7 +297,7 @@ def execute_cursor_cli(prompt: str, working_dir: str = None):
     cmd = ["cursor-agent", "-p", prompt]
     if working_dir:
         cmd.extend(["--cwd", working_dir])
-    
+
     result = subprocess.run(
         cmd,
         capture_output=True,
@@ -305,7 +305,7 @@ def execute_cursor_cli(prompt: str, working_dir: str = None):
         timeout=300,
         cwd=working_dir or os.getcwd()
     )
-    
+
     return {
         "success": result.returncode == 0,
         "stdout": result.stdout,
@@ -337,7 +337,7 @@ with open("cursor_commands/instruction_001.txt", "w") as f:
 
 #### Для работы с кодом и документацией
 
-✅ **Background Agents API** - для автономной работы с репозиториями  
+✅ **Background Agents API** - для автономной работы с репозиториями
 ✅ **Cursor CLI** - для автоматизации через командную строку
 
 #### Для отчётов
@@ -346,7 +346,7 @@ with open("cursor_commands/instruction_001.txt", "w") as f:
 
 #### Для интеграции проекта
 
-✅ **HTTP API проекта** (`main_server_api.py`) - уже работает  
+✅ **HTTP API проекта** (`main_server_api.py`) - уже работает
 ✅ **MCP сервер** - для предоставления контекста
 
 #### Для прямого управления чатом
@@ -397,7 +397,7 @@ def create_cursor_agent(repository: str, instruction: str):
     """Создать агента через Background Agents API."""
     api_key = os.getenv("CURSOR_API_KEY")
     base_url = os.getenv("CURSOR_API_BASE_URL", "https://api.cursor.com/v0")
-    
+
     response = requests.post(
         f"{base_url}/agents",
         headers={
@@ -409,7 +409,7 @@ def create_cursor_agent(repository: str, instruction: str):
             "instruction": instruction
         }
     )
-    
+
     return response.json()
 ```
 
@@ -423,14 +423,14 @@ def execute_via_cli(prompt: str, working_dir: str = None):
     cmd = ["cursor-agent", "-p", prompt]
     if working_dir:
         cmd.extend(["--cwd", working_dir])
-    
+
     result = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
         timeout=300
     )
-    
+
     return result
 ```
 
@@ -515,7 +515,7 @@ def execute_via_cli(prompt: str, working_dir: str = None):
 Переходим к выполнению задачи "5. Создание клиентского слоя через web front, и т.д."
 
 1. Изучи связанную документацию по проекту
-2. Создай план выполнения текущей задачи в файле docs/results/current_plan_5.1.md 
+2. Создай план выполнения текущей задачи в файле docs/results/current_plan_5.1.md
    (5.1 - это итератор из листа todo)
 3. Создай краткий отчет о проделанной работе в docs/results/last_result.md
 ```
@@ -633,7 +633,7 @@ def execute_via_cli(prompt: str, working_dir: str = None):
 ```
 Проанализируй текущие доработки и документацию в рамках текущей задачи.
 
-Напиши ревью в файле docs/reviews/skeptic_5.1_18.01.26.md 
+Напиши ревью в файле docs/reviews/skeptic_5.1_18.01.26.md
 (имя файла: пункт плана + текущая дата)
 
 Интересуют:
@@ -758,7 +758,7 @@ Agent CLI должен
 - Code Agent должен **правильно дожидаться** - не прерывать работу Cursor
 - Файлы-репорты - это **единственный канал связи** между агентами
 
-Подробнее см. [Взаимодействие через репорты](../guides/CURSOR_RESULTS_MECHANISM.md)
+Подробнее см. [Взаимодействие через репорты](../archive/CURSOR_RESULTS_MECHANISM.md)
 
 ## Формат файла codeAgentProjectStatus.md
 
@@ -838,7 +838,7 @@ instructions:
         3. Отчет в docs/results/last_result.md
       wait_for_file: "docs/results/last_result.md"
       control_phrase: "Отчет завершен!"
-    
+
     - instruction_id: 2
       name: "Выполнение плана"
       # ...
@@ -925,7 +925,7 @@ Code Agent проверяет наличие этих фраз перед пер
 
 ### Примечания
 
-⚠️ **Публичный API для прямого управления чатом пока отсутствует.**  
+⚠️ **Публичный API для прямого управления чатом пока отсутствует.**
 Используйте комбинацию доступных подходов:
 - Background Agents API для репозиториев
 - UI автоматизация для локального интерфейса
