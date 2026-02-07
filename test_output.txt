@@ -1,36 +1,1572 @@
 ============================= test session starts ==============================
 platform linux -- Python 3.13.2, pytest-9.0.2, pluggy-1.6.0 -- /usr/local/bin/python3.13
 cachedir: .pytest_cache
-metadata: {'Python': '3.13.2', 'Platform': 'Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.36', 'Packages': {'pytest': '9.0.2', 'pluggy': '1.6.0'}, 'Plugins': {'metadata': '3.1.1', 'json': '0.4.0', 'html': '4.2.0', 'anyio': '4.12.1'}}
+metadata: {'Python': '3.13.2', 'Platform': 'Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.36', 'Packages': {'pytest': '9.0.2', 'pluggy': '1.6.0'}, 'Plugins': {'json-report': '1.5.0', 'metadata': '3.1.1', 'json': '0.4.0', 'html': '4.2.0', 'anyio': '4.12.1'}}
 rootdir: /workspace
 configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
-plugins: metadata-3.1.1, json-0.4.0, html-4.2.0, anyio-4.12.1
-collecting ... collected 8 items / 1 error
+plugins: json-report-1.5.0, metadata-3.1.1, json-0.4.0, html-4.2.0, anyio-4.12.1
+collecting ... 
+======================================================================
+БЫСТРЫЙ ТЕСТ ГИБРИДНОГО ИНТЕРФЕЙСА
+======================================================================
+
+Тест 1: Определение сложности задач
+----------------------------------------------------------------------
+[OK] Что находится в файле README.md?         -> simple   (expected: simple)
+[OK] Создай файл test.txt                     -> complex  (expected: complex)
+[OK] Как работает функция main()?             -> simple   (expected: simple)
+[OK] Измени конфигурацию                      -> complex  (expected: complex)
+
+Результат: 4/4 (100%)
+
+Тест 2: Проверка доступности интерфейсов
+----------------------------------------------------------------------
+CLI доступен: False
+
+======================================================================
+РЕАЛЬНЫЙ ТЕСТ ГИБРИДНОГО ИНТЕРФЕЙСА
+======================================================================
+
+Проект: /workspace
+
+Инициализация гибридного интерфейса...
+CLI доступен: False
+
+======================================================================
+ТЕСТ: Создание mini_docs_for_user.md через гибридный интерфейс
+======================================================================
+
+Проект: /workspace
+
+Инициализация гибридного интерфейса...
+CLI доступен: False
+
+Инструкция сформирована:
+  Длина: 1230 символов
+  Ожидаемый файл: /workspace/docs/results/mini_docs_for_user.md
+
+======================================================================
+ВЫПОЛНЕНИЕ ЗАДАЧИ
+======================================================================
+
+Метод: Файловый интерфейс (сложная задача)
+Таймаут: 300 секунд (5 минут)
+
+ВАЖНО: Для выполнения этой задачи:
+1. Откройте Cursor в проекте /tmp/test_project
+2. Следите за файлом инструкции в cursor_commands/
+3. Выполните инструкцию в Cursor
+4. Сохраните результат в cursor_results/
+
+Нажмите Enter когда будете готовы начать (или Ctrl+C для отмены)...collected 427 items / 52 errors
 
 ==================================== ERRORS ====================================
-________________ ERROR collecting src/test/test_new_feature.py _________________
-ImportError while importing test module '/workspace/src/test/test_new_feature.py'.
+____________ ERROR collecting test/integration/test_hybrid_quick.py ____________
+
+    """
+    Быстрый тест гибридного интерфейса
+    """
+    from pathlib import Path
+    
+    from src.hybrid_cursor_interface import (
+        TaskComplexity,
+        create_hybrid_cursor_interface
+    )
+    from src.config_loader import ConfigLoader
+    from src.prompt_formatter import PromptFormatter
+    
+    # Корень проекта
+    project_root = Path(__file__).parent.parent
+    
+    print()
+    print("=" * 70)
+    print("БЫСТРЫЙ ТЕСТ ГИБРИДНОГО ИНТЕРФЕЙСА")
+    print("=" * 70)
+    print()
+    
+    # Тест 1: Определение сложности
+    print("Тест 1: Определение сложности задач")
+    print("-" * 70)
+    
+    config = ConfigLoader("config/config.yaml")
+    project_dir = config.get_project_dir()
+    
+    hybrid = create_hybrid_cursor_interface(
+        cli_path="docker-compose-agent",
+        project_dir=str(project_dir),
+        prefer_cli=False,
+        verify_side_effects=False
+    )
+    
+    test_cases = [
+        ("Что находится в файле README.md?", TaskComplexity.SIMPLE),
+        ("Создай файл test.txt", TaskComplexity.COMPLEX),
+        ("Как работает функция main()?", TaskComplexity.SIMPLE),
+        ("Измени конфигурацию", TaskComplexity.COMPLEX),
+    ]
+    
+    correct = 0
+    for instruction, expected in test_cases:
+        determined = hybrid._determine_complexity(instruction)
+        is_correct = determined == expected
+        status = "OK" if is_correct else "FAIL"
+    
+        print(f"[{status}] {instruction[:40]:40} -> {determined.value:8} (expected: {expected.value})")
+    
+        if is_correct:
+            correct += 1
+    
+    print(f"\nРезультат: {correct}/{len(test_cases)} ({correct*100//len(test_cases)}%)")
+    print()
+    
+    # Тест 2: Проверка доступности интерфейсов
+    print("Тест 2: Проверка доступности интерфейсов")
+    print("-" * 70)
+    
+    print(f"CLI доступен: {hybrid.cli.is_available()}")
+>   print(f"CLI команда: {hybrid.cli.cli_command}")
+                          ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'CursorCLIInterface' object has no attribute 'cli_command'
+
+test/integration/test_hybrid_quick.py:62: AttributeError
+____________ ERROR collecting test/integration/test_hybrid_real.py _____________
+
+    """
+    Реальный тест гибридного интерфейса с выполнением задачи
+    """
+    import time
+    import os
+    from pathlib import Path
+    
+    from src.hybrid_cursor_interface import (
+        TaskComplexity,
+        create_hybrid_cursor_interface
+    )
+    from src.config_loader import ConfigLoader
+    
+    # Корень проекта
+    project_root = Path(__file__).parent.parent
+    
+    print()
+    print("=" * 70)
+    print("РЕАЛЬНЫЙ ТЕСТ ГИБРИДНОГО ИНТЕРФЕЙСА")
+    print("=" * 70)
+    print()
+    
+    # Загружаем конфигурацию
+    config = ConfigLoader("config/config.yaml")
+    project_dir = config.get_project_dir()
+    
+    print(f"Проект: {project_dir}")
+    print()
+    
+    # Создаем гибридный интерфейс
+    print("Инициализация гибридного интерфейса...")
+    hybrid = create_hybrid_cursor_interface(
+        cli_path="docker-compose-agent",
+        project_dir=str(project_dir),
+        prefer_cli=False,  # Не предпочитать CLI для сложных задач
+        verify_side_effects=True  # Проверять side-effects
+    )
+    
+    print(f"CLI доступен: {hybrid.cli.is_available()}")
+>   print(f"CLI команда: {hybrid.cli.cli_command}")
+                          ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'CursorCLIInterface' object has no attribute 'cli_command'
+
+test/integration/test_hybrid_real.py:40: AttributeError
+__________ ERROR collecting test/integration/test_mini_docs_hybrid.py __________
+
+    """
+    Тест создания mini_docs_for_user.md через гибридный интерфейс
+    """
+    import time
+    import os
+    from pathlib import Path
+    
+    from src.hybrid_cursor_interface import (
+        TaskComplexity,
+        create_hybrid_cursor_interface
+    )
+    from src.prompt_formatter import PromptFormatter
+    from src.config_loader import ConfigLoader
+    
+    # Корень проекта
+    project_root = Path(__file__).parent.parent
+    
+    print()
+    print("=" * 70)
+    print("ТЕСТ: Создание mini_docs_for_user.md через гибридный интерфейс")
+    print("=" * 70)
+    print()
+    
+    # Загружаем конфигурацию
+    config = ConfigLoader("config/config.yaml")
+    project_dir = config.get_project_dir()
+    
+    print(f"Проект: {project_dir}")
+    print()
+    
+    # Создаем гибридный интерфейс
+    print("Инициализация гибридного интерфейса...")
+    hybrid = create_hybrid_cursor_interface(
+        cli_path="docker-compose-agent",
+        project_dir=str(project_dir),
+        prefer_cli=False,  # Сложная задача - через файловый интерфейс
+        verify_side_effects=True
+    )
+    
+    print(f"CLI доступен: {hybrid.cli.is_available()}")
+    print()
+    
+    # Формируем инструкцию
+    task_id = f"mini_docs_{int(time.time())}"
+    output_file = "docs/results/mini_docs_for_user.md"
+    
+    # Используем улучшенный формат с гарантией выполнения
+    instruction = PromptFormatter.format_task_with_execution_guarantee(
+        task_name="Создание краткой документации проекта",
+        task_description="""Ты архитектор системы. Проанализируй всю документацию проекта Life и создай краткую выжимку в 100 строк.
+    
+    В выжимке должны быть:
+    1. Название и назначение проекта Life
+    2. Основные технологии и инструменты
+    3. Архитектура и структура проекта
+    4. Ключевые компоненты и модули
+    5. Основные функции и возможности
+    6. Инструкции по запуску и использованию
+    
+    Формат: Markdown с заголовками и структурированным содержанием.
+    Объем: Максимум 100 строк, но информативно и полно.
+    Стиль: Понятно для пользователя, без лишних технических деталей.""",
+        output_file=output_file,
+        control_phrase="Документация создана!",
+        additional_constraints=[
+            "Проанализируй все файлы в docs/",
+            "Изучи README.md если есть",
+            "Посмотри структуру проекта",
+            "Создай понятную и полезную документацию"
+        ]
+    )
+    
+    print("Инструкция сформирована:")
+    print(f"  Длина: {len(instruction)} символов")
+    print(f"  Ожидаемый файл: {project_dir / output_file}")
+    print()
+    
+    # Проверяем, существует ли уже файл
+    output_path = project_dir / output_file
+    
+    # Создаем директорию если нужно
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    if output_path.exists():
+        print("[INFO] Файл уже существует, удаляем для чистоты теста")
+        output_path.unlink()
+        print()
+    
+    print("=" * 70)
+    print("ВЫПОЛНЕНИЕ ЗАДАЧИ")
+    print("=" * 70)
+    print()
+    
+    print("Метод: Файловый интерфейс (сложная задача)")
+    print("Таймаут: 300 секунд (5 минут)")
+    print()
+    
+    print("ВАЖНО: Для выполнения этой задачи:")
+    target_project = os.environ.get("TEST_TARGET_PROJECT", "/tmp/test_project")
+    print(f"1. Откройте Cursor в проекте {target_project}")
+    print("2. Следите за файлом инструкции в cursor_commands/")
+    print("3. Выполните инструкцию в Cursor")
+    print("4. Сохраните результат в cursor_results/")
+    print()
+    
+>   input("Нажмите Enter когда будете готовы начать (или Ctrl+C для отмены)...")
+E   EOFError: EOF when reading a line
+
+test/integration/test_mini_docs_hybrid.py:106: EOFError
+______ ERROR collecting test/integration/test_new_feature_integration.py _______
+ImportError while importing test module '/workspace/test/integration/test_new_feature_integration.py'.
 Hint: make sure your test modules/packages have valid Python names.
 Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
 /usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
     return _bootstrap._gcd_import(name[level:], package, level)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/test/test_new_feature.py:4: in <module>
-    from core.new_feature import NewFeature, process_feature_list
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/integration/test_new_feature_integration.py:3: in <module>
+    from src.core.new_feature import new_functionality
 src/core/__init__.py:15: in <module>
     from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
-src/core/server_core.py:11: in <module>
-    from .interfaces.itask_executor import ITaskExecutor
-src/core/interfaces/itask_executor.py:4: in <module>
+src/core/server_core.py:17: in <module>
+    from task_logger import Colors, TaskLogger, TaskPhase
+src/task_logger.py:14: in <module>
+    from core.interfaces import ILogger
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:17: in <module>
+    from task_logger import Colors, TaskLogger, TaskPhase
+E   ImportError: cannot import name 'Colors' from partially initialized module 'task_logger' (most likely due to a circular import) (/workspace/src/task_logger.py)
+_____ ERROR collecting test/integration/test_quality_gates_integration.py ______
+ImportError while importing test module '/workspace/test/integration/test_quality_gates_integration.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/integration/test_quality_gates_integration.py:14: in <module>
+    from src.core.server_core import ServerCore, QualityGateException
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
     from todo_manager import TodoItem
-src/todo_manager.py:15: in <module>
+src/todo_manager.py:16: in <module>
     from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
-src/core/todo_file_io.py:8: in <module>
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:22: in <module>
+    from verification.interfaces import IMultiLevelVerificationManager
+src/verification/__init__.py:7: in <module>
+    from .llm_validator import LLMValidator
+src/verification/llm_validator.py:12: in <module>
+    from ..quality.models.quality_result import VerificationResult, VerificationLevel, QualityGateResult, QualityResult, QualityCheckType, QualityStatus
+E   ImportError: attempted relative import beyond top-level package
+_______ ERROR collecting test/integration/test_servercore_integration.py _______
+ImportError while importing test module '/workspace/test/integration/test_servercore_integration.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/integration/test_servercore_integration.py:20: in <module>
+    from src.core.server_core import ServerCore, QualityGateException
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
     from todo_manager import TodoItem
-E   ImportError: cannot import name 'TodoItem' from partially initialized module 'todo_manager' (most likely due to a circular import) (/workspace/src/todo_manager.py)
----------------- generated json report: /workspace/report.json -----------------
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+_______ ERROR collecting test/integration/test_task_type_integration.py ________
+ImportError while importing test module '/workspace/test/integration/test_task_type_integration.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/integration/test_task_type_integration.py:11: in <module>
+    from src.todo_manager import TodoManager, TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+______ ERROR collecting test/integration/test_verification_integration.py ______
+ImportError while importing test module '/workspace/test/integration/test_verification_integration.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/integration/test_verification_integration.py:20: in <module>
+    from src.core.server_core import ServerCore
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+____________ ERROR collecting test/test_agent_real_llm_creation.py _____________
+'asyncio' not found in `markers` configuration option
+____________ ERROR collecting test/test_comprehensive_validation.py ____________
+ImportError while importing test module '/workspace/test/test_comprehensive_validation.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_comprehensive_validation.py:27: in <module>
+    from src.todo_manager import TodoManager
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+____________ ERROR collecting test/test_core_quality_integration.py ____________
+ImportError while importing test module '/workspace/test/test_core_quality_integration.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_core_quality_integration.py:12: in <module>
+    from src.core.di_container import DependencyInjectionContainer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+___________________ ERROR collecting test/test_core_smoke.py ___________________
+ImportError while importing test module '/workspace/test/test_core_smoke.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_core_smoke.py:16: in <module>
+    from src.core.di_container import DIContainer, ServiceDescriptor, ServiceLifetime, DependencyInjectionException
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+__________________ ERROR collecting test/test_core_static.py ___________________
+ImportError while importing test module '/workspace/test/test_core_static.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_core_static.py:18: in <module>
+    from src.core.di_container import DIContainer, ServiceDescriptor, ServiceLifetime, DependencyInjectionException
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+_______________ ERROR collecting test/test_core_types_static.py ________________
+ImportError while importing test module '/workspace/test/test_core_types_static.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_core_types_static.py:12: in <module>
+    from src.core.types import (
+E   ImportError: cannot import name 'ErrorSeverity' from 'src.core.types' (/workspace/src/core/types.py)
+____________ ERROR collecting test/test_cursor_integration_only.py _____________
+ImportError while importing test module '/workspace/test/test_cursor_integration_only.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_cursor_integration_only.py:21: in <module>
+    from src.todo_manager import TodoManager
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+_________________ ERROR collecting test/test_di_integration.py _________________
+ImportError while importing test module '/workspace/test/test_di_integration.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_di_integration.py:15: in <module>
+    from src.core.di_container import DIContainer, ServiceLifetime, create_default_container, DependencyInjectionException
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+_________________ ERROR collecting test/test_di_only_static.py _________________
+ImportError while importing test module '/workspace/test/test_di_only_static.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_di_only_static.py:18: in <module>
+    from core.di_container import (
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+____________________ ERROR collecting test/test_di_smoke.py ____________________
+ImportError while importing test module '/workspace/test/test_di_smoke.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_di_smoke.py:11: in <module>
+    from src.core.di_container import DIContainer, ServiceLifetime, DependencyInjectionException
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+____________________ ERROR collecting test/test_di_solid.py ____________________
+ImportError while importing test module '/workspace/test/test_di_solid.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_di_solid.py:17: in <module>
+    from src.core.di_container import DIContainer, ServiceLifetime, create_default_container
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+___________________ ERROR collecting test/test_di_static.py ____________________
+ImportError while importing test module '/workspace/test/test_di_static.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_di_static.py:13: in <module>
+    from src.core.di_container import (
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+________________ ERROR collecting test/test_example_function.py ________________
+ImportError while importing test module '/workspace/test/test_example_function.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_example_function.py:3: in <module>
+    from src.core.example_function import new_function
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+___________________ ERROR collecting test/test_full_cycle.py ___________________
+ImportError while importing test module '/workspace/test/test_full_cycle.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_full_cycle.py:21: in <module>
+    from src.todo_manager import TodoManager, TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+_____________ ERROR collecting test/test_full_cycle_with_server.py _____________
+ImportError while importing test module '/workspace/test/test_full_cycle_with_server.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_full_cycle_with_server.py:18: in <module>
+    from src.todo_manager import TodoManager, TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+_________ ERROR collecting test/test_integration_new_functionality.py __________
+ImportError while importing test module '/workspace/test/test_integration_new_functionality.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_integration_new_functionality.py:16: in <module>
+    from src.core.di_container import DIContainer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+_________________ ERROR collecting test/test_interfaces_new.py _________________
+ImportError while importing test module '/workspace/test/test_interfaces_new.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_interfaces_new.py:13: in <module>
+    from src.core.mock_implementations import MockServer, MockAgentManager, MockTaskManager
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+___________________ ERROR collecting test/test_llm_client.py ___________________
+'asyncio' not found in `markers` configuration option
+_________________ ERROR collecting test/test_llm_evaluator.py __________________
+'asyncio' not found in `markers` configuration option
+________________ ERROR collecting test/test_llm_integration.py _________________
+'asyncio' not found in `markers` configuration option
+__________________ ERROR collecting test/test_llm_monitor.py ___________________
+'asyncio' not found in `markers` configuration option
+__________________ ERROR collecting test/test_llm_strategy.py __________________
+'asyncio' not found in `markers` configuration option
+________________ ERROR collecting test/test_mcp_integration.py _________________
+'asyncio' not found in `markers` configuration option
+_______________ ERROR collecting test/test_new_feature_smoke.py ________________
+ImportError while importing test module '/workspace/test/test_new_feature_smoke.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_new_feature_smoke.py:3: in <module>
+    from src.core.new_feature import NewFeature
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+_______________ ERROR collecting test/test_new_feature_static.py _______________
+ImportError while importing test module '/workspace/test/test_new_feature_static.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_new_feature_static.py:3: in <module>
+    from src.core.new_feature import NewFeature  # Assuming a class named NewFeature in new_feature.py
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+_________ ERROR collecting test/test_new_functionality_integration.py __________
+ImportError while importing test module '/workspace/test/test_new_functionality_integration.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_new_functionality_integration.py:17: in <module>
+    from src.server import CodeAgentServer
+src/server.py:35: in <module>
+    from src.core.interfaces import (
+E   ImportError: cannot import name 'IConfigLoader' from 'src.core.interfaces' (/workspace/src/core/interfaces/__init__.py). Did you mean: 'config_loader'?
+____________ ERROR collecting test/test_new_functionality_smoke.py _____________
+ImportError while importing test module '/workspace/test/test_new_functionality_smoke.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_new_functionality_smoke.py:17: in <module>
+    from src.server import CodeAgentServer
+src/server.py:35: in <module>
+    from src.core.interfaces import (
+E   ImportError: cannot import name 'IConfigLoader' from 'src.core.interfaces' (/workspace/src/core/interfaces/__init__.py). Did you mean: 'config_loader'?
+____________ ERROR collecting test/test_new_functionality_static.py ____________
+ImportError while importing test module '/workspace/test/test_new_functionality_static.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_new_functionality_static.py:17: in <module>
+    from src.server import CodeAgentServer
+src/server.py:35: in <module>
+    from src.core.interfaces import (
+E   ImportError: cannot import name 'IConfigLoader' from 'src.core.interfaces' (/workspace/src/core/interfaces/__init__.py). Did you mean: 'config_loader'?
+________ ERROR collecting test/test_new_server_functionality_static.py _________
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:188: in exec_module
+    source_stat, co = _rewrite_test(fn, self.config)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:357: in _rewrite_test
+    tree = ast.parse(source, filename=strfn)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/ast.py:54: in parse
+    return compile(source, filename, mode, flags,
+E     File "/workspace/test/test_new_server_functionality_static.py", line 391
+E       \"\"\"
+E        ^
+E   SyntaxError: unexpected character after line continuation character
+_________________ ERROR collecting test/test_quality_smoke.py __________________
+ImportError while importing test module '/workspace/test/test_quality_smoke.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_quality_smoke.py:18: in <module>
+    from src.quality.models.quality_result import (
+E   ImportError: cannot import name 'QualityGateResult' from 'src.quality.models.quality_result' (/workspace/src/quality/models/quality_result.py)
+_________________ ERROR collecting test/test_quality_static.py _________________
+ImportError while importing test module '/workspace/test/test_quality_static.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_quality_static.py:21: in <module>
+    from src.quality.models.quality_result import (
+E   ImportError: cannot import name 'QualityGateResult' from 'src.quality.models.quality_result' (/workspace/src/quality/models/quality_result.py)
+______________ ERROR collecting test/test_server_decomposition.py ______________
+ImportError while importing test module '/workspace/test/test_server_decomposition.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_server_decomposition.py:12: in <module>
+    from src.server import CodeAgentServer
+src/server.py:35: in <module>
+    from src.core.interfaces import (
+E   ImportError: cannot import name 'IConfigLoader' from 'src.core.interfaces' (/workspace/src/core/interfaces/__init__.py). Did you mean: 'config_loader'?
+________________ ERROR collecting test/test_servercore_smoke.py ________________
+ImportError while importing test module '/workspace/test/test_servercore_smoke.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_servercore_smoke.py:12: in <module>
+    from src.core.server_core import ServerCore, QualityGateException
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+_______________ ERROR collecting test/test_servercore_static.py ________________
+ImportError while importing test module '/workspace/test/test_servercore_static.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_servercore_static.py:13: in <module>
+    from src.core.server_core import ServerCore, QualityGateException, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+________ ERROR collecting test/test_servercore_tasktype_integration.py _________
+ImportError while importing test module '/workspace/test/test_servercore_tasktype_integration.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_servercore_tasktype_integration.py:9: in <module>
+    from src.core.server_core import ServerCore
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+src/core/server_core.py:19: in <module>
+    from todo_manager import TodoItem
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+___________________ ERROR collecting test/test_task_types.py ___________________
+ImportError while importing test module '/workspace/test/test_task_types.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_task_types.py:10: in <module>
+    from src.todo_manager import TodoItem, TodoManager
+src/todo_manager.py:16: in <module>
+    from core.todo_file_io import ITodoFileParser, ITodoFileSerializer, TextTodoParser, MarkdownTodoParser, YamlTodoParser, TextTodoSerializer, MarkdownTodoSerializer, YamlTodoSerializer
+src/core/__init__.py:15: in <module>
+    from .server_core import ServerCore, TaskExecutor, RevisionExecutor, TodoGenerator
+E   ImportError: cannot import name 'TaskExecutor' from 'core.server_core' (/workspace/src/core/server_core.py)
+_______________ ERROR collecting test/test_verification_smoke.py _______________
+ImportError while importing test module '/workspace/test/test_verification_smoke.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_verification_smoke.py:15: in <module>
+    from src.verification.verification_manager import MultiLevelVerificationManager
+src/verification/__init__.py:7: in <module>
+    from .llm_validator import LLMValidator
+src/verification/llm_validator.py:12: in <module>
+    from ..quality.models.quality_result import VerificationResult, VerificationLevel, QualityGateResult, QualityResult, QualityCheckType, QualityStatus
+E   ImportError: cannot import name 'VerificationResult' from 'src.quality.models.quality_result' (/workspace/src/quality/models/quality_result.py)
+______________ ERROR collecting test/test_verification_static.py _______________
+ImportError while importing test module '/workspace/test/test_verification_static.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/test_verification_static.py:17: in <module>
+    from src.verification.verification_manager import MultiLevelVerificationManager
+src/verification/__init__.py:7: in <module>
+    from .llm_validator import LLMValidator
+src/verification/llm_validator.py:12: in <module>
+    from ..quality.models.quality_result import VerificationResult, VerificationLevel, QualityGateResult, QualityResult, QualityCheckType, QualityStatus
+E   ImportError: cannot import name 'VerificationResult' from 'src.quality.models.quality_result' (/workspace/src/quality/models/quality_result.py)
+_________ ERROR collecting test/verification/test_execution_monitor.py _________
+'asyncio' not found in `markers` configuration option
+___________ ERROR collecting test/verification/test_llm_validator.py ___________
+ImportError while importing test module '/workspace/test/verification/test_llm_validator.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/verification/test_llm_validator.py:8: in <module>
+    from src.verification.llm_validator import LLMValidator
+src/verification/__init__.py:7: in <module>
+    from .llm_validator import LLMValidator
+src/verification/llm_validator.py:12: in <module>
+    from ..quality.models.quality_result import VerificationResult, VerificationLevel, QualityGateResult, QualityResult, QualityCheckType, QualityStatus
+E   ImportError: cannot import name 'VerificationResult' from 'src.quality.models.quality_result' (/workspace/src/quality/models/quality_result.py)
+_____ ERROR collecting test/verification/test_verification_integration.py ______
+ImportError while importing test module '/workspace/test/verification/test_verification_integration.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/verification/test_verification_integration.py:13: in <module>
+    from src.verification.verification_manager import MultiLevelVerificationManager
+src/verification/__init__.py:7: in <module>
+    from .llm_validator import LLMValidator
+src/verification/llm_validator.py:12: in <module>
+    from ..quality.models.quality_result import VerificationResult, VerificationLevel, QualityGateResult, QualityResult, QualityCheckType, QualityStatus
+E   ImportError: cannot import name 'VerificationResult' from 'src.quality.models.quality_result' (/workspace/src/quality/models/quality_result.py)
+_______ ERROR collecting test/verification/test_verification_manager.py ________
+ImportError while importing test module '/workspace/test/verification/test_verification_manager.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/verification/test_verification_manager.py:9: in <module>
+    from src.verification.verification_manager import MultiLevelVerificationManager
+src/verification/__init__.py:7: in <module>
+    from .llm_validator import LLMValidator
+src/verification/llm_validator.py:12: in <module>
+    from ..quality.models.quality_result import VerificationResult, VerificationLevel, QualityGateResult, QualityResult, QualityCheckType, QualityStatus
+E   ImportError: cannot import name 'VerificationResult' from 'src.quality.models.quality_result' (/workspace/src/quality/models/quality_result.py)
+________ ERROR collecting test/verification/test_verification_smoke.py _________
+ImportError while importing test module '/workspace/test/verification/test_verification_smoke.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/verification/test_verification_smoke.py:12: in <module>
+    from src.verification.verification_manager import MultiLevelVerificationManager
+src/verification/__init__.py:7: in <module>
+    from .llm_validator import LLMValidator
+src/verification/llm_validator.py:12: in <module>
+    from ..quality.models.quality_result import VerificationResult, VerificationLevel, QualityGateResult, QualityResult, QualityCheckType, QualityStatus
+E   ImportError: cannot import name 'VerificationResult' from 'src.quality.models.quality_result' (/workspace/src/quality/models/quality_result.py)
+________ ERROR collecting test/verification/test_verification_static.py ________
+ImportError while importing test module '/workspace/test/verification/test_verification_static.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+/usr/local/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
+    exec(co, module.__dict__)
+test/verification/test_verification_static.py:16: in <module>
+    from src.verification.verification_manager import MultiLevelVerificationManager
+src/verification/__init__.py:7: in <module>
+    from .llm_validator import LLMValidator
+src/verification/llm_validator.py:12: in <module>
+    from ..quality.models.quality_result import VerificationResult, VerificationLevel, QualityGateResult, QualityResult, QualityCheckType, QualityStatus
+E   ImportError: cannot import name 'VerificationResult' from 'src.quality.models.quality_result' (/workspace/src/quality/models/quality_result.py)
+--------------- generated xml file: /workspace/test-results.xml ----------------
 ---------- Generated html report: file:///workspace/html_report.html -----------
 =========================== short test summary info ============================
-ERROR src/test/test_new_feature.py
-!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
-========================= 2 warnings, 1 error in 1.07s =========================
+ERROR test/integration/test_hybrid_quick.py - AttributeError: 'CursorCLIInterface' object has no attribute 'cli_command'
+ERROR test/integration/test_hybrid_real.py - AttributeError: 'CursorCLIInterface' object has no attribute 'cli_command'
+ERROR test/integration/test_mini_docs_hybrid.py - EOFError: EOF when reading a line
+ERROR test/integration/test_new_feature_integration.py
+ERROR test/integration/test_quality_gates_integration.py
+ERROR test/integration/test_servercore_integration.py
+ERROR test/integration/test_task_type_integration.py
+ERROR test/integration/test_verification_integration.py
+ERROR test/test_agent_real_llm_creation.py - Failed: 'asyncio' not found in `markers` configuration option
+ERROR test/test_comprehensive_validation.py
+ERROR test/test_core_quality_integration.py
+ERROR test/test_core_smoke.py
+ERROR test/test_core_static.py
+ERROR test/test_core_types_static.py
+ERROR test/test_cursor_integration_only.py
+ERROR test/test_di_integration.py
+ERROR test/test_di_only_static.py
+ERROR test/test_di_smoke.py
+ERROR test/test_di_solid.py
+ERROR test/test_di_static.py
+ERROR test/test_example_function.py
+ERROR test/test_full_cycle.py
+ERROR test/test_full_cycle_with_server.py
+ERROR test/test_integration_new_functionality.py
+ERROR test/test_interfaces_new.py
+ERROR test/test_llm_client.py - Failed: 'asyncio' not found in `markers` configuration option
+ERROR test/test_llm_evaluator.py - Failed: 'asyncio' not found in `markers` configuration option
+ERROR test/test_llm_integration.py - Failed: 'asyncio' not found in `markers` configuration option
+ERROR test/test_llm_monitor.py - Failed: 'asyncio' not found in `markers` configuration option
+ERROR test/test_llm_strategy.py - Failed: 'asyncio' not found in `markers` configuration option
+ERROR test/test_mcp_integration.py - Failed: 'asyncio' not found in `markers` configuration option
+ERROR test/test_new_feature_smoke.py
+ERROR test/test_new_feature_static.py
+ERROR test/test_new_functionality_integration.py
+ERROR test/test_new_functionality_smoke.py
+ERROR test/test_new_functionality_static.py
+ERROR test/test_new_server_functionality_static.py
+ERROR test/test_quality_smoke.py
+ERROR test/test_quality_static.py
+ERROR test/test_server_decomposition.py
+ERROR test/test_servercore_smoke.py
+ERROR test/test_servercore_static.py
+ERROR test/test_servercore_tasktype_integration.py
+ERROR test/test_task_types.py
+ERROR test/test_verification_smoke.py
+ERROR test/test_verification_static.py
+ERROR test/verification/test_execution_monitor.py - Failed: 'asyncio' not found in `markers` configuration option
+ERROR test/verification/test_llm_validator.py
+ERROR test/verification/test_verification_integration.py
+ERROR test/verification/test_verification_manager.py
+ERROR test/verification/test_verification_smoke.py
+ERROR test/verification/test_verification_static.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 52 errors during collection !!!!!!!!!!!!!!!!!!!
+======================= 2 warnings, 52 errors in 23.45s ========================

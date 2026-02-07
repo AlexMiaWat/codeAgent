@@ -1,3 +1,4 @@
 pytest
 pytest-html
 crewai_tools
+pytest-json-report
