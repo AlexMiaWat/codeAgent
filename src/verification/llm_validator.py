@@ -9,7 +9,7 @@ from datetime import datetime
 
 from .interfaces import ILLMValidator
 from src.llm.manager import LLMManager
-from ..quality.models.quality_result import VerificationResult, VerificationLevel, QualityGateResult, QualityResult, QualityCheckType, QualityStatus
+from src.quality.models.quality_result import VerificationResult, VerificationLevel, QualityGateResult, QualityResult, QualityCheckType, QualityStatus
 
 logger = logging.getLogger(__name__)
 

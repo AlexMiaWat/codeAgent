@@ -20,8 +20,10 @@ def test_new_feature_function_type_hints():
 def test_another_new_function_type_hints():
     """Verify another_new_function has correct type hints."""
     hints = get_type_hints(another_new_function)
-    assert hints.get('a') == Union[int, float], "another_new_function parameter 'a' should be Union[int, float]"
-    assert hints.get('b') == Union[int, float], "another_new_function parameter 'b' should be Union[int, float]"
+    assert hints.get('x') == Union[int, float], "another_new_function parameter 'x' should be Union[int, float]"
+    assert hints.get('y') == Union[int, float], "another_new_function parameter 'y' should be Union[int, float]"
+    assert hints.get('weight_x') == float, "another_new_function parameter 'weight_x' should be float"
+    assert another_new_function.__defaults__ is not None and another_new_function.__defaults__[0] == 0.5, "another_new_function parameter 'weight_x' should have a default value of 0.5"
     assert hints.get('return') == Union[int, float], "another_new_function should return Union[int, float]"
 
 # Add more static tests if needed, e.g., type hints, complexity, etc.

@@ -233,6 +233,53 @@ class TestUnicodeNormalizationStatic:
         assert 'text' in learning_sig.parameters
         assert 'text' in context_sig.parameters
 
+import inspect
+from typing import get_type_hints
+from src.new_functionality import new_feature_function, another_new_function
+
+
+class TestNewFunctionalityStatic:
+    """Static tests for new_feature_function and another_new_function"""
+
+    def test_new_feature_function_exists(self):
+        """Test that new_feature_function exists and is callable"""
+        assert callable(new_feature_function)
+
+    def test_new_feature_function_signature(self):
+        """Test new_feature_function has correct signature"""
+        sig = inspect.signature(new_feature_function)
+        assert len(sig.parameters) == 0  # No parameters
+        assert sig.return_annotation == str
+
+    def test_another_new_function_exists(self):
+        """Test that another_new_function exists and is callable"""
+        assert callable(another_new_function)
+
+    def test_another_new_function_signature(self):
+        """Test another_new_function has correct signature and type hints"""
+        sig = inspect.signature(another_new_function)
+        assert len(sig.parameters) == 3  # x, y, weight_x
+
+        params = sig.parameters
+        assert 'x' in params
+        assert 'y' in params
+        assert 'weight_x' in params
+
+        assert params['x'].annotation == Union[int, float]
+        assert params['y'].annotation == Union[int, float]
+        assert params['weight_x'].annotation == float
+        assert params['weight_x'].default == 0.5  # Check default value
+
+        assert sig.return_annotation == Union[int, float]
+
+    def test_another_new_function_type_hints(self):
+        """Test type hints for another_new_function"""
+        hints = get_type_hints(another_new_function)
+        assert hints['x'] == Union[int, float]
+        assert hints['y'] == Union[int, float]
+        assert hints['weight_x'] == float
+        assert hints['return'] == Union[int, float]
+
         assert learning_sig.return_annotation == str
         assert context_sig.return_annotation == str
 

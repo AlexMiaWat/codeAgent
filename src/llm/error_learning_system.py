@@ -402,7 +402,7 @@ class ErrorLearningSystem(IErrorLearningSystem):
 
         # Применяем специфические меры для разных типов ошибок
         if pattern == ErrorPattern.MODEL_OVERLOAD:
-            await self._mitigate_model_overload(error_record.model_name)
+            await self._mitigate_model_overload(error_record.model_name, error_record.error_analysis.severity)
         elif pattern == ErrorPattern.CONTEXT_TOO_LONG:
             await self._mitigate_context_length_issues()
         elif pattern == ErrorPattern.SENSITIVE_CONTENT:
@@ -445,11 +445,28 @@ class ErrorLearningSystem(IErrorLearningSystem):
 
         logger.info(f"Implemented automatic mitigation for {pattern.value}: {mitigation['actions_taken']}")
 
-    async def _mitigate_model_overload(self, model_name: str):
-        """Смягчить перегрузку модели"""
-        # Отмечаем модель как проблемную в роутере
-        # В реальной реализации здесь можно добавить логику для временного отключения модели
-        logger.debug(f"Mitigating overload for model {model_name}")
+    async def _mitigate_model_overload(self, model_name: str, severity: float):
+        """Смягчить перегрузку модели (или другие API ошибки)"""
+        model = self.registry.get_model(model_name)
+        if not model:
+            logger.warning(f"Model {model_name} not found in registry for mitigation.")
+            return
+
+        # Увеличиваем счетчик ошибок для модели
+        # Note: ModelConfig already has error_count. We'll increment it here.
+        model.error_count += 1
+        self.registry.update_model_stats(model_name, False, 0.0) # Отмечаем ошибку, время ответа 0
+
+        # Если модель часто выдает ошибки, временно отключаем ее
+        # Порог может быть динамическим, но для начала используем фиксированный
+        if model.error_count >= self.thresholds['auto_mitigation_threshold'] and severity > 0.6:
+            self.registry.disable_model(model_name)
+            logger.warning(f"Model {model_name} disabled due to repeated overload/API errors (error_count: {model.error_count}).")
+            # Также сообщаем роутеру, чтобы он избегал эту модель
+            # (Предполагается, что router будет учитывать disabled модели)
+            # self.intelligent_router.mark_model_as_problematic(model_name, "overload") # Эта функция пока не существует в роутере
+        else:
+            logger.debug(f"Mitigating overload for model {model_name}. Current error count: {model.error_count}")
 
     async def _mitigate_context_length_issues(self):
         """Смягчить проблемы с длиной контекста"""

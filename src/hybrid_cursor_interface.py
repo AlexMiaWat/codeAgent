@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 try:
-    from .cursor_cli_interface import CursorCLIInterface, CursorCLIResult
+    from .cursor_cli_interface import CursorCLIInterface
     from .cursor_file_interface import CursorFileInterface
 except ImportError:
     # Fallback для прямого запуска

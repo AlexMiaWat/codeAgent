@@ -11,6 +11,8 @@ import subprocess
 import threading
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
+from src.cursor_file_interface import CursorFileInterface
+from src.report_watcher import ReportWatcher
 from datetime import datetime
 from .exceptions import ServerReloadException
 from .utils.logging_utils import setup_logging
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 from crewai import Task, Crew
 
 try:
+
     from flask import Flask, jsonify
     FLASK_AVAILABLE = True
 except ImportError:
@@ -153,6 +156,11 @@ class CodeAgentServer:
         self.di_container = di_container
         self.project_dir = project_dir
         self.docs_dir = docs_dir
+
+        self.cursor_commands_dir = self.project_dir / "cursor_commands"
+        self.cursor_results_dir = self.project_dir / "cursor_results"
+        self.file_interface = CursorFileInterface(self.cursor_commands_dir, self.cursor_results_dir)
+        self.report_watcher = ReportWatcher()
         self.status_file = status_file
         self.agent = agent
         self.server_core = server_core
@@ -233,7 +241,7 @@ class CodeAgentServer:
         if self.use_cursor_cli:
             logger.info("Cursor CLI интерфейс доступен (приоритетный)")
         else:
-            logger.info("Cursor CLI недоступен, будет использоваться файловый интерфейс")
+            logger.info("Cursor CLI недоступен. Будет использоваться файловый интерфейс.")
         if self.auto_todo_enabled:
             logger.info(f"Автоматическая генерация TODO включена (макс. {self.max_todo_generations} раз за сессию)")
         logger.info("Checkpoint система активирована для защиты от сбоев")
@@ -1230,6 +1238,10 @@ class CodeAgentServer:
         
         Args:
             task_id: ID задачи
+        except KeyboardInterrupt:
+            logger.info(f"Выполнение инструкции через Cursor для задачи {task_id} прервано (KeyboardInterrupt).")
+            # Передаем сигнал остановки выше
+            raise
             todo_item: Элемент todo-листа
             result_content: Содержимое файла результата
             
@@ -1810,11 +1822,10 @@ class CodeAgentServer:
         else:
             logger.debug("Прогресс инструкций не найден или пустой, начинаем с инструкции 1")
         
-        # Проверяем доступность CLI
+
         if not self.use_cursor_cli:
-            logger.error(f"Cursor CLI недоступен для задачи {task_id}")
-            task_logger.log_error("Cursor CLI недоступен")
-            return False
+            logger.info(f"Cursor CLI недоступен для задачи {task_id}, используется файловый интерфейс.")
+            task_logger.log_info("Cursor CLI недоступен, используется файловый интерфейс.")
         
         # КРИТИЧНО: Останавливаем активные диалоги и очищаем очередь перед новой задачей
         logger.debug(f"Подготовка к задаче {task_id}: остановка активных диалогов...")
@@ -1922,24 +1933,79 @@ class CodeAgentServer:
             # Сохраняем время начала выполнения инструкции для корректного расчета времени
             instruction_start_time = time.time()
             
-            # Используем Cursor CLI для выполнения инструкции с обработкой повторяющихся ошибок
-            result = self.cursor_executor.execute_instruction_with_retry(
-                instruction=instruction_text,
-                task_id=task_id,
-                timeout=timeout,
-                task_logger=task_logger,
-                instruction_num=instruction_num
-            )
-            
-            # Логируем ответ от Cursor
-            task_logger.log_cursor_response(result, brief=True)
-            
-            # Логируем chat_id после выполнения первой инструкции (если еще не залогирован)
-            if not first_instruction_executed and self.cursor_cli and self.cursor_cli.current_chat_id:
-                chat_id = self.cursor_cli.current_chat_id
-                logger.info(f"💬 ID диалога: {chat_id}")
-                task_logger.log_new_chat(chat_id)  # Обновляем лог с chat_id
-                first_instruction_executed = True
+            # Выполнение инструкции
+            if self.use_cursor_cli:
+                # Используем Cursor CLI для выполнения инструкции с обработкой повторяющихся ошибок
+                result = self.cursor_executor.execute_instruction_with_retry(
+                    instruction=instruction_text,
+                    task_id=task_id,
+                    timeout=timeout,
+                    task_logger=task_logger,
+                    instruction_num=instruction_num
+                )
+                
+                # Логируем ответ от Cursor
+                task_logger.log_cursor_response(result, brief=True)
+                
+                # Логируем chat_id после выполнения первой инструкции (если еще не залогирован)
+                if not first_instruction_executed and self.cursor_cli and self.cursor_cli.current_chat_id:
+                    chat_id = self.cursor_cli.current_chat_id
+                    logger.info(f"💬 ID диалога: {chat_id}")
+                    task_logger.log_new_chat(chat_id)  # Обновляем лог с chat_id
+                    first_instruction_executed = True
+            else:
+                # Используем файловый интерфейс
+                logger.info(f"Используется файловый интерфейс для задачи {task_id} (инструкция {instruction_num})")
+                instruction_file_path = self.file_interface.send_instruction(instruction_text, task_id)
+                task_logger.log_info(f"Инструкция отправлена в файл: {instruction_file_path.name}")
+
+                # Ожидаемый файл результата в директории cursor_results
+                result_file_path = self.cursor_results_dir / f"result_{task_id}.txt"
+                
+                control_phrases_list = template.get("control_phrases", ["Отчет завершен!"])
+                if isinstance(control_phrases_list, str):
+                    control_phrases_list = [control_phrases_list]
+
+                try:
+                    task_logger.log_info(f"Ожидание файла результата для задачи {task_id} (инструкция {instruction_num}) через файловый интерфейс...")
+                    report_success = self.report_watcher.wait_for_report(
+                        report_path=result_file_path,
+                        control_phrases=control_phrases_list,
+                        timeout=timeout
+                    )
+
+                    if report_success:
+                        result_content = result_file_path.read_text(encoding="utf-8")
+                        task_logger.log_info(f"Файл результата для задачи {task_id} получен.")
+                        result = {
+                            "task_id": task_id,
+                            "success": True,
+                            "content": result_content,
+                            "cli_available": False,
+                            "fallback_used": True # Индикация использования fallback
+                        }
+                    else:
+                        error_message = f"Таймаут или контрольные фразы не найдены для задачи {task_id} (инструкция {instruction_num}) через файловый интерфейс."
+                        task_logger.log_error(error_message)
+                        result = {
+                            "task_id": task_id,
+                            "success": False,
+                            "error_message": error_message,
+                            "cli_available": False,
+                            "content": "",
+                            "fallback_used": True
+                        }
+                except Exception as e:
+                    error_message = f"Ошибка при ожидании файла результата для задачи {task_id} (инструкция {instruction_num}) через файловый интерфейс: {e}"
+                    task_logger.log_error(error_message, exc_info=True)
+                    result = {
+                        "task_id": task_id,
+                        "success": False,
+                        "error_message": error_message,
+                        "cli_available": False,
+                        "content": "",
+                        "fallback_used": True
+                    }
             
             # ДОПОЛНИТЕЛЬНОЕ ЛОГИРОВАНИЕ для диагностики
             logger.debug(f"Результат выполнения инструкции {instruction_num}: success={result.get('success')}, wait_for_file='{wait_for_file}', control_phrase='{control_phrase}'")
@@ -2899,7 +2965,7 @@ class CodeAgentServer:
                 logger.warning(f"Ошибка выполнения через CLI: {result.get('error_message')}")
         
         # Fallback на файловый интерфейс
-        self.cursor_file.write_instruction(
+        self.file_interface.send_instruction(
             instruction=instruction,
             task_id=task_id,
             metadata={
@@ -2909,7 +2975,7 @@ class CodeAgentServer:
             new_chat=True
         )
         
-        wait_result = self.cursor_file.wait_for_result(
+        wait_result = self.file_interface.wait_for_result(
             task_id=task_id,
             timeout=timeout,
             control_phrase=control_phrase

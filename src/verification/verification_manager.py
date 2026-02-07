@@ -10,7 +10,7 @@ from datetime import datetime
 from .interfaces import IMultiLevelVerificationManager
 from .execution_monitor import ExecutionMonitor
 from .llm_validator import LLMValidator
-from ..quality.quality_gate_manager import QualityGateManager
+from src.quality.quality_gate_manager import QualityGateManager
 from ..quality.models.quality_result import (
     VerificationResult, MultiLevelVerificationResult, VerificationLevel,
     QualityGateResult, QualityResult, QualityCheckType, QualityStatus

@@ -6,13 +6,7 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 
-@dataclass
-class VerificationResult:
-    status: str
-    message: str
-    details: Optional[Dict[str, Any]] = None
-
-from src.quality.models.quality_result import QualityResult, MultiLevelVerificationResult
+from src.quality.models.quality_result import QualityResult, MultiLevelVerificationResult, VerificationResult, VerificationLevel, QualityGateResult
 
 
 class IExecutionMonitor(ABC):

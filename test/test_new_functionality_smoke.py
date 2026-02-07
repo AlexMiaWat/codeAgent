@@ -299,6 +299,47 @@ class TestUnicodeNormalizationSmoke:
             "",
         ]
 
+from src.new_functionality import new_feature_function, another_new_function
+import re
+
+
+class TestNewFunctionalitySmoke:
+    """Smoke tests for new_feature_function and another_new_function"""
+
+    def test_new_feature_function_runs(self):
+        """Test that new_feature_function runs without errors and returns a string"""
+        result = new_feature_function()
+        assert isinstance(result, str)
+        # Check if the output contains the expected phrase and a timestamp pattern
+        assert "New functionality is working as of" in result
+        # Regex to match YYYY-MM-DD HH:MM:SS
+        timestamp_pattern = r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}"
+        assert re.search(timestamp_pattern, result) is not None
+
+    def test_another_new_function_runs_with_default_weight(self):
+        """Test another_new_function runs with default weight_x and returns correct type"""
+        result = another_new_function(10, 20)
+        assert isinstance(result, (int, float))
+        assert result == 10 * 0.5 + 20 * (1 - 0.5)  # 5 + 10 = 15
+        assert result == 15.0
+
+    def test_another_new_function_runs_with_custom_weight(self):
+        """Test another_new_function runs with custom weight_x and returns correct type"""
+        result = another_new_function(10, 20, weight_x=0.2)
+        assert isinstance(result, (int, float))
+        assert result == 10 * 0.2 + 20 * (1 - 0.2)  # 2 + 16 = 18
+        assert result == 18.0
+
+    def test_another_new_function_handles_zero_weight(self):
+        """Test another_new_function handles weight_x = 0"""
+        result = another_new_function(10, 20, weight_x=0.0)
+        assert result == 20.0
+
+    def test_another_new_function_handles_one_weight(self):
+        """Test another_new_function handles weight_x = 1"""
+        result = another_new_function(10, 20, weight_x=1.0)
+        assert result == 10.0
+
         for input_text in test_cases:
             result = context_normalize(input_text)
             assert isinstance(result, str)

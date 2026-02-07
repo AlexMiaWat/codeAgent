@@ -5,69 +5,66 @@ from src.new_functionality import new_feature_function, another_new_function
 def test_new_feature_function_smoke():
     """
     Smoke test for new_feature_function.
-    Checks if the function returns the expected confirmation message.
-    """
-    assert new_feature_function() == "New functionality is working!"
-
-def test_another_new_function_smoke():
-    """
-    Smoke test for another_new_function.
-    Checks basic addition.
-    """
-    assert another_new_function(1, 2) == 3
-
-def test_another_new_function_integration_positive_numbers():
-    """
-    Integration test for another_new_function with positive numbers.
-    """
-    assert another_new_function(5, 10) == 15
-
-def test_another_new_function_integration_negative_numbers():
-    """
-    Integration test for another_new_function with negative numbers.
-    """
-    assert another_new_function(-1, -5) == -6
-
-
-def test_new_feature_function_integration():
-    """
-    Integration test for new_feature_function.
-    Ensures the function's output integrates correctly with a larger system (conceptually).
+    Checks if the function returns the expected confirmation message with a timestamp.
     """
     result = new_feature_function()
-    assert isinstance(result, str)
-    assert "working" in result
+    assert "New functionality is working as of" in result
+    # Further check the timestamp format (YYYY-MM-DD HH:MM:SS)
+    timestamp_str = result.split("as of ")[1].strip("!")
+    import datetime
+    try:
+        datetime.datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        pytest.fail("Timestamp format is incorrect")
 
-def test_another_new_function_integration_large_numbers():
-    """
-    Integration test for another_new_function with large numbers.
-    """
-    assert another_new_function(1_000_000, 2_000_000) == 3_000_000
-    assert another_new_function(-1_000_000, -2_000_000) == -3_000_000
 
-def test_another_new_function_integration_precision_floats():
+def test_another_new_function_weighted_average_smoke():
     """
-    Integration test for another_new_function with floating point precision.
+    Smoke test for another_new_function with default weight.
     """
-    assert another_new_function(0.1, 0.2) == pytest.approx(0.3)
-    assert another_new_function(1.0/3.0, 2.0/3.0) == pytest.approx(1.0)
+    # Default weight_x is 0.5
+    assert another_new_function(10, 20) == 15.0
 
-def test_another_new_function_integration_mixed_types():
+def test_another_new_function_weighted_average_zero_weight_x():
     """
-    Integration test for another_new_function with mixed integer and float types.
+    Integration test for another_new_function with weight_x = 0.
+    Should return y.
     """
-    assert another_new_function(10, 0.5) == 10.5
-    assert another_new_function(-1.5, 5) == 3.5
-def test_another_new_function_integration_zero():
-    """
-    Integration test for another_new_function with zero.
-    """
-    assert another_new_function(0, 100) == 100
-    assert another_new_function(-50, 0) == -50
+    assert another_new_function(10, 20, weight_x=0) == 20.0
 
-def test_another_new_function_integration_float_numbers():
+def test_another_new_function_weighted_average_one_weight_x():
     """
-    Integration test for another_new_function with float numbers.
+    Integration test for another_new_function with weight_x = 1.
+    Should return x.
     """
-    assert another_new_function(1.5, 2.5) == 4.0
-    assert another_new_function(-1.0, 0.5) == -0.5
+    assert another_new_function(10, 20, weight_x=1) == 10.0
+
+def test_another_new_function_weighted_average_custom_weight_x():
+    """
+    Integration test for another_new_function with a custom weight_x.
+    """
+    assert another_new_function(10, 20, weight_x=0.25) == 17.5
+    assert another_new_function(10, 20, weight_x=0.75) == 12.5
+    assert another_new_function(1.0, 2.0, weight_x=0.3) == pytest.approx(1.7)
+
+def test_another_new_function_value_error_weight_x_less_than_0():
+    """
+    Integration test for another_new_function, checking ValueError for weight_x < 0.
+    """
+    with pytest.raises(ValueError, match="weight_x must be between 0 and 1"):
+        another_new_function(10, 20, weight_x=-0.1)
+
+def test_another_new_function_value_error_weight_x_greater_than_1():
+    """
+    Integration test for another_new_function, checking ValueError for weight_x > 1.
+    """
+    with pytest.raises(ValueError, match="weight_x must be between 0 and 1"):
+        another_new_function(10, 20, weight_x=1.1)
+
+def test_another_new_function_integration_mixed_types_with_weight():
+    """
+    Integration test for another_new_function with mixed integer and float types and weight_x.
+    """
+    assert another_new_function(10, 0.5, weight_x=0.5) == 5.25 # (10*0.5) + (0.5*0.5) = 5 + 0.25
+    assert another_new_function(-1.5, 5, weight_x=0.2) == pytest.approx(3.7) # (-1.5*0.2) + (5*0.8) = -0.3 + 4 = 3.7
+

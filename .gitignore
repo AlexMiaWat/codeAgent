@@ -150,6 +150,7 @@ credentials.json
 
 # ===================================
 # Project Specific - Code Agent
+error_reports/
 # ===================================
 # Logs
 logs/

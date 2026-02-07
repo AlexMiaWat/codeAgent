@@ -359,6 +359,60 @@ class TestThreadSafetyIntegration:
             threads = []
             num_threads = 5
             for i in range(num_threads):
+
+import pytest
+from src.new_functionality import new_feature_function, another_new_function
+import time
+
+
+class TestNewFunctionalityIntegration:
+    """Integration tests for new_feature_function and another_new_function"""
+
+    def test_new_feature_function_timestamp_format(self):
+        """Test that new_feature_function returns a string with correct timestamp format"""
+        result = new_feature_function()
+        # Example: "New functionality is working as of 2023-10-27 10:30:00!"
+        parts = result.split(" as of ")
+        assert len(parts) == 2
+        timestamp_str = parts[1].replace("!", "")
+        try:
+            time.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            pytest.fail("Timestamp format is incorrect")
+
+    def test_another_new_function_with_integers(self):
+        """Test another_new_function with integer inputs"""
+        result = another_new_function(10, 20, weight_x=0.4)
+        assert result == 10 * 0.4 + 20 * 0.6  # 4 + 12 = 16
+        assert result == 16.0
+
+    def test_another_new_function_with_floats(self):
+        """Test another_new_function with float inputs"""
+        result = another_new_function(10.5, 20.5, weight_x=0.5)
+        assert result == 10.5 * 0.5 + 20.5 * 0.5  # 5.25 + 10.25 = 15.5
+        assert result == 15.5
+
+    def test_another_new_function_weight_x_boundaries(self):
+        """Test another_new_function handles weight_x at boundaries (0 and 1)"""
+        result_zero_weight = another_new_function(100, 50, weight_x=0.0)
+        assert result_zero_weight == 50.0
+
+        result_one_weight = another_new_function(100, 50, weight_x=1.0)
+        assert result_one_weight == 100.0
+
+    def test_another_new_function_invalid_weight_x(self):
+        """Test another_new_function raises ValueError for invalid weight_x"""
+        with pytest.raises(ValueError, match="weight_x must be between 0 and 1"):
+            another_new_function(10, 20, weight_x=-0.1)
+
+        with pytest.raises(ValueError, match="weight_x must be between 0 and 1"):
+            another_new_function(10, 20, weight_x=1.1)
+
+    def test_another_new_function_large_numbers(self):
+        """Test another_new_function with large numbers"""
+        result = another_new_function(1_000_000, 2_000_000, weight_x=0.75)
+        assert result == 1_000_000 * 0.75 + 2_000_000 * 0.25  # 750_000 + 500_000 = 1_250_000
+        assert result == 1_250_000.0
                 t = threading.Thread(target=worker, args=(i,))
                 threads.append(t)
                 t.start()
